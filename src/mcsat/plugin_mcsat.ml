@@ -30,8 +30,8 @@ let uf = E.create stack
 
 let assign t =
   match E.find_tag uf t with
-  | _, None -> t
-  | _, Some (_, v) -> v
+    | _, None -> t
+    | _, Some (_, v) -> v
 
 (* Propositional constants *)
 
@@ -72,22 +72,22 @@ let update_job x ((t, watchees) as job) =
             let t', u_v = H.find interpretation u in
             if not (Expr_smt.Term.equal t_v u_v) then begin
               match t' with
-              | { Expr_smt.term = Expr_smt.App (_, _, r) } when is_prop ->
-                let eqs = List.map2 (fun a b -> Expr_smt.Atom.neg (Expr_smt.Atom.eq a b)) l r in
-                if Expr_smt.(Term.equal u_v true_) then begin
-                  let res = Expr_smt.Atom.pred t ::
-                            Expr_smt.Atom.neg (Expr_smt.Atom.pred t') :: eqs in
+                | { Expr_smt.term = Expr_smt.App (_, _, r) } when is_prop ->
+                  let eqs = List.map2 (fun a b -> Expr_smt.Atom.neg (Expr_smt.Atom.eq a b)) l r in
+                  if Expr_smt.(Term.equal u_v true_) then begin
+                    let res = Expr_smt.Atom.pred t ::
+                        Expr_smt.Atom.neg (Expr_smt.Atom.pred t') :: eqs in
+                    raise (Absurd res)
+                  end else begin
+                    let res = Expr_smt.Atom.pred t' ::
+                        Expr_smt.Atom.neg (Expr_smt.Atom.pred t) :: eqs in
+                    raise (Absurd res)
+                  end
+                | { Expr_smt.term = Expr_smt.App (_, _, r) } ->
+                  let eqs = List.map2 (fun a b -> Expr_smt.Atom.neg (Expr_smt.Atom.eq a b)) l r in
+                  let res = Expr_smt.Atom.eq t t' :: eqs in
                   raise (Absurd res)
-                end else begin
-                  let res = Expr_smt.Atom.pred t' ::
-                            Expr_smt.Atom.neg (Expr_smt.Atom.pred t) :: eqs in
-                  raise (Absurd res)
-                end
-              | { Expr_smt.term = Expr_smt.App (_, _, r) } ->
-                let eqs = List.map2 (fun a b -> Expr_smt.Atom.neg (Expr_smt.Atom.eq a b)) l r in
-                let res = Expr_smt.Atom.eq t t' :: eqs in
-                raise (Absurd res)
-              | _ -> assert false
+                | _ -> assert false
             end
           with Not_found ->
             H.add interpretation u (t, t_v);
@@ -171,27 +171,27 @@ let assume s =
   try
     for i = s.start to s.start + s.length - 1 do
       match s.get i with
-      | Assign (t, v) ->
-        add_assign t v;
-        E.add_tag uf t v
-      | Lit f ->
-        begin match f with
-          | { Expr_smt.atom = Expr_smt.Equal (u, v); sign = true } ->
-            E.add_eq uf u v
-          | { Expr_smt.atom = Expr_smt.Equal (u, v); sign = false } ->
-            E.add_neq uf u v
-          | { Expr_smt.atom = Expr_smt.Pred p; sign } ->
-            let v = if sign then true_ else false_ in
-            add_assign p v
-        end
+        | Assign (t, v) ->
+          add_assign t v;
+          E.add_tag uf t v
+        | Lit f ->
+          begin match f with
+            | { Expr_smt.atom = Expr_smt.Equal (u, v); sign = true } ->
+              E.add_eq uf u v
+            | { Expr_smt.atom = Expr_smt.Equal (u, v); sign = false } ->
+              E.add_neq uf u v
+            | { Expr_smt.atom = Expr_smt.Pred p; sign } ->
+              let v = if sign then true_ else false_ in
+              add_assign p v
+          end
     done;
     Plugin_intf.Sat
   with
-  | Absurd l ->
-    Plugin_intf.Unsat (l, ())
-  | E.Unsat (a, b, l) ->
-    let c = Expr_smt.Atom.eq a b :: List.map Expr_smt.Atom.neg (chain_eq l) in
-    Plugin_intf.Unsat (c, ())
+    | Absurd l ->
+      Plugin_intf.Unsat (l, ())
+    | E.Unsat (a, b, l) ->
+      let c = Expr_smt.Atom.eq a b :: List.map Expr_smt.Atom.neg (chain_eq l) in
+      Plugin_intf.Unsat (c, ())
 
 let if_sat _ =
   Plugin_intf.Sat

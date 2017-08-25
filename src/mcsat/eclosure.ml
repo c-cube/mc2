@@ -67,11 +67,11 @@ module Make(T : Key) = struct
 
   let rec find_aux m i =
     match find_hash m i self_repr with
-    | Repr r -> r, i
-    | Follow j ->
-      let r, k = find_aux m j in
-      H.add m i (Follow k);
-      r, k
+      | Repr r -> r, i
+      | Follow j ->
+        let r, k = find_aux m j in
+        H.add m i (Follow k);
+        r, k
 
   let get_repr h x =
     let r, y = find_aux h.repr x in
@@ -81,10 +81,10 @@ module Make(T : Key) = struct
     let r, y = find_aux h.repr x in
     let new_m =
       { r with
-        tag = match r.tag with
-          | Some (_, v') when not (T.equal v v') -> raise (Equal (x, y))
-          | (Some _) as t -> t
-          | None -> Some (x, v) }
+          tag = match r.tag with
+            | Some (_, v') when not (T.equal v v') -> raise (Equal (x, y))
+            | (Some _) as t -> t
+            | None -> Some (x, v) }
     in
     H.add h.repr y (Repr new_m)
 
@@ -104,26 +104,26 @@ module Make(T : Key) = struct
     let new_m = {
       rank = if mx.rank = my.rank then mx.rank + 1 else mx.rank;
       tag = (match mx.tag, my.tag with
-          | Some (z, t1), Some (w, t2) ->
-            if not (T.equal t1 t2) then begin
-              Log.debugf 3 "Tag shenanigan : %a (%a) <> %a (%a)" (fun k ->
-                  k T.print t1 T.print z T.print t2 T.print w);
-              raise (Equal (z, w))
-            end else Some (z, t1)
-          | Some t, None | None, Some t -> Some t
-          | None, None -> None);
+        | Some (z, t1), Some (w, t2) ->
+          if not (T.equal t1 t2) then begin
+            Log.debugf 3 "Tag shenanigan : %a (%a) <> %a (%a)" (fun k ->
+              k T.print t1 T.print z T.print t2 T.print w);
+            raise (Equal (z, w))
+          end else Some (z, t1)
+        | Some t, None | None, Some t -> Some t
+        | None, None -> None);
       forbidden = M.merge (fun _ b1 b2 -> match b1, b2 with
           | Some r, _ | None, Some r -> Some r | _ -> assert false)
           mx.forbidden my.forbidden;}
     in
     let aux m z eq =
       match H.find m z with
-      | Repr r ->
-        let r' = { r with
-                   forbidden = M.add x eq (M.remove y r.forbidden) }
-        in
-        H.add m z (Repr r')
-      | _ -> assert false
+        | Repr r ->
+          let r' = { r with
+                       forbidden = M.add x eq (M.remove y r.forbidden) }
+          in
+          H.add m z (Repr r')
+        | _ -> assert false
     in
     M.iter (aux h.repr) my.forbidden;
     H.add h.repr y (Follow x);
@@ -207,25 +207,25 @@ module Make(T : Key) = struct
    * something went wrong *)
   let add_tag t x v =
     match tag t x v with
-    | () -> ()
-    | exception Equal (a, b) ->
-      raise (Unsat (a, b, expl t a b))
+      | () -> ()
+      | exception Equal (a, b) ->
+        raise (Unsat (a, b, expl t a b))
 
   let add_eq t i j =
     add_eq_aux t i j;
     match union t i j with
-    | () -> ()
-    | exception Equal (a, b) ->
-      raise (Unsat (a, b, expl t a b))
+      | () -> ()
+      | exception Equal (a, b) ->
+        raise (Unsat (a, b, expl t a b))
 
   let add_neq t i j =
     match forbid t i j with
-    | () -> ()
-    | exception Equal (a, b) ->
-      raise (Unsat (a, b, expl t a b))
-    | exception Same_tag (x, y) ->
-      add_eq_aux t i j;
-      let res = expl t i j in
-      raise (Unsat (i, j, res))
+      | () -> ()
+      | exception Equal (a, b) ->
+        raise (Unsat (a, b, expl t a b))
+      | exception Same_tag (x, y) ->
+        add_eq_aux t i j;
+        let res = expl t i j in
+        raise (Unsat (i, j, res))
 
 end

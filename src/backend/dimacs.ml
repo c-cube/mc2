@@ -24,9 +24,9 @@ module type S = sig
     history:clause Vec.t ->
     local:clause Vec.t ->
     unit
-  (** Export the given clause vectors to the dimacs format.
-      The arguments should be transmitted directly from the corresponding
-      function of the {Internal} module. *)
+    (** Export the given clause vectors to the dimacs format.
+        The arguments should be transmitted directly from the corresponding
+        function of the {Internal} module. *)
 
 end
 
@@ -44,8 +44,8 @@ module Make(St : Solver_types.S)(Dummy: sig end) = struct
       for i = !r to (Vec.size vec) - 1 do
         let x = Vec.get vec i in
         match map_filter x with
-        | None -> ()
-        | Some y -> Format.fprintf fmt "%a@," St.pp_dimacs (Vec.get vec i)
+          | None -> ()
+          | Some y -> Format.fprintf fmt "%a@," St.pp_dimacs (Vec.get vec i)
       done;
       r := Vec.size vec
     in
@@ -53,25 +53,25 @@ module Make(St : Solver_types.S)(Dummy: sig end) = struct
 
   let map_filter_learnt c =
     match c.St.cpremise with
-    | St.Hyp | St.Local -> assert false
-    | St.Lemma _ -> Some c
-    | St.History l ->
-      begin match l with
-        | [] -> assert false
-        | d :: _ ->
-          begin match d.St.cpremise with
-            | St.Lemma _ -> Some d
-            | St.Hyp | St.Local | St.History _ -> None
-          end
-      end
+      | St.Hyp | St.Local -> assert false
+      | St.Lemma _ -> Some c
+      | St.History l ->
+        begin match l with
+          | [] -> assert false
+          | d :: _ ->
+            begin match d.St.cpremise with
+              | St.Lemma _ -> Some d
+              | St.Hyp | St.Local | St.History _ -> None
+            end
+        end
 
   let filter_vec learnt =
     let lemmas = Vec.make (Vec.size learnt) St.dummy_clause in
     Vec.iter (fun c ->
-        match map_filter_learnt c with
+      match map_filter_learnt c with
         | None -> ()
         | Some d -> Vec.push lemmas d
-      ) learnt;
+    ) learnt;
     lemmas
 
   let export fmt ~hyps ~history ~local =

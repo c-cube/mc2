@@ -25,8 +25,8 @@ end
 module Make :
   functor(S : Res.S) ->
   functor(A : Arg
-          with type formula := S.St.formula
-           and type lemma := S.lemma
-           and type proof := S.proof) ->
+    with type formula := S.St.formula
+     and type lemma := S.lemma
+     and type proof := S.proof) ->
     S with type t := S.proof
 (** Functor to generate a backend to output proofs for the dedukti type checker. *)

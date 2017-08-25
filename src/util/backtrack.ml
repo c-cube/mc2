@@ -42,8 +42,8 @@ module Stack = struct
 
   let rec level t =
     match t.stack with
-    | Level (_, lvl) -> lvl
-    | _ -> push t; level t
+      | Level (_, lvl) -> lvl
+      | _ -> push t; level t
 
   let backtrack t lvl =
     let rec pop = function

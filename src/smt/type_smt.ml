@@ -205,7 +205,7 @@ let diagonal l =
 
 let arity f =
   List.length Expr.(f.id_type.fun_vars) +
-  List.length Expr.(f.id_type.fun_args)
+    List.length Expr.(f.id_type.fun_args)
 
 let ty_apply env ast f args =
   try
@@ -217,33 +217,33 @@ let term_apply env ast f ty_args t_args =
   try
     Expr.Term.apply f ty_args t_args
   with
-  | Expr.Bad_arity _ ->
-    _bad_arity Expr.(f.id_name) (arity f) ast
-  | Expr.Type_mismatch (t, ty, ty') ->
-    _type_mismatch t ty ty' ast
+    | Expr.Bad_arity _ ->
+      _bad_arity Expr.(f.id_name) (arity f) ast
+    | Expr.Type_mismatch (t, ty, ty') ->
+      _type_mismatch t ty ty' ast
 
 let ty_subst ast_term id args f_args body =
   let aux s v ty = Expr.Subst.Id.bind v ty s in
   match List.fold_left2 aux Expr.Subst.empty f_args args with
-  | subst ->
-    Expr.Ty.subst subst body
-  | exception Invalid_argument _ ->
-    _bad_arity id.Id.name (List.length f_args) ast_term
+    | subst ->
+      Expr.Ty.subst subst body
+    | exception Invalid_argument _ ->
+      _bad_arity id.Id.name (List.length f_args) ast_term
 
 let term_subst ast_term id ty_args t_args f_ty_args f_t_args body =
   let aux s v ty = Expr.Subst.Id.bind v ty s in
   match List.fold_left2 aux Expr.Subst.empty f_ty_args ty_args with
-  | ty_subst ->
-    begin
-      let aux s v t = Expr.Subst.Id.bind v t s in
-      match List.fold_left2 aux Expr.Subst.empty f_t_args t_args with
-      | t_subst ->
-        Expr.Term.subst ty_subst t_subst body
-      | exception Invalid_argument _ ->
-        _bad_arity id.Id.name (List.length f_ty_args + List.length f_t_args) ast_term
-    end
-  | exception Invalid_argument _ ->
-    _bad_arity id.Id.name (List.length f_ty_args + List.length f_t_args) ast_term
+    | ty_subst ->
+      begin
+        let aux s v t = Expr.Subst.Id.bind v t s in
+        match List.fold_left2 aux Expr.Subst.empty f_t_args t_args with
+          | t_subst ->
+            Expr.Term.subst ty_subst t_subst body
+          | exception Invalid_argument _ ->
+            _bad_arity id.Id.name (List.length f_ty_args + List.length f_t_args) ast_term
+      end
+    | exception Invalid_argument _ ->
+      _bad_arity id.Id.name (List.length f_ty_args + List.length f_t_args) ast_term
 
 let make_eq ast_term a b =
   try
@@ -259,120 +259,120 @@ let make_pred ast_term p =
 
 let infer env s args =
   match env.expect with
-  | Nothing -> `Nothing
-  | Type ->
-    let n = List.length args in
-    let res = Expr.Id.ty_fun s.Id.name n in
-    decl_ty_cstr s res;
-    `Ty res
-  | Typed ty ->
-    let n = List.length args in
-    let rec replicate acc n =
-      if n <= 0 then acc else replicate (Expr.Ty.base :: acc) (n - 1)
-    in
-    let res = Expr.Id.term_fun s.Id.name [] (replicate [] n) ty in
-    decl_term s res;
-    `Term res
+    | Nothing -> `Nothing
+    | Type ->
+      let n = List.length args in
+      let res = Expr.Id.ty_fun s.Id.name n in
+      decl_ty_cstr s res;
+      `Ty res
+    | Typed ty ->
+      let n = List.length args in
+      let rec replicate acc n =
+        if n <= 0 then acc else replicate (Expr.Ty.base :: acc) (n - 1)
+      in
+      let res = Expr.Id.term_fun s.Id.name [] (replicate [] n) ty in
+      decl_term s res;
+      `Term res
 
 (* Expression parsing *)
 (* ************************************************************************ *)
 
 let rec parse_expr (env : env) t =
   match t with
-  (* Base Types *)
-  | { Ast.term = Ast.Builtin Ast.Ttype } ->
-    Ttype
-  | { Ast.term = Ast.Symbol { Id.name = "Bool" } } ->
-    Ty (Expr_smt.Ty.prop)
+    (* Base Types *)
+    | { Ast.term = Ast.Builtin Ast.Ttype } ->
+      Ttype
+    | { Ast.term = Ast.Symbol { Id.name = "Bool" } } ->
+      Ty (Expr_smt.Ty.prop)
 
-  (* Basic formulas *)
-  | { Ast.term = Ast.App ({ Ast.term = Ast.Builtin Ast.True }, []) }
-  | { Ast.term = Ast.Builtin Ast.True } ->
-    Formula Expr.Formula.f_true
+    (* Basic formulas *)
+    | { Ast.term = Ast.App ({ Ast.term = Ast.Builtin Ast.True }, []) }
+    | { Ast.term = Ast.Builtin Ast.True } ->
+      Formula Expr.Formula.f_true
 
-  | { Ast.term = Ast.App ({ Ast.term = Ast.Builtin Ast.False }, []) }
-  | { Ast.term = Ast.Builtin Ast.False } ->
-    Formula Expr.Formula.f_false
+    | { Ast.term = Ast.App ({ Ast.term = Ast.Builtin Ast.False }, []) }
+    | { Ast.term = Ast.Builtin Ast.False } ->
+      Formula Expr.Formula.f_false
 
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.And}, l) }
-  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "and" }}, l) } ->
-    Formula (Expr.Formula.make_and (List.map (parse_formula env) l))
+    | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.And}, l) }
+    | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "and" }}, l) } ->
+      Formula (Expr.Formula.make_and (List.map (parse_formula env) l))
 
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Or}, l) }
-  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "or" }}, l) } ->
-    Formula (Expr.Formula.make_or (List.map (parse_formula env) l))
+    | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Or}, l) }
+    | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "or" }}, l) } ->
+      Formula (Expr.Formula.make_or (List.map (parse_formula env) l))
 
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Xor}, l) } as t ->
-    begin match l with
-      | [p; q] ->
-        let f = parse_formula env p in
-        let g = parse_formula env q in
-        Formula (Expr.Formula.make_not (Expr.Formula.make_equiv f g))
-      | _ -> _bad_arity "xor" 2 t
-    end
+    | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Xor}, l) } as t ->
+      begin match l with
+        | [p; q] ->
+          let f = parse_formula env p in
+          let g = parse_formula env q in
+          Formula (Expr.Formula.make_not (Expr.Formula.make_equiv f g))
+        | _ -> _bad_arity "xor" 2 t
+      end
 
-  | ({ Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Imply}, l) } as t)
-  | ({ Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "=>" }}, l) } as t) ->
-    begin match l with
-      | [p; q] ->
-        let f = parse_formula env p in
-        let g = parse_formula env q in
-        Formula (Expr.Formula.make_imply f g)
-      | _ -> _bad_arity "=>" 2 t
-    end
+    | ({ Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Imply}, l) } as t)
+    | ({ Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "=>" }}, l) } as t) ->
+      begin match l with
+        | [p; q] ->
+          let f = parse_formula env p in
+          let g = parse_formula env q in
+          Formula (Expr.Formula.make_imply f g)
+        | _ -> _bad_arity "=>" 2 t
+      end
 
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Equiv}, l) } as t ->
-    begin match l with
-      | [p; q] ->
-        let f = parse_formula env p in
-        let g = parse_formula env q in
-        Formula (Expr.Formula.make_equiv f g)
-      | _ -> _bad_arity "<=>" 2 t
-    end
+    | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Equiv}, l) } as t ->
+      begin match l with
+        | [p; q] ->
+          let f = parse_formula env p in
+          let g = parse_formula env q in
+          Formula (Expr.Formula.make_equiv f g)
+        | _ -> _bad_arity "<=>" 2 t
+      end
 
-  | ({ Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Not}, l) } as t)
-  | ({ Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "not" }}, l) } as t) ->
-    begin match l with
-      | [p] ->
-        Formula (Expr.Formula.make_not (parse_formula env p))
-      | _ -> _bad_arity "not" 1 t
-    end
+    | ({ Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Not}, l) } as t)
+    | ({ Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "not" }}, l) } as t) ->
+      begin match l with
+        | [p] ->
+          Formula (Expr.Formula.make_not (parse_formula env p))
+        | _ -> _bad_arity "not" 1 t
+      end
 
-  (* (Dis)Equality *)
-  | ({ Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Eq}, l) } as t)
-  | ({ Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "=" }}, l) } as t) ->
-    begin match l with
-      | [a; b] ->
-        Formula (
-          make_eq t
-            (parse_term env a)
-            (parse_term env b)
-        )
-      | _ -> _bad_arity "=" 2 t
-    end
+    (* (Dis)Equality *)
+    | ({ Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Eq}, l) } as t)
+    | ({ Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "=" }}, l) } as t) ->
+      begin match l with
+        | [a; b] ->
+          Formula (
+            make_eq t
+              (parse_term env a)
+              (parse_term env b)
+          )
+        | _ -> _bad_arity "=" 2 t
+      end
 
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Distinct}, args) } as t ->
-    let l' = List.map (parse_term env) args in
-    let l'' = diagonal l' in
-    Formula (
-      Expr.Formula.make_and
-        (List.map (fun (a, b) ->
-             Expr.Formula.make_not
-               (make_eq t a b)) l'')
-    )
+    | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Distinct}, args) } as t ->
+      let l' = List.map (parse_term env) args in
+      let l'' = diagonal l' in
+      Formula (
+        Expr.Formula.make_and
+          (List.map (fun (a, b) ->
+              Expr.Formula.make_not
+                (make_eq t a b)) l'')
+      )
 
-  (* General case: application *)
-  | { Ast.term = Ast.Symbol s } as ast ->
-    parse_app env ast s []
-  | { Ast.term = Ast.App ({ Ast.term = Ast.Symbol s }, l) } as ast ->
-    parse_app env ast s l
+    (* General case: application *)
+    | { Ast.term = Ast.Symbol s } as ast ->
+      parse_app env ast s []
+    | { Ast.term = Ast.App ({ Ast.term = Ast.Symbol s }, l) } as ast ->
+      parse_app env ast s l
 
-  (* Local bindings *)
-  | { Ast.term = Ast.Binder (Ast.Let, vars, f) } ->
-    parse_let env f vars
+    (* Local bindings *)
+    | { Ast.term = Ast.Binder (Ast.Let, vars, f) } ->
+      parse_let env f vars
 
-  (* Other cases *)
-  | ast -> raise (Typing_error ("Couldn't parse the expression", ast))
+    (* Other cases *)
+    | ast -> raise (Typing_error ("Couldn't parse the expression", ast))
 
 and parse_var env = function
   | { Ast.term = Ast.Colon ({ Ast.term = Ast.Symbol s }, e) } ->
@@ -393,12 +393,12 @@ and parse_quant_vars env l =
   let ttype_vars, typed_vars, env' = List.fold_left (
       fun (l1, l2, acc) v ->
         match parse_var acc v with
-        | `Ty (id, v') ->
-          let v'', acc' = add_type_var acc id v' in
-          (v'' :: l1, l2, acc')
-        | `Term (id, v') ->
-          let v'', acc' = add_term_var acc id v' in
-          (l1, v'' :: l2, acc')
+          | `Ty (id, v') ->
+            let v'', acc' = add_type_var acc id v' in
+            (v'' :: l1, l2, acc')
+          | `Term (id, v') ->
+            let v'', acc' = add_term_var acc id v' in
+            (l1, v'' :: l2, acc')
     ) ([], [], env) l in
   List.rev ttype_vars, List.rev typed_vars, env'
 
@@ -431,40 +431,40 @@ and parse_let env f = function
 
 and parse_app env ast s args =
   match find_let env s with
-  | `Term t ->
-    if args = [] then Term t
-    else _fo_term s ast
-  | `Prop p ->
-    if args = [] then Formula p
-    else _fo_term s ast
-  | `Not_found ->
-    begin match find_var env s with
-      | `Ty f ->
-        if args = [] then Ty (Expr.Ty.of_id f)
-        else _fo_term s ast
-      | `Term f ->
-        if args = [] then Term (Expr.Term.of_id f)
-        else _fo_term s ast
-      | `Not_found ->
-        begin match find_global s with
-          | `Ty f ->
-            parse_app_ty env ast f args
-          | `Term f ->
-            parse_app_term env ast f args
-          | `Ty_alias (f_args, body) ->
-            parse_app_subst_ty env ast s args f_args body
-          | `Term_alias (f_ty_args, f_t_args, body) ->
-            parse_app_subst_term env ast s args f_ty_args f_t_args body
-          | `Not_found ->
-            begin match infer env s args with
-              | `Ty f -> parse_app_ty env ast f args
-              | `Term f -> parse_app_term env ast f args
-              | `Nothing ->
-                raise (Typing_error (
-                    Format.asprintf "Scoping error: '%a' not found" Id.print s, ast))
-            end
-        end
-    end
+    | `Term t ->
+      if args = [] then Term t
+      else _fo_term s ast
+    | `Prop p ->
+      if args = [] then Formula p
+      else _fo_term s ast
+    | `Not_found ->
+      begin match find_var env s with
+        | `Ty f ->
+          if args = [] then Ty (Expr.Ty.of_id f)
+          else _fo_term s ast
+        | `Term f ->
+          if args = [] then Term (Expr.Term.of_id f)
+          else _fo_term s ast
+        | `Not_found ->
+          begin match find_global s with
+            | `Ty f ->
+              parse_app_ty env ast f args
+            | `Term f ->
+              parse_app_term env ast f args
+            | `Ty_alias (f_args, body) ->
+              parse_app_subst_ty env ast s args f_args body
+            | `Term_alias (f_ty_args, f_t_args, body) ->
+              parse_app_subst_term env ast s args f_ty_args f_t_args body
+            | `Not_found ->
+              begin match infer env s args with
+                | `Ty f -> parse_app_ty env ast f args
+                | `Term f -> parse_app_term env ast f args
+                | `Nothing ->
+                  raise (Typing_error (
+                      Format.asprintf "Scoping error: '%a' not found" Id.print s, ast))
+              end
+          end
+      end
 
 and parse_app_ty env ast f args =
   let l = List.map (parse_ty env) args in
@@ -490,25 +490,25 @@ and parse_app_subst_term env ast id args f_ty_args f_t_args body =
 
 and parse_ty env ast =
   match parse_expr { env with expect = Type } ast with
-  | Ty ty -> ty
-  | _ -> _expected "type" ast
+    | Ty ty -> ty
+    | _ -> _expected "type" ast
 
 and parse_term env ast =
   match parse_expr { env with expect = Typed Expr.Ty.base } ast with
-  | Term t -> t
-  | _ -> _expected "term" ast
+    | Term t -> t
+    | _ -> _expected "term" ast
 
 and parse_formula env ast =
   match parse_expr { env with expect = Typed Expr.Ty.prop } ast with
-  | Term t when Expr.(Ty.equal Ty.prop t.t_type) ->
-    make_pred ast t
-  | Formula p -> p
-  | _ -> _expected "formula" ast
+    | Term t when Expr.(Ty.equal Ty.prop t.t_type) ->
+      make_pred ast t
+    | Formula p -> p
+    | _ -> _expected "formula" ast
 
 let parse_ttype_var env t =
   match parse_var env t with
-  | `Ty (id, v) -> (id, v)
-  | `Term _ -> _expected "type variable" t
+    | `Ty (id, v) -> (id, v)
+    | `Term _ -> _expected "type variable" t
 
 let rec parse_sig_quant env = function
   | { Ast.term = Ast.Binder (Ast.Pi, vars, t) } ->
@@ -537,11 +537,11 @@ and parse_sig_arrow ttype_vars (ty_args: (Ast.t * res) list) env = function
             in
             begin
               match List.fold_left aux 0 ty_args with
-              | n -> `Ty_cstr n
-              | exception Found err ->
-                raise (Typing_error (
-                    Format.asprintf
-                      "Type constructor signatures cannot have non-ttype arguments,", err))
+                | n -> `Ty_cstr n
+                | exception Found err ->
+                  raise (Typing_error (
+                      Format.asprintf
+                        "Type constructor signatures cannot have non-ttype arguments,", err))
             end
         end
       | Ty ret ->
@@ -551,8 +551,8 @@ and parse_sig_arrow ttype_vars (ty_args: (Ast.t * res) list) env = function
         in
         begin
           match List.fold_left aux [] ty_args with
-          | exception Found err -> _expected "type" err
-          | l -> `Fun_ty (List.map snd ttype_vars, List.rev l, ret)
+            | exception Found err -> _expected "type" err
+            | l -> `Fun_ty (List.map snd ttype_vars, List.rev l, ret)
         end
       | _ -> _expected "Ttype of type" t
     end
@@ -612,9 +612,9 @@ let formula t =
 let assumptions t =
   let cnf = Expr.Formula.make_cnf (formula t) in
   List.map (function
-      | [ x ] -> x
-      | _ -> assert false
-    ) cnf
+    | [ x ] -> x
+    | _ -> assert false
+  ) cnf
 
 let antecedent t =
   Expr.Formula.make_cnf (formula t)

@@ -75,10 +75,10 @@ module Make(S : Res.S)(A : Arg with type atom := S.atom
 
   let print_edges fmt n =
     match S.(n.step) with
-    | S.Resolution (p1, p2, _) ->
-      print_edge fmt (res_node_id n) (proof_id p1);
-      print_edge fmt (res_node_id n) (proof_id p2)
-    | _ -> ()
+      | S.Resolution (p1, p2, _) ->
+        print_edge fmt (res_node_id n) (proof_id p1);
+        print_edge fmt (res_node_id n) (proof_id p2)
+      | _ -> ()
 
   let table_options fmt color =
     Format.fprintf fmt "BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" BGCOLOR=\"%s\"" color
@@ -86,12 +86,12 @@ module Make(S : Res.S)(A : Arg with type atom := S.atom
   let table fmt (c, rule, color, l) =
     Format.fprintf fmt "<TR><TD colspan=\"2\">%a</TD></TR>" print_clause c;
     match l with
-    | [] ->
-      Format.fprintf fmt "<TR><TD BGCOLOR=\"%s\" colspan=\"2\">%s</TD></TR>" color rule
-    | f :: r ->
-      Format.fprintf fmt "<TR><TD BGCOLOR=\"%s\" rowspan=\"%d\">%s</TD><TD>%a</TD></TR>"
-        color (List.length l) rule f ();
-      List.iter (fun f -> Format.fprintf fmt "<TR><TD>%a</TD></TR>" f ()) r
+      | [] ->
+        Format.fprintf fmt "<TR><TD BGCOLOR=\"%s\" colspan=\"2\">%s</TD></TR>" color rule
+      | f :: r ->
+        Format.fprintf fmt "<TR><TD BGCOLOR=\"%s\" rowspan=\"%d\">%s</TD><TD>%a</TD></TR>"
+          color (List.length l) rule f ();
+        List.iter (fun f -> Format.fprintf fmt "<TR><TD>%a</TD></TR>" f ()) r
 
   let print_dot_node fmt id color c rule rule_color l =
     Format.fprintf fmt "%s [shape=plaintext, label=<<TABLE %a>%a</TABLE>>];@\n"
@@ -104,31 +104,31 @@ module Make(S : Res.S)(A : Arg with type atom := S.atom
 
   let print_contents fmt n =
     match S.(n.step) with
-    (* Leafs of the proof tree *)
-    | S.Hypothesis ->
-      let rule, color, l = A.hyp_info S.(n.conclusion) in
-      let color = match color with None -> "LIGHTBLUE" | Some c -> c in
-      print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
-    | S.Assumption ->
-      let rule, color, l = A.assumption_info S.(n.conclusion) in
-      let color = match color with None -> "LIGHTBLUE" | Some c -> c in
-      print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
-    | S.Lemma lemma ->
-      let rule, color, l = A.lemma_info S.(n.conclusion) in
-      let color = match color with None -> "YELLOW" | Some c -> c in
-      print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
+      (* Leafs of the proof tree *)
+      | S.Hypothesis ->
+        let rule, color, l = A.hyp_info S.(n.conclusion) in
+        let color = match color with None -> "LIGHTBLUE" | Some c -> c in
+        print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
+      | S.Assumption ->
+        let rule, color, l = A.assumption_info S.(n.conclusion) in
+        let color = match color with None -> "LIGHTBLUE" | Some c -> c in
+        print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
+      | S.Lemma lemma ->
+        let rule, color, l = A.lemma_info S.(n.conclusion) in
+        let color = match color with None -> "YELLOW" | Some c -> c in
+        print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
 
-    (* Tree nodes *)
-    | S.Duplicate (p, l) ->
-      print_dot_node fmt (node_id n) "GREY" S.(n.conclusion) "Duplicate" "GREY"
-        ((fun fmt () -> (Format.fprintf fmt "%s" (node_id n))) ::
-        List.map (ttify A.print_atom) l);
-      print_edge fmt (node_id n) (node_id (S.expand p))
-    | S.Resolution (_, _, a) ->
-      print_dot_node fmt (node_id n) "GREY" S.(n.conclusion) "Resolution" "GREY"
-        [(fun fmt () -> (Format.fprintf fmt "%s" (node_id n)))];
-      print_dot_res_node fmt (res_node_id n) a;
-      print_edge fmt (node_id n) (res_node_id n)
+      (* Tree nodes *)
+      | S.Duplicate (p, l) ->
+        print_dot_node fmt (node_id n) "GREY" S.(n.conclusion) "Duplicate" "GREY"
+          ((fun fmt () -> (Format.fprintf fmt "%s" (node_id n))) ::
+             List.map (ttify A.print_atom) l);
+        print_edge fmt (node_id n) (node_id (S.expand p))
+      | S.Resolution (_, _, a) ->
+        print_dot_node fmt (node_id n) "GREY" S.(n.conclusion) "Resolution" "GREY"
+          [(fun fmt () -> (Format.fprintf fmt "%s" (node_id n)))];
+        print_dot_res_node fmt (res_node_id n) a;
+        print_edge fmt (node_id n) (res_node_id n)
 
   let print_node fmt n =
     print_contents fmt n;
@@ -153,13 +153,13 @@ module Simple(S : Res.S)
 
     let get_assumption c =
       match S.to_list c with
-      | [ x ] -> x
-      | _ -> assert false
+        | [ x ] -> x
+        | _ -> assert false
 
     let get_lemma c =
       match c.S.St.cpremise with
-      | S.St.Lemma p -> p
-      | _ -> assert false
+        | S.St.Lemma p -> p
+        | _ -> assert false
 
     (* Actual functions *)
     let print_atom fmt a =

@@ -31,12 +31,12 @@ module type S = sig
     history:clause Vec.t ->
     local:clause Vec.t ->
     unit
-  (** Export the given clause vectors to the dimacs format.
-      The arguments should be transmitted directly from the corresponding
-      function of the {Internal} module.
-      This function may be called multiple times in order to add
-      new clauses (and new local hyps) to the problem.
-  *)
+    (** Export the given clause vectors to the dimacs format.
+        The arguments should be transmitted directly from the corresponding
+        function of the {Internal} module.
+        This function may be called multiple times in order to add
+        new clauses (and new local hyps) to the problem.
+    *)
 
 end
 

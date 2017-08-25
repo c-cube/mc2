@@ -27,15 +27,15 @@ module Make (F : Tseitin_intf.Arg) = struct
 
   let rec print fmt phi =
     match phi with
-    | True -> Format.fprintf fmt "true"
-    | Lit a -> F.print fmt a
-    | Comb (Not, [f]) ->
-      Format.fprintf fmt "not (%a)" print f
-    | Comb (And, l) -> Format.fprintf fmt "(%a)" (print_list "and") l
-    | Comb (Or, l) ->  Format.fprintf fmt "(%a)" (print_list "or") l
-    | Comb (Imp, [f1; f2]) ->
-      Format.fprintf fmt "(%a => %a)" print f1 print f2
-    | _ -> assert false
+      | True -> Format.fprintf fmt "true"
+      | Lit a -> F.print fmt a
+      | Comb (Not, [f]) ->
+        Format.fprintf fmt "not (%a)" print f
+      | Comb (And, l) -> Format.fprintf fmt "(%a)" (print_list "and") l
+      | Comb (Or, l) ->  Format.fprintf fmt "(%a)" (print_list "or") l
+      | Comb (Imp, [f1; f2]) ->
+        Format.fprintf fmt "(%a => %a)" print f1 print f2
+      | _ -> assert false
   and print_list sep fmt = function
     | [] -> ()
     | [f] -> print fmt f
@@ -241,38 +241,38 @@ module Make (F : Tseitin_intf.Arg) = struct
       List.fold_left
         (fun (_, acc) f ->
            match cnf f with
-           | _, [] -> assert false
-           | cmb, [a] -> Some And, a :: acc
-           | Some And, l ->
-             Some And, l @@ acc
-           (* let proxy = mk_proxy () in *)
-           (* acc_and := (proxy, l) :: !acc_and; *)
-           (* proxy :: acc *)
-           | Some Or, l ->
-             let proxy = mk_proxy () in
-             acc_or := (proxy, l) :: !acc_or;
-             Some And, proxy :: acc
-           | None, l -> Some And, l @@ acc
-           | _ -> assert false
+             | _, [] -> assert false
+             | cmb, [a] -> Some And, a :: acc
+             | Some And, l ->
+               Some And, l @@ acc
+             (* let proxy = mk_proxy () in *)
+             (* acc_and := (proxy, l) :: !acc_and; *)
+             (* proxy :: acc *)
+             | Some Or, l ->
+               let proxy = mk_proxy () in
+               acc_or := (proxy, l) :: !acc_or;
+               Some And, proxy :: acc
+             | None, l -> Some And, l @@ acc
+             | _ -> assert false
         ) (None, []) l
 
     | Comb (Or, l) ->
       List.fold_left
         (fun (_, acc) f ->
            match cnf f with
-           | _, [] -> assert false
-           | cmb, [a] -> Some Or, a :: acc
-           | Some Or, l ->
-             Some Or, l @@ acc
-           (* let proxy = mk_proxy () in *)
-           (* acc_or := (proxy, l) :: !acc_or; *)
-           (* proxy :: acc *)
-           | Some And, l ->
-             let proxy = mk_proxy () in
-             acc_and := (proxy, l) :: !acc_and;
-             Some Or, proxy :: acc
-           | None, l -> Some Or, l @@ acc
-           | _ -> assert false
+             | _, [] -> assert false
+             | cmb, [a] -> Some Or, a :: acc
+             | Some Or, l ->
+               Some Or, l @@ acc
+             (* let proxy = mk_proxy () in *)
+             (* acc_or := (proxy, l) :: !acc_or; *)
+             (* proxy :: acc *)
+             | Some And, l ->
+               let proxy = mk_proxy () in
+               acc_and := (proxy, l) :: !acc_and;
+               Some Or, proxy :: acc
+             | None, l -> Some Or, l @@ acc
+             | _ -> assert false
         ) (None, []) l
     | _ -> assert false
 

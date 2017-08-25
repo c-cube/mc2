@@ -62,14 +62,14 @@ and atom = {
 
 let rec list_cmp ord l1 l2 =
   match l1, l2 with
-  | [], [] -> 0
-  | [], _ -> -1
-  | _, [] -> 1
-  | x1::l1', x2::l2' ->
+    | [], [] -> 0
+    | [], _ -> -1
+    | _, [] -> 1
+    | x1::l1', x2::l2' ->
       let c = ord x1 x2 in
       if c = 0
-        then list_cmp ord l1' l2'
-        else c
+      then list_cmp ord l1' l2'
+      else c
 
 (* Exceptions *)
 (* ************************************************************************ *)
@@ -105,9 +105,9 @@ module Print = struct
 
   let signature print fmt f =
     match f.fun_args with
-    | [] -> Format.fprintf fmt "%a%a" params f.fun_vars print f.fun_ret
-    | l -> Format.fprintf fmt "%a%a -> %a" params f.fun_vars
-             (list print " -> ") l print f.fun_ret
+      | [] -> Format.fprintf fmt "%a%a" params f.fun_vars print f.fun_ret
+      | l -> Format.fprintf fmt "%a%a -> %a" params f.fun_vars
+               (list print " -> ") l print f.fun_ret
 
   let fun_ty = signature ty
   let fun_ttype = signature ttype
@@ -133,11 +133,11 @@ module Print = struct
 
   let atom_aux fmt f =
     match f.atom with
-    | Equal (a, b) ->
-      Format.fprintf fmt "%a %s %a"
-        term a (if f.sign then "=" else "<>") term b
-    | Pred t ->
-      Format.fprintf fmt "%s%a" (if f.sign then "" else "¬ ") term t
+      | Equal (a, b) ->
+        Format.fprintf fmt "%a %s %a"
+          term a (if f.sign then "=" else "<>") term b
+      | Pred t ->
+        Format.fprintf fmt "%s%a" (if f.sign then "" else "¬ ") term t
 
   let atom fmt f = Format.fprintf fmt "⟦%a⟧" atom_aux f
 
@@ -357,7 +357,7 @@ module Ty = struct
       let map = List.fold_left2 (fun acc v ty -> Subst.Id.bind v ty acc) Subst.empty f.id_type.fun_vars tys in
       let fun_args = List.map (subst map) f.id_type.fun_args in
       List.iter2 (fun t ty ->
-          if not (equal t.t_type ty) then raise (Type_mismatch (t, t.t_type, ty)))
+        if not (equal t.t_type ty) then raise (Type_mismatch (t, t.t_type, ty)))
         args fun_args;
       subst map f.id_type.fun_ret
 

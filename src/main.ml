@@ -71,29 +71,29 @@ module Make
 
   let do_task s =
     match s.Dolmen.Statement.descr with
-    | Dolmen.Statement.Def (id, t) -> T.def id t
-    | Dolmen.Statement.Decl (id, t) -> T.decl id t
-    | Dolmen.Statement.Consequent t ->
-      let cnf = T.consequent t in
-      hyps := cnf @ !hyps;
-      S.assume cnf
-    | Dolmen.Statement.Antecedent t ->
-      let cnf = T.antecedent t in
-      hyps := cnf @ !hyps;
-      S.assume cnf
-    | Dolmen.Statement.Pack [
-        { Dolmen.Statement.descr = Dolmen.Statement.Push 1; };
-        { Dolmen.Statement.descr = Dolmen.Statement.Antecedent f; };
-        { Dolmen.Statement.descr = Dolmen.Statement.Prove; };
-        { Dolmen.Statement.descr = Dolmen.Statement.Pop 1; };
-      ] ->
-      let assumptions = T.assumptions f in
-      prove ~assumptions
-    | Dolmen.Statement.Prove ->
-      prove ~assumptions:[]
-    | _ ->
-      Format.printf "Command not supported:@\n%a@."
-        Dolmen.Statement.print s
+      | Dolmen.Statement.Def (id, t) -> T.def id t
+      | Dolmen.Statement.Decl (id, t) -> T.decl id t
+      | Dolmen.Statement.Consequent t ->
+        let cnf = T.consequent t in
+        hyps := cnf @ !hyps;
+        S.assume cnf
+      | Dolmen.Statement.Antecedent t ->
+        let cnf = T.antecedent t in
+        hyps := cnf @ !hyps;
+        S.assume cnf
+      | Dolmen.Statement.Pack [
+          { Dolmen.Statement.descr = Dolmen.Statement.Push 1; };
+          { Dolmen.Statement.descr = Dolmen.Statement.Antecedent f; };
+          { Dolmen.Statement.descr = Dolmen.Statement.Prove; };
+          { Dolmen.Statement.descr = Dolmen.Statement.Pop 1; };
+        ] ->
+        let assumptions = T.assumptions f in
+        prove ~assumptions
+      | Dolmen.Statement.Prove ->
+        prove ~assumptions:[]
+      | _ ->
+        Format.printf "Command not supported:@\n%a@."
+          Dolmen.Statement.print s
 end
 
 module Sat = Make(Sat.Make(struct end))(Type_sat)
@@ -131,22 +131,22 @@ let int_arg r arg =
   else
     try
       match arg.[l-1] with
-      | 'k' -> multiplier 1e3
-      | 'M' -> multiplier 1e6
-      | 'G' -> multiplier 1e9
-      | 'T' -> multiplier 1e12
-      | 's' -> multiplier 1.
-      | 'm' -> multiplier 60.
-      | 'h' -> multiplier 3600.
-      | 'd' -> multiplier 86400.
-      | '0'..'9' -> r := float_of_string arg
-      | _ -> raise (Arg.Bad "bad numeric argument")
+        | 'k' -> multiplier 1e3
+        | 'M' -> multiplier 1e6
+        | 'G' -> multiplier 1e9
+        | 'T' -> multiplier 1e12
+        | 's' -> multiplier 1.
+        | 'm' -> multiplier 60.
+        | 'h' -> multiplier 3600.
+        | 'd' -> multiplier 86400.
+        | '0'..'9' -> r := float_of_string arg
+        | _ -> raise (Arg.Bad "bad numeric argument")
     with Failure _ -> raise (Arg.Bad "bad numeric argument")
 
 let setup_gc_stat () =
   at_exit (fun () ->
-      Gc.print_stat stdout;
-    )
+    Gc.print_stat stdout;
+  )
 
 let input_file = fun s -> file := s
 
@@ -208,23 +208,23 @@ let () =
   try
     main ()
   with
-  | Out_of_time ->
-    Format.printf "Timeout@.";
-    exit 2
-  | Out_of_space ->
-    Format.printf "Spaceout@.";
-    exit 3
-  | Incorrect_model ->
-    Format.printf "Internal error : incorrect *sat* model@.";
-    exit 4
-  | Type_sat.Typing_error (msg, t)
-  | Type_smt.Typing_error (msg, t) ->
-    let b = Printexc.get_backtrace () in
-    let loc = match t.Dolmen.Term.loc with
-      | Some l -> l | None -> Dolmen.ParseLocation.mk "<>" 0 0 0 0
-    in
-    Format.fprintf Format.std_formatter "While typing:@\n%a@\n%a: typing error\n%s@."
-      Dolmen.Term.print t Dolmen.ParseLocation.fmt loc msg;
-    if Printexc.backtrace_status () then
-      Format.fprintf Format.std_formatter "%s@." b
+    | Out_of_time ->
+      Format.printf "Timeout@.";
+      exit 2
+    | Out_of_space ->
+      Format.printf "Spaceout@.";
+      exit 3
+    | Incorrect_model ->
+      Format.printf "Internal error : incorrect *sat* model@.";
+      exit 4
+    | Type_sat.Typing_error (msg, t)
+    | Type_smt.Typing_error (msg, t) ->
+      let b = Printexc.get_backtrace () in
+      let loc = match t.Dolmen.Term.loc with
+        | Some l -> l | None -> Dolmen.ParseLocation.mk "<>" 0 0 0 0
+      in
+      Format.fprintf Format.std_formatter "While typing:@\n%a@\n%a: typing error\n%s@."
+        Dolmen.Term.print t Dolmen.ParseLocation.fmt loc msg;
+      if Printexc.backtrace_status () then
+        Format.fprintf Format.std_formatter "%s@." b
 

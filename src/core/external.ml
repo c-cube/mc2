@@ -69,9 +69,9 @@ module Make
     let t = S.trail () in
     let iter f f' =
       Vec.iter (function
-          | St.Atom a -> f a.St.lit
-          | St.Lit l -> f' l.St.term
-        ) t
+        | St.Atom a -> f a.St.lit
+        | St.Lit l -> f' l.St.term
+      ) t
     in
     {
       eval = S.eval;
@@ -84,8 +84,8 @@ module Make
     pp_all 99 "UNSAT";
     let unsat_conflict () =
       match S.unsat_conflict () with
-      | None -> assert false
-      | Some c -> c
+        | None -> assert false
+        | Some c -> c
     in
     let get_proof () =
       let c = unsat_conflict () in

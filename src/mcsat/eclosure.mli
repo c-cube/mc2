@@ -7,13 +7,13 @@
     look inside the terms we are given. *)
 
 module type Key = sig
-    (** The type of keys used by the equality closure algorithm *)
+  (** The type of keys used by the equality closure algorithm *)
 
-    type t
-    val hash : t -> int
-    val equal : t -> t -> bool
-    val compare : t -> t -> int
-    val print : Format.formatter -> t -> unit
+  type t
+  val hash : t -> int
+  val equal : t -> t -> bool
+  val compare : t -> t -> int
+  val print : Format.formatter -> t -> unit
 end
 
 module type S = sig

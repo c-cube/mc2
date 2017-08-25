@@ -72,9 +72,9 @@ let assumptions t =
   let f = parse t in
   let cnf = Formula.make_cnf f in
   List.map (function
-      | [ x ] -> x
-      | _ -> assert false
-    ) cnf
+    | [ x ] -> x
+    | _ -> assert false
+  ) cnf
 
 let antecedent t =
   let f = parse t in

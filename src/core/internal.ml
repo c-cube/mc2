@@ -80,7 +80,7 @@ module Make
        - this is repeated until a fixpoint is reached;
        - before a decision (and after the fixpoint),
          th_head = elt_head = length elt_queue
-      *)
+    *)
 
 
     mutable simpDB_props : int;
@@ -189,8 +189,8 @@ module Make
   (* Are the assumptions currently unsat ? *)
   let is_unsat () =
     match env.unsat_conflict with
-    | Some _ -> true
-    | None -> false
+      | Some _ -> true
+      | None -> false
 
   (* Iteration over subterms.
      When incrementing activity, we want to be able to iterate over
@@ -202,8 +202,8 @@ module Make
   let iter_sub f v =
     if St.mcsat then
       match v.v_assignable with
-      | Some l -> List.iter f l
-      | None -> assert false
+        | Some l -> List.iter f l
+        | None -> assert false
 
   (* When we have a new literal,
      we need to first create the list of its subterms. *)
@@ -211,12 +211,12 @@ module Make
     let res = add_atom f in
     if St.mcsat then
       begin match res.var.v_assignable with
-      | Some _ -> ()
-      | None ->
-        let l = ref [] in
-        Plugin.iter_assignable (fun t -> l := add_term t :: !l) res.var.pa.lit;
-        res.var.v_assignable <- Some !l;
-    end;
+        | Some _ -> ()
+        | None ->
+          let l = ref [] in
+          Plugin.iter_assignable (fun t -> l := add_term t :: !l) res.var.pa.lit;
+          res.var.v_assignable <- Some !l;
+      end;
     res
 
   (* Variable and literal activity.
@@ -233,8 +233,8 @@ module Make
       Iheap.insert f_weight env.order v.vid;
       insert_subterms_order v
 
-    and insert_subterms_order v =
-      iter_sub (fun t -> insert_var_order (elt_of_lit t)) v
+  and insert_subterms_order v =
+    iter_sub (fun t -> insert_var_order (elt_of_lit t)) v
 
   (* Add new litterals/atoms on which to decide on, even if there is no
      clause that constrains it.
@@ -324,15 +324,15 @@ module Make
     let duplicates = ref [] in
     let res = ref [] in
     Array.iter (fun a ->
-        if seen a then duplicates := a :: !duplicates
-        else (mark a; res := a :: !res)
-      ) clause.atoms;
+      if seen a then duplicates := a :: !duplicates
+      else (mark a; res := a :: !res)
+    ) clause.atoms;
     List.iter (fun a ->
-        begin match a.var.seen with
+      begin match a.var.seen with
         | Both -> trivial := true
         | _ -> ()
-        end;
-        clear a.var) !res;
+      end;
+      clear a.var) !res;
     if !trivial then
       raise Trivial
     else if !duplicates = [] then
@@ -359,24 +359,24 @@ module Make
             raise Trivial (* A var true at level 0 gives a trivially true clause *)
           else
             (a :: trues) @ unassigned @ falses @
-            (arr_to_list atoms (i + 1)), history
+              (arr_to_list atoms (i + 1)), history
         else if a.neg.is_true then
           let l = a.var.v_level in
           if l = 0 then begin
             match a.var.reason with
-            | Some (Bcp cl) ->
-              partition_aux trues unassigned falses (cl :: history) (i + 1)
-            (* A var false at level 0 can be eliminated from the clause,
-               but we need to kepp in mind that we used another clause to simplify it. *)
-            | Some Semantic ->
-              partition_aux trues unassigned falses history (i + 1)
-            (* Semantic propagations at level 0 are, well not easy to deal with,
-               this shouldn't really happen actually (because semantic propagations
-               at level 0 should come with a proof). *)
-            (* TODO: get a proof of the propagation. *)
-            | None | Some Decision -> assert false
-            (* The var must have a reason, and it cannot be a decision/assumption,
-               since its level is 0. *)
+              | Some (Bcp cl) ->
+                partition_aux trues unassigned falses (cl :: history) (i + 1)
+              (* A var false at level 0 can be eliminated from the clause,
+                 but we need to kepp in mind that we used another clause to simplify it. *)
+              | Some Semantic ->
+                partition_aux trues unassigned falses history (i + 1)
+              (* Semantic propagations at level 0 are, well not easy to deal with,
+                 this shouldn't really happen actually (because semantic propagations
+                 at level 0 should come with a proof). *)
+              (* TODO: get a proof of the propagation. *)
+              | None | Some Decision -> assert false
+              (* The var must have a reason, and it cannot be a decision/assumption,
+                 since its level is 0. *)
           end else
             partition_aux trues unassigned (a::falses) history (i + 1)
         else
@@ -434,36 +434,36 @@ module Make
          (i.e to the right of elt_head in the queue. *)
       for c = env.elt_head to Vec.size env.elt_queue - 1 do
         match (Vec.get env.elt_queue c) with
-        (* A literal is unassigned, we nedd to add it back to
-           the heap of potentially assignable literals, unless it has
-           a level lower than [lvl], in which case we just move it back. *)
-        | Lit l ->
-          if l.l_level <= lvl then begin
-            Vec.set env.elt_queue !head (of_lit l);
-            head := !head + 1
-          end else begin
-            l.assigned <- None;
-            l.l_level <- -1;
-            insert_var_order (elt_of_lit l)
-          end
-        (* A variable is not true/false anymore, one of two things can happen: *)
-        | Atom a ->
-          if a.var.v_level <= lvl then begin
-            (* It is a late propagation, which has a level
-               lower than where we backtrack, so we just move it to the head
-               of the queue, to be propagated again. *)
-            Vec.set env.elt_queue !head (of_atom a);
-            head := !head + 1
-          end else begin
-            (* it is a result of bolean propagation, or a semantic propagation
-               with a level higher than the level to which we backtrack,
-               in that case, we simply unset its value and reinsert it into the heap. *)
-            a.is_true <- false;
-            a.neg.is_true <- false;
-            a.var.v_level <- -1;
-            a.var.reason <- None;
-            insert_var_order (elt_of_var a.var)
-          end
+          (* A literal is unassigned, we nedd to add it back to
+             the heap of potentially assignable literals, unless it has
+             a level lower than [lvl], in which case we just move it back. *)
+          | Lit l ->
+            if l.l_level <= lvl then begin
+              Vec.set env.elt_queue !head (of_lit l);
+              head := !head + 1
+            end else begin
+              l.assigned <- None;
+              l.l_level <- -1;
+              insert_var_order (elt_of_lit l)
+            end
+          (* A variable is not true/false anymore, one of two things can happen: *)
+          | Atom a ->
+            if a.var.v_level <= lvl then begin
+              (* It is a late propagation, which has a level
+                 lower than where we backtrack, so we just move it to the head
+                 of the queue, to be propagated again. *)
+              Vec.set env.elt_queue !head (of_atom a);
+              head := !head + 1
+            end else begin
+              (* it is a result of bolean propagation, or a semantic propagation
+                 with a level higher than the level to which we backtrack,
+                 in that case, we simply unset its value and reinsert it into the heap. *)
+              a.is_true <- false;
+              a.neg.is_true <- false;
+              a.var.v_level <- -1;
+              a.var.reason <- None;
+              insert_var_order (elt_of_var a.var)
+            end
       done;
       (* Recover the right theory state. *)
       Plugin.backtrack (Vec.get env.th_levels lvl);
@@ -504,7 +504,7 @@ module Make
             let c' = make_clause (fresh_lname ()) l (History (cl :: history)) in
             Log.debugf debug "Simplified reason: @[<v>%a@,%a@]"
               (fun k -> k St.pp_clause cl St.pp_clause c');
-              Bcp c'
+            Bcp c'
           end
         | _ ->
           Log.debugf error "@[<v 2>Failed at reason simplification:@,%a@,%a@]"
@@ -549,17 +549,17 @@ module Make
   (* MCsat semantic assignment *)
   let enqueue_assign l value lvl =
     match l.assigned with
-    | Some _ ->
-      Log.debugf error "Trying to assign an already assigned literal: %a"
-        (fun k -> k St.pp_lit l);
-      assert false
-    | None ->
-      assert (l.l_level < 0);
-      l.assigned <- Some value;
-      l.l_level <- lvl;
-      Vec.push env.elt_queue (of_lit l);
-      Log.debugf debug "Enqueue (%d): %a"
-        (fun k -> k (Vec.size env.elt_queue) pp_lit l)
+      | Some _ ->
+        Log.debugf error "Trying to assign an already assigned literal: %a"
+          (fun k -> k St.pp_lit l);
+        assert false
+      | None ->
+        assert (l.l_level < 0);
+        l.assigned <- Some value;
+        l.l_level <- lvl;
+        Vec.push env.elt_queue (of_lit l);
+        Log.debugf debug "Enqueue (%d): %a"
+          (fun k -> k (Vec.size env.elt_queue) pp_lit l)
 
   (* evaluate an atom for MCsat, if it's not assigned
      by boolean propagation/decision *)
@@ -605,7 +605,7 @@ module Make
 
   let get_atom i =
     match Vec.get env.elt_queue i with
-    | Lit _ -> assert false | Atom x -> x
+      | Lit _ -> assert false | Atom x -> x
 
   (* conflict analysis for SAT
      Same idea as the mcsat analyze function (without semantic propagations),
@@ -637,8 +637,8 @@ module Make
         if q.var.v_level <= 0 then begin
           assert (q.neg.is_true);
           match q.var.reason with
-          | Some Bcp cl -> history := cl :: !history
-          | _ -> assert false
+            | Some Bcp cl -> history := cl :: !history
+            | _ -> assert false
         end;
         if not (q.var.seen = Both) then begin
           q.var.seen <- Both;
@@ -658,10 +658,10 @@ module Make
       (* look for the next node to expand *)
       while
         match Vec.get env.elt_queue !tr_ind with
-        | Atom q ->
-          (not (q.var.seen = Both)) ||
-          (q.var.v_level < conflict_level)
-        | Lit _ -> true
+          | Atom q ->
+            (not (q.var.seen = Both)) ||
+            (q.var.v_level < conflict_level)
+          | Lit _ -> true
       do
         decr tr_ind;
       done;
@@ -669,17 +669,17 @@ module Make
       decr pathC;
       decr tr_ind;
       match !pathC, p.var.reason with
-      | 0, _ ->
-        cond := false;
-        learnt := p.neg :: (List.rev !learnt)
-      | n, Some Semantic ->
-        assert (n > 0);
-        learnt := p.neg :: !learnt
-      | n, Some Bcp cl ->
-        assert (n > 0);
-        assert (p.var.v_level >= conflict_level);
-        c := cl
-      | n, _ -> assert false
+        | 0, _ ->
+          cond := false;
+          learnt := p.neg :: (List.rev !learnt)
+        | n, Some Semantic ->
+          assert (n > 0);
+          learnt := p.neg :: !learnt
+        | n, Some Bcp cl ->
+          assert (n > 0);
+          assert (p.var.v_level >= conflict_level);
+          c := cl
+        | n, _ -> assert false
     done;
     List.iter (fun q -> clear q.var) !seen;
     let l = List.fast_sort (fun p q -> compare q.var.v_level p.var.v_level) !learnt in
@@ -775,53 +775,53 @@ module Make
       in
       Log.debugf info "New clause: @[<hov>%a@]" (fun k->k St.pp_clause clause);
       match atoms with
-      | [] ->
-        (* Report_unsat will raise, and the current clause will be lost if we do not
-           store it somewhere. Since the proof search will end, any of env.clauses_to_add
-           or env.clauses_root is adequate. *)
-        Stack.push clause env.clauses_root;
-        report_unsat clause
-      | [a]   ->
-        cancel_until (base_level ());
-        if a.neg.is_true then begin
-          (* Since we cannot propagate the atom [a], in order to not lose
-             the information that [a] must be true, we add clause to the list
-             of clauses to add, so that it will be e-examined later. *)
-          Log.debugf debug "Unit clause, adding to clauses to add" (fun k -> k);
-          Stack.push clause env.clauses_to_add;
-          report_unsat clause
-        end else if a.is_true then begin
-          (* If the atom is already true, then it should be because of a local hyp.
-             However it means we can't propagate it at level 0. In order to not lose
-             that information, we store the clause in a stack of clauses that we will
-             add to the solver at the next pop. *)
-          Log.debugf debug "Unit clause, adding to root clauses" (fun k -> k);
-          assert (0 < a.var.v_level && a.var.v_level <= base_level ());
+        | [] ->
+          (* Report_unsat will raise, and the current clause will be lost if we do not
+             store it somewhere. Since the proof search will end, any of env.clauses_to_add
+             or env.clauses_root is adequate. *)
           Stack.push clause env.clauses_root;
-          ()
-        end else begin
-          Log.debugf debug "Unit clause, propagating: %a" (fun k->k St.pp_atom a);
-          Vec.push vec clause;
-          enqueue_bool a ~level:0 (Bcp clause)
-        end
-      | a::b::_ ->
-        Vec.push vec clause;
-        if a.neg.is_true then begin
-          (* Atoms need to be sorted in decreasing order of decision level,
-             or we might watch the wrong literals. *)
-          Array.sort
-            (fun a b -> compare b.var.v_level a.var.v_level)
-            clause.atoms;
-          attach_clause clause;
-          add_boolean_conflict clause
-        end else begin
-          attach_clause clause;
-          if b.neg.is_true && not a.is_true && not a.neg.is_true then begin
-            let lvl = List.fold_left (fun m a -> max m a.var.v_level) 0 atoms in
-            cancel_until (max lvl (base_level ()));
-            enqueue_bool a lvl (Bcp clause)
+          report_unsat clause
+        | [a]   ->
+          cancel_until (base_level ());
+          if a.neg.is_true then begin
+            (* Since we cannot propagate the atom [a], in order to not lose
+               the information that [a] must be true, we add clause to the list
+               of clauses to add, so that it will be e-examined later. *)
+            Log.debugf debug "Unit clause, adding to clauses to add" (fun k -> k);
+            Stack.push clause env.clauses_to_add;
+            report_unsat clause
+          end else if a.is_true then begin
+            (* If the atom is already true, then it should be because of a local hyp.
+               However it means we can't propagate it at level 0. In order to not lose
+               that information, we store the clause in a stack of clauses that we will
+               add to the solver at the next pop. *)
+            Log.debugf debug "Unit clause, adding to root clauses" (fun k -> k);
+            assert (0 < a.var.v_level && a.var.v_level <= base_level ());
+            Stack.push clause env.clauses_root;
+            ()
+          end else begin
+            Log.debugf debug "Unit clause, propagating: %a" (fun k->k St.pp_atom a);
+            Vec.push vec clause;
+            enqueue_bool a ~level:0 (Bcp clause)
           end
-        end
+        | a::b::_ ->
+          Vec.push vec clause;
+          if a.neg.is_true then begin
+            (* Atoms need to be sorted in decreasing order of decision level,
+               or we might watch the wrong literals. *)
+            Array.sort
+              (fun a b -> compare b.var.v_level a.var.v_level)
+              clause.atoms;
+            attach_clause clause;
+            add_boolean_conflict clause
+          end else begin
+            attach_clause clause;
+            if b.neg.is_true && not a.is_true && not a.neg.is_true then begin
+              let lvl = List.fold_left (fun m a -> max m a.var.v_level) 0 atoms in
+              cancel_until (max lvl (base_level ()));
+              enqueue_bool a lvl (Bcp clause)
+            end
+          end
     with Trivial ->
       Vec.push vec init;
       Log.debugf info "Trivial clause ignored : @[%a@]" (fun k->k St.pp_clause init)
@@ -882,12 +882,12 @@ module Make
           raise (Conflict c)
         end else begin
           match th_eval first with
-          | None -> (* clause is unit, keep the same watches, but propagate *)
-            enqueue_bool first (decision_level ()) (Bcp c)
-          | Some true -> ()
-          | Some false ->
-            env.elt_head <- Vec.size env.elt_queue;
-            raise (Conflict c)
+            | None -> (* clause is unit, keep the same watches, but propagate *)
+              enqueue_bool first (decision_level ()) (Bcp c)
+            | Some true -> ()
+            | Some false ->
+              env.elt_head <- Vec.size env.elt_queue;
+              raise (Conflict c)
         end;
         Watch_kept
       with Exit ->
@@ -929,11 +929,11 @@ module Make
 
   let slice_get i =
     match Vec.get env.elt_queue i with
-    | Atom a ->
-      Plugin_intf.Lit a.lit
-    | Lit {term; assigned = Some v} ->
-      Plugin_intf.Assign (term, v)
-    | Lit _ -> assert false
+      | Atom a ->
+        Plugin_intf.Lit a.lit
+      | Lit {term; assigned = Some v} ->
+        Plugin_intf.Assign (term, v)
+      | Lit _ -> assert false
 
   let slice_push (l:formula list) (lemma:proof): unit =
     let atoms = List.rev_map create_atom l in
@@ -991,15 +991,15 @@ module Make
       let slice = current_slice () in
       env.th_head <- env.elt_head; (* catch up *)
       match Plugin.assume slice with
-      | Plugin_intf.Sat ->
-        propagate ()
-      | Plugin_intf.Unsat (l, p) ->
-        (* conflict *)
-        let l = List.rev_map create_atom l in
-        Iheap.grow_to_at_least env.order (St.nb_elt ());
-        List.iter (fun a -> insert_var_order (elt_of_var a.var)) l;
-        let c = St.make_clause (St.fresh_tname ()) l (Lemma p) in
-        Some c
+        | Plugin_intf.Sat ->
+          propagate ()
+        | Plugin_intf.Unsat (l, p) ->
+          (* conflict *)
+          let l = List.rev_map create_atom l in
+          Iheap.grow_to_at_least env.order (St.nb_elt ());
+          List.iter (fun a -> insert_var_order (elt_of_var a.var)) l;
+          let c = St.make_clause (St.fresh_tname ()) l (Lemma p) in
+          Some c
     end
 
   (* fixpoint between boolean propagation and theory propagation
@@ -1026,8 +1026,8 @@ module Make
       env.propagations <- env.propagations + !num_props;
       env.simpDB_props <- env.simpDB_props - !num_props;
       match !res with
-      | None -> theory_propagate ()
-      | _ -> !res
+        | None -> theory_propagate ()
+        | _ -> !res
     end
 
   (* remove some learnt clauses
@@ -1053,27 +1053,27 @@ module Make
 
   and pick_branch_lit () =
     match env.next_decision with
-    | Some atom ->
-      env.next_decision <- None;
-      pick_branch_aux atom
-    | None ->
-      begin try
-          begin match St.get_elt (Iheap.remove_min f_weight env.order) with
-            | E_lit l ->
-              if l.l_level >= 0 then
-                pick_branch_lit ()
-              else begin
-                let value = Plugin.assign l.term in
-                env.decisions <- env.decisions + 1;
-                new_decision_level();
-                let current_level = decision_level () in
-                enqueue_assign l value current_level
-              end
-            | E_var v ->
-              pick_branch_aux v.pa
-          end
-        with Not_found -> raise Sat
-      end
+      | Some atom ->
+        env.next_decision <- None;
+        pick_branch_aux atom
+      | None ->
+        begin try
+            begin match St.get_elt (Iheap.remove_min f_weight env.order) with
+              | E_lit l ->
+                if l.l_level >= 0 then
+                  pick_branch_lit ()
+                else begin
+                  let value = Plugin.assign l.term in
+                  env.decisions <- env.decisions + 1;
+                  new_decision_level();
+                  let current_level = decision_level () in
+                  enqueue_assign l value current_level
+                end
+              | E_var v ->
+                pick_branch_aux v.pa
+            end
+          with Not_found -> raise Sat
+        end
 
   (* do some amount of search, until the number of conflicts or clause learnt
      reaches the given parameters *)
@@ -1082,34 +1082,34 @@ module Make
     env.starts <- env.starts + 1;
     while true do
       match propagate () with
-      | Some confl -> (* Conflict *)
-        incr conflictC;
-        (* When the theory has raised Unsat, add_boolean_conflict
-           might 'forget' the initial conflict clause, and only add the
-           analyzed backtrack clause. So in those case, we use add_clause
-           to make sure the initial conflict clause is also added. *)
-        if confl.attached then
-          add_boolean_conflict confl
-        else
-          add_clause confl
+        | Some confl -> (* Conflict *)
+          incr conflictC;
+          (* When the theory has raised Unsat, add_boolean_conflict
+             might 'forget' the initial conflict clause, and only add the
+             analyzed backtrack clause. So in those case, we use add_clause
+             to make sure the initial conflict clause is also added. *)
+          if confl.attached then
+            add_boolean_conflict confl
+          else
+            add_clause confl
 
-      | None -> (* No Conflict *)
-        assert (env.elt_head = Vec.size env.elt_queue);
-        assert (env.elt_head = env.th_head);
-        if Vec.size env.elt_queue = St.nb_elt ()
-        then raise Sat;
-        if n_of_conflicts > 0 && !conflictC >= n_of_conflicts then begin
-          Log.debugf info "Restarting..." (fun k -> k);
-          cancel_until (base_level ());
-          raise Restart
-        end;
-        (* if decision_level() = 0 then simplify (); *)
+        | None -> (* No Conflict *)
+          assert (env.elt_head = Vec.size env.elt_queue);
+          assert (env.elt_head = env.th_head);
+          if Vec.size env.elt_queue = St.nb_elt ()
+          then raise Sat;
+          if n_of_conflicts > 0 && !conflictC >= n_of_conflicts then begin
+            Log.debugf info "Restarting..." (fun k -> k);
+            cancel_until (base_level ());
+            raise Restart
+          end;
+          (* if decision_level() = 0 then simplify (); *)
 
-        if n_of_learnts >= 0 &&
-           Vec.size env.clauses_learnt - Vec.size env.elt_queue >= n_of_learnts
-        then reduce_db();
+          if n_of_learnts >= 0 &&
+             Vec.size env.clauses_learnt - Vec.size env.elt_queue >= n_of_learnts
+          then reduce_db();
 
-        pick_branch_lit ()
+          pick_branch_lit ()
     done
 
   let eval_level lit =
@@ -1148,20 +1148,20 @@ module Make
         begin try
             search (to_int !n_of_conflicts) (to_int !n_of_learnts)
           with
-          | Restart ->
-            n_of_conflicts := !n_of_conflicts *. env.restart_inc;
-            n_of_learnts   := !n_of_learnts *. env.learntsize_inc
-          | Sat ->
-            assert (env.elt_head = Vec.size env.elt_queue);
-            begin match Plugin.if_sat (full_slice ()) with
-              | Plugin_intf.Sat -> ()
-              | Plugin_intf.Unsat (l, p) ->
-                let atoms = List.rev_map create_atom l in
-                let c = make_clause (fresh_tname ()) atoms (Lemma p) in
-                Log.debugf info "Theory conflict clause: %a" (fun k -> k St.pp_clause c);
-                Stack.push c env.clauses_to_add
-            end;
-            if Stack.is_empty env.clauses_to_add then raise Sat
+            | Restart ->
+              n_of_conflicts := !n_of_conflicts *. env.restart_inc;
+              n_of_learnts   := !n_of_learnts *. env.learntsize_inc
+            | Sat ->
+              assert (env.elt_head = Vec.size env.elt_queue);
+              begin match Plugin.if_sat (full_slice ()) with
+                | Plugin_intf.Sat -> ()
+                | Plugin_intf.Unsat (l, p) ->
+                  let atoms = List.rev_map create_atom l in
+                  let c = make_clause (fresh_tname ()) atoms (Lemma p) in
+                  Log.debugf info "Theory conflict clause: %a" (fun k -> k St.pp_clause c);
+                  Stack.push c env.clauses_to_add
+              end;
+              if Stack.is_empty env.clauses_to_add then raise Sat
         end
       done
     with Sat -> ()
@@ -1238,12 +1238,12 @@ module Make
     in
     assert (base_level () > 0);
     match env.unsat_conflict with
-    | None ->
-      Log.debugf info "Adding local assumption" (fun k -> k);
-      cancel_until (base_level ());
-      List.iter aux l
-    | Some _ ->
-      Log.debugf warn "Cannot add local assumption (already unsat)" (fun k -> k)
+      | None ->
+        Log.debugf info "Adding local assumption" (fun k -> k);
+        cancel_until (base_level ());
+        List.iter aux l
+      | Some _ ->
+        Log.debugf warn "Cannot add local assumption (already unsat)" (fun k -> k)
 
   (* Check satisfiability *)
   let check_clause c =

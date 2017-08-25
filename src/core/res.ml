@@ -116,24 +116,24 @@ module Make(St : Solver_types.S) = struct
     in
     assert St.(a.var.v_level >= 0);
     match St.(a.var.reason) with
-    | Some St.Bcp c ->
-      Log.debugf debug "Analysing: @[%a@ %a@]"
-        (fun k -> k St.pp_atom a St.pp_clause c);
-      if Array.length c.St.atoms = 1 then begin
-        Log.debugf debug "Old reason: @[%a@]" (fun k -> k St.pp_atom a);
-        c
-      end else begin
-        assert (a.St.neg.St.is_true);
-        let r = St.History (c :: (Array.fold_left aux [] c.St.atoms)) in
-        let c' = St.make_clause (fresh_pcl_name ()) [a.St.neg] r in
-        a.St.var.St.reason <- Some St.(Bcp c');
-        Log.debugf debug "New reason: @[%a@ %a@]"
-          (fun k -> k St.pp_atom a St.pp_clause c');
-        c'
-      end
-    | _ ->
-      Log.debugf error "Error while proving atom %a" (fun k -> k St.pp_atom a);
-      raise (Resolution_error "Cannot prove atom")
+      | Some St.Bcp c ->
+        Log.debugf debug "Analysing: @[%a@ %a@]"
+          (fun k -> k St.pp_atom a St.pp_clause c);
+        if Array.length c.St.atoms = 1 then begin
+          Log.debugf debug "Old reason: @[%a@]" (fun k -> k St.pp_atom a);
+          c
+        end else begin
+          assert (a.St.neg.St.is_true);
+          let r = St.History (c :: (Array.fold_left aux [] c.St.atoms)) in
+          let c' = St.make_clause (fresh_pcl_name ()) [a.St.neg] r in
+          a.St.var.St.reason <- Some St.(Bcp c');
+          Log.debugf debug "New reason: @[%a@ %a@]"
+            (fun k -> k St.pp_atom a St.pp_clause c');
+          c'
+        end
+      | _ ->
+        Log.debugf error "Error while proving atom %a" (fun k -> k St.pp_atom a);
+        raise (Resolution_error "Cannot prove atom")
 
   let prove_unsat conflict =
     if Array.length conflict.St.atoms = 0 then conflict
@@ -189,28 +189,28 @@ module Make(St : Solver_types.S) = struct
   let expand conclusion =
     Log.debugf debug "Expanding : @[%a@]" (fun k -> k St.pp_clause conclusion);
     match conclusion.St.cpremise with
-    | St.Lemma l ->
-      {conclusion; step = Lemma l; }
-    | St.Hyp ->
-      { conclusion; step = Hypothesis; }
-    | St.Local ->
-      { conclusion; step = Assumption; }
-    | St.History [] ->
-      Log.debugf error "Empty history for clause: %a" (fun k -> k St.pp_clause conclusion);
-      raise (Resolution_error "Empty history")
-    | St.History [ c ] ->
-      let duplicates, res = analyze (list c) in
-      assert (cmp_cl res (list conclusion) = 0);
-      { conclusion; step = Duplicate (c, List.concat duplicates) }
-    | St.History ( c :: ([d] as r)) ->
-      let (l, c', d', a) = chain_res (c, to_list c) r in
-      assert (cmp_cl l (to_list conclusion) = 0);
-      { conclusion; step = Resolution (c', d', a); }
-    | St.History ( c :: r ) ->
-      let (l, c', d', a) = chain_res (c, to_list c) r in
-      conclusion.St.cpremise <- St.History [c'; d'];
-      assert (cmp_cl l (to_list conclusion) = 0);
-      { conclusion; step = Resolution (c', d', a); }
+      | St.Lemma l ->
+        {conclusion; step = Lemma l; }
+      | St.Hyp ->
+        { conclusion; step = Hypothesis; }
+      | St.Local ->
+        { conclusion; step = Assumption; }
+      | St.History [] ->
+        Log.debugf error "Empty history for clause: %a" (fun k -> k St.pp_clause conclusion);
+        raise (Resolution_error "Empty history")
+      | St.History [ c ] ->
+        let duplicates, res = analyze (list c) in
+        assert (cmp_cl res (list conclusion) = 0);
+        { conclusion; step = Duplicate (c, List.concat duplicates) }
+      | St.History ( c :: ([d] as r)) ->
+        let (l, c', d', a) = chain_res (c, to_list c) r in
+        assert (cmp_cl l (to_list conclusion) = 0);
+        { conclusion; step = Resolution (c', d', a); }
+      | St.History ( c :: r ) ->
+        let (l, c', d', a) = chain_res (c, to_list c) r in
+        conclusion.St.cpremise <- St.History [c'; d'];
+        assert (cmp_cl l (to_list conclusion) = 0);
+        { conclusion; step = Resolution (c', d', a); }
 
   (* Proof nodes manipulation *)
   let is_leaf = function
@@ -244,11 +244,11 @@ module Make(St : Solver_types.S) = struct
         if not c.St.visited then begin
           c.St.visited <- true;
           match c.St.cpremise with
-          | St.Hyp | St.Local | St.Lemma _ -> aux (c :: res) acc r
-          | St.History h ->
-            let l = List.fold_left (fun acc c ->
-                if not c.St.visited then c :: acc else acc) r h in
-            aux res (c :: acc) l
+            | St.Hyp | St.Local | St.Lemma _ -> aux (c :: res) acc r
+            | St.History h ->
+              let l = List.fold_left (fun acc c ->
+                  if not c.St.visited then c :: acc else acc) r h in
+              aux res (c :: acc) l
         end else
           aux res acc r
     in
@@ -273,24 +273,24 @@ module Make(St : Solver_types.S) = struct
 
   let rec fold_aux s h f acc =
     match spop s with
-    | None -> acc
-    | Some (Leaving c) ->
-      H.add h c true;
-      fold_aux s h f (f acc (expand c))
-    | Some (Enter c) ->
-      if not (H.mem h c) then begin
-        Stack.push (Leaving c) s;
-        let node = expand c in
-        begin match node.step with
-          | Duplicate (p1, _) ->
-            Stack.push (Enter p1) s
-          | Resolution (p1, p2, _) ->
-            Stack.push (Enter p2) s;
-            Stack.push (Enter p1) s
-          | Hypothesis | Assumption | Lemma _ -> ()
-        end
-      end;
-      fold_aux s h f acc
+      | None -> acc
+      | Some (Leaving c) ->
+        H.add h c true;
+        fold_aux s h f (f acc (expand c))
+      | Some (Enter c) ->
+        if not (H.mem h c) then begin
+          Stack.push (Leaving c) s;
+          let node = expand c in
+          begin match node.step with
+            | Duplicate (p1, _) ->
+              Stack.push (Enter p1) s
+            | Resolution (p1, p2, _) ->
+              Stack.push (Enter p2) s;
+              Stack.push (Enter p1) s
+            | Hypothesis | Assumption | Lemma _ -> ()
+          end
+        end;
+        fold_aux s h f acc
 
   let fold f acc p =
     let h = H.create 42 in

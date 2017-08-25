@@ -120,7 +120,7 @@ module type S = sig
   type t =
     | Lit of lit
     | Atom of atom
-  (** Either a lit of an atom *)
+    (** Either a lit of an atom *)
 
   val of_lit : lit -> t
   val of_atom : atom -> t
@@ -131,7 +131,7 @@ module type S = sig
   type elt =
     | E_lit of lit
     | E_var of var
-  (** Either a lit of a var *)
+    (** Either a lit of a var *)
 
   val nb_elt : unit -> int
   val get_elt : int -> elt

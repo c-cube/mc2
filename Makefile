@@ -59,4 +59,14 @@ uninstall:
 
 reinstall: | uninstall install
 
+ocp-indent:
+	@which ocp-indent > /dev/null || { \
+	  	echo 'ocp-indent not found; please run `opam install ocp-indent`'; \
+		exit 1 ; \
+	  }
+
+reindent: ocp-indent
+	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 echo "reindenting: "
+	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 ocp-indent -i
+
 .PHONY: clean doc all bench install uninstall remove reinstall enable_log disable_log bin test

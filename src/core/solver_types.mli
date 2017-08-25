@@ -29,10 +29,10 @@ module type S = Solver_types_intf.S
 (** Interface for the internal types. *)
 
 module McMake (E : Expr_intf.S)(Dummy : sig end):
-    S with type term = E.Term.t and type formula = E.Formula.t and type proof = E.proof
+  S with type term = E.Term.t and type formula = E.Formula.t and type proof = E.proof
 (** Functor to instantiate the types of clauses for a solver. *)
 
 module SatMake (E : Formula_intf.S)(Dummy : sig end):
-    S with type term = E.t and type formula = E.t and type proof = E.proof
+  S with type term = E.t and type formula = E.t and type proof = E.proof
 (** Functor to instantiate the types of clauses for a solver. *)
 

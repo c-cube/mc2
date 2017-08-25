@@ -217,23 +217,23 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
   let seen a =
     let pos = (a == a.var.pa) in
     match a.var.seen, pos with
-    | Nope, _ -> false
-    | Both, _
-    | Positive, true
-    | Negative, false -> true
-    | Positive, false
-    | Negative, true -> false
+      | Nope, _ -> false
+      | Both, _
+      | Positive, true
+      | Negative, false -> true
+      | Positive, false
+      | Negative, true -> false
 
   let mark a =
     let pos = (a == a.var.pa) in
     match a.var.seen with
-    | Both -> ()
-    | Nope ->
-      a.var.seen <- (if pos then Positive else Negative)
-    | Positive ->
-      if pos then () else a.var.seen <- Both
-    | Negative ->
-      if pos then a.var.seen <- Both else ()
+      | Both -> ()
+      | Nope ->
+        a.var.seen <- (if pos then Positive else Negative)
+      | Positive ->
+        if pos then () else a.var.seen <- Both
+      | Negative ->
+        if pos then a.var.seen <- Both else ()
 
   (* Decisions & propagations *)
   type t =
@@ -330,10 +330,10 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
 
   let pp_assign fmt v =
     match v.assigned with
-    | None ->
-      Format.fprintf fmt ""
-    | Some t ->
-      Format.fprintf fmt "@[<hov>@@%d->@ %a@]" v.l_level E.Term.print t
+      | None ->
+        Format.fprintf fmt ""
+      | Some t ->
+        Format.fprintf fmt "@[<hov>@@%d->@ %a@]" v.l_level E.Term.print t
 
   let pp_lit out v =
     Format.fprintf out "%d[%a][lit:@[<hov>%a@]]"
@@ -353,10 +353,10 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
   let pp_dimacs fmt { atoms; } =
     let aux fmt a =
       Array.iter (fun p ->
-          Format.fprintf fmt "%s%d "
-            (if p == p.var.pa then "-" else "")
-            (p.var.vid+1)
-        ) a
+        Format.fprintf fmt "%s%d "
+          (if p == p.var.pa then "-" else "")
+          (p.var.vid+1)
+      ) a
     in
     Format.fprintf fmt "%a0" aux atoms
 
