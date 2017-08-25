@@ -31,6 +31,8 @@ let find_id id =
     H.add symbols id res;
     res
 
+let pp_atom = Sat.Expr.print
+
 (* Actual parsing *)
 (* ************************************************************************ *)
 

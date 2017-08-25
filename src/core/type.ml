@@ -7,6 +7,8 @@ module type S = sig
   type atom
   (** The type of atoms that will be fed to tha sovler. *)
 
+  val pp_atom : atom CCFormat.printer
+
   exception Typing_error of string * Dolmen.Term.t
   (** Exception raised during typechecking. *)
 

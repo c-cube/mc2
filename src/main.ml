@@ -76,16 +76,28 @@ module Make
         Format.printf "Unsat (%f/%f)@." t t'
     end
 
+  (* dump CNF *)
+  let pp_cnf (cnf:S.atom list list) =
+    if !p_cnf then (
+      let pp_c =
+        CCFormat.(within "[" "]" @@ hvbox ~i:2 @@ list
+            ~sep:(return " @<1>∨@ ") T.pp_atom)
+      in
+      Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
+    )
+
   let do_task s =
     match s.Dolmen.Statement.descr with
       | Dolmen.Statement.Def (id, t) -> T.def id t
       | Dolmen.Statement.Decl (id, t) -> T.decl id t
       | Dolmen.Statement.Consequent t ->
         let cnf = T.consequent t in
+        pp_cnf cnf;
         hyps := cnf @ !hyps;
         S.assume cnf
       | Dolmen.Statement.Antecedent t ->
         let cnf = T.antecedent t in
+        pp_cnf cnf;
         hyps := cnf @ !hyps;
         S.assume cnf
       | Dolmen.Statement.Pack [
@@ -157,10 +169,8 @@ let input_file = fun s -> file := s
 
 let usage = "Usage : main [options] <file>"
 let argspec = Arg.align [
-    "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true),
-    " Enable stack traces";
-    "-cnf", Arg.Set p_cnf,
-    " Prints the cnf used.";
+    "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " Enable stack traces";
+    "-cnf", Arg.Set p_cnf, " Prints the cnf used.";
     "-check", Arg.Set p_check,
     " Build, check and print the proof (if output is set), if unsat";
     "-dot", Arg.Set_string p_dot_proof,
@@ -173,7 +183,7 @@ let argspec = Arg.align [
     "<s>[kMGT] Sets the size limit for the sat solver";
     "-time", Arg.String (int_arg time_limit),
     "<t>[smhd] Sets the time limit for the sat solver";
-    "-v", Arg.Int (fun i -> Log.set_debug i),
+    "-v", Arg.Int Log.set_debug,
     "<lvl> Sets the debug verbose level";
   ]
 

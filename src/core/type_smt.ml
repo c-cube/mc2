@@ -63,6 +63,8 @@ let _fo_term s t = raise (Typing_error (
 (* Global Environment *)
 (* ************************************************************************ *)
 
+let pp_atom = Expr_smt.Atom.print
+
 (* Global identifier table; stores declared types and aliases. *)
 let global_env = H.create 42
 
