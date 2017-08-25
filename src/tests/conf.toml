@@ -1,0 +1,28 @@
+
+provers = [ "minismt", "verit" ]
+
+[minismt]
+
+binary = "./minismt"
+cmd = "./minismt -check -s mcsat $file"
+unsat = "UNSAT"
+sat = "SAT"
+version = "git:."
+
+[verit]
+
+cmd = "veriT $file"
+unsat = "UNSAT"
+sat = "SAT"
+
+[test]
+
+timeout=30
+problems = ".*.smt2"
+provers = [ "minismt" ]
+dir = [ "QF_UF" ]
+
+expect = "program:verit"
+
+
+
