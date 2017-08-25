@@ -285,7 +285,7 @@ module Make
       Iheap.decrease f_weight env.order l.lid
 
   (* increase activity of var [v] *)
-  let var_bump_activity (v:var): unit =
+  let var_bump_activity (v:bool_var): unit =
     var_bump_activity_aux v;
     iter_sub lit_bump_activity_aux v
 
@@ -321,21 +321,17 @@ module Make
   (* Eliminates atom doublons in clauses.
      returns [true] if something changed. *)
   let eliminate_doublons clause : clause * bool =
-    let trivial = ref false in
     let duplicates = ref [] in
     let res = ref [] in
-    Array.iter (fun a ->
-      if seen a then duplicates := a :: !duplicates
-      else (mark a; res := a :: !res))
+    Array.iter
+      (fun a ->
+         if seen_atom a then duplicates := a :: !duplicates
+         else (mark_atom a; res := a :: !res))
       clause.atoms;
     (* cleanup *)
-    List.iter (fun a ->
-      begin match a.var.seen with
-        | Both -> trivial := true
-        | _ -> ()
-      end;
-      clear a.var) !res;
-    if !trivial then
+    let trivial = List.exists (fun a -> seen_both_atoms a.var) !res in
+    List.iter (fun a -> clear a.var) !res;
+    if trivial then
       raise Trivial
     else if !duplicates = [] then
       clause, false
@@ -651,8 +647,8 @@ module Make
                 | Some Bcp cl -> history := cl :: !history
                 | _ -> assert false
             end;
-            if not (q.var.seen = Both) then begin
-              q.var.seen <- Both;
+            if not (seen_var q.var) then begin
+              mark_var q.var;
               seen := q :: !seen;
               if q.var.v_level > 0 then begin
                 var_bump_activity q.var;
@@ -673,7 +669,7 @@ module Make
         Log.debugf debug (fun k -> k "looking at: %a" St.pp a);
         begin match a with
           | Atom q ->
-            (not (q.var.seen = Both)) ||
+            (not (seen_var q.var)) ||
             (q.var.v_level < conflict_level)
           | Lit _ -> true
         end

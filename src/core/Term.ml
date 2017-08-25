@@ -1,7 +1,7 @@
 
 (** {1 Modular Term Structure} *)
 
-module Fields = CCBitField.Make(struct end)
+module Fields = BitField.Make(struct end)
 
 (** Extensible view. Each plugin might declare its own terms. *)
 type view = ..

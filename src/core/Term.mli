@@ -1,7 +1,7 @@
 
 (** {1 Modular Term Structure} *)
 
-module Fields : CCBitField.S
+module Fields : BitField.S
 
 (** Extensible view. Each plugin might declare its own terms. *)
 type view = ..

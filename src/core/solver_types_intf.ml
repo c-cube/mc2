@@ -22,6 +22,8 @@ Copyright 2016 Simon Cruanes
     used in the core solver.
 *)
 
+module Bool_var_fields = BitField.Make(struct end)
+
 module type S = sig
   (** The signatures of clauses used in the Solver. *)
 
@@ -35,12 +37,6 @@ module type S = sig
   type proof
   (** The types of terms, formulas and proofs. All of these are user-provided. *)
 
-  type seen =
-    | Nope
-    | Both
-    | Positive
-    | Negative
-
   type lit = {
     lid : int;                      (** Unique identifier *)
     term : term;                    (** Wrapped term *)
@@ -50,14 +46,14 @@ module type S = sig
   }
   (** Wrapper type for literals, i.e. theory terms (for mcsat only). *)
 
-  type var = {
-    vid : int;  (** Unique identifier *)
-    pa : atom;  (** Link for the positive atom *)
-    na : atom;  (** Link for the negative atom *)
-    mutable used : int;         (** Number of attached clause that contain the var *)
-    mutable seen : seen;        (** Boolean used during propagation *)
-    mutable v_level : int;      (** Level of decision/propagation *)
-    mutable v_weight : float;   (** Variable weight (for the heap) *)
+  type bool_var = {
+    vid : int; (** Unique identifier *)
+    pa : atom; (** Link for the positive atom *)
+    na : atom; (** Link for the negative atom *)
+    mutable used : int; (** Number of attached clause that contain the var *)
+    mutable v_flags: Bool_var_fields.t; (** some flags *)
+    mutable v_level : int; (** Level of decision/propagation *)
+    mutable v_weight : float; (** Variable weight (for the heap) *)
     mutable v_assignable: lit list option;
     (** In mcsat, the list of lits that wraps subterms of the formula wrapped. *)
     mutable reason : reason option;
@@ -66,7 +62,7 @@ module type S = sig
 
   and atom = {
     aid : int;                      (** Unique identifier *)
-    var : var;                      (** Link for the parent variable *)
+    var : bool_var;                      (** Link for the parent variable *)
     neg : atom;                     (** Link for the negation of the atom *)
     lit : formula;                  (** Wrapped formula *)
     mutable is_true : bool;         (** Is the atom true ? Conversely, the atom
@@ -130,7 +126,7 @@ module type S = sig
 
   type elt =
     | E_lit of lit
-    | E_var of var
+    | E_var of bool_var
     (** Either a lit of a var *)
 
   val nb_elt : unit -> int
@@ -139,7 +135,7 @@ module type S = sig
   (** Read access to the vector of variables created *)
 
   val elt_of_lit : lit -> elt
-  val elt_of_var : var -> elt
+  val elt_of_var : bool_var -> elt
   (** Constructors & destructor for elements *)
 
   val get_elt_id : elt -> int
@@ -151,7 +147,7 @@ module type S = sig
 
   (** {2 Variables, Litterals & Clauses } *)
 
-  val dummy_var : var
+  val dummy_var : bool_var
   val dummy_atom : atom
   val dummy_clause : clause
   (** Dummy values for use in vector dummys *)
@@ -160,7 +156,7 @@ module type S = sig
   (** Returns the variable associated with the term *)
   val add_atom : formula -> atom
   (** Returns the atom associated with the given formula *)
-  val make_boolean_var : formula -> var * Formula_intf.negated
+  val make_boolean_var : formula -> bool_var * Formula_intf.negated
   (** Returns the variable linked with the given formula, and whether the atom associated with the formula
       is [var.pa] or [var.na] *)
 
@@ -172,12 +168,18 @@ module type S = sig
 
   (** {2 Helpers} *)
 
-  val mark : atom -> unit
+  val mark_atom : atom -> unit
   (** Mark the atom as seen, using the 'seen' field in the variable. *)
-  val seen : atom -> bool
+  val seen_atom : atom -> bool
   (** Returns wether the atom has been marked as seen. *)
-  val clear : var -> unit
-  (** Clear the 'seen' field of the variable. *)
+  val seen_both_atoms : bool_var -> bool
+  (** Did we see both polarities of this var in the same clause? *)
+  val mark_var : bool_var -> unit
+  (** Mark the variable *)
+  val seen_var : bool_var -> bool
+  (** Was {!mark_var} called on this var? *)
+  val clear : bool_var -> unit
+  (** Clear the fields of the variable. *)
 
 
   (** {2 Clause names} *)

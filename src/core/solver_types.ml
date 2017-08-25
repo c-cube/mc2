@@ -18,6 +18,12 @@ Copyright 2016 Simon Cruanes
 
 module type S = Solver_types_intf.S
 
+module Bool_var_fields = Solver_types_intf.Bool_var_fields
+
+let field_seen_var = Bool_var_fields.mk_field()
+let field_seen_pos = Bool_var_fields.mk_field()
+let field_seen_neg = Bool_var_fields.mk_field()
+
 (* Solver types for McSat Solving *)
 (* ************************************************************************ *)
 
@@ -30,12 +36,6 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
   type formula = E.Formula.t
   type proof = E.proof
 
-  type seen =
-    | Nope
-    | Both
-    | Positive
-    | Negative
-
   type lit = {
     lid : int;
     term : term;
@@ -44,12 +44,12 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
     mutable assigned : term option;
   }
 
-  type var = {
+  type bool_var = {
     vid : int;
     pa : atom;
     na : atom;
     mutable used : int;
-    mutable seen : seen;
+    mutable v_flags : Bool_var_fields.t;
     mutable v_level : int;
     mutable v_weight : float;
     mutable v_assignable: lit list option;
@@ -58,7 +58,7 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
 
   and atom = {
     aid : int;
-    var : var;
+    var : bool_var;
     neg : atom;
     lit : formula;
     mutable is_true : bool;
@@ -88,7 +88,7 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
 
   type elt =
     | E_lit of lit
-    | E_var of var
+    | E_var of bool_var
 
   (* Dummy values *)
   let dummy_lit = E.Formula.dummy
@@ -98,7 +98,7 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
       pa = dummy_atom;
       na = dummy_atom;
       used = 0;
-      seen = Nope;
+      v_flags = Bool_var_fields.empty;
       v_level = -1;
       v_weight = -1.;
       v_assignable = None;
@@ -154,7 +154,7 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
       Vec.push vars (E_lit res);
       res
 
-  let make_boolean_var : formula -> var * Expr_intf.negated =
+  let make_boolean_var : formula -> bool_var * Expr_intf.negated =
     fun t ->
       let lit, negated = E.Formula.norm t in
       try
@@ -166,7 +166,7 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
             pa = pa;
             na = na;
             used = 0;
-            seen = Nope;
+            v_flags = Bool_var_fields.empty;
             v_level = -1;
             v_weight = 0.;
             v_assignable = None;
@@ -212,29 +212,37 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
   let empty_clause = make_clause "Empty" [] (History [])
 
   (* Marking helpers *)
-  let clear v = v.seen <- Nope
+  let clear v = v.v_flags <- Bool_var_fields.empty
 
-  (* TODO: use bitfield seen_pos, seen_neg *)
-  let seen a =
+  let seen_atom a =
     let pos = (a == a.var.pa) in
-    match a.var.seen, pos with
-      | Nope, _ -> false
-      | Both, _
-      | Positive, true
-      | Negative, false -> true
-      | Positive, false
-      | Negative, true -> false
+    let seen_pos = Bool_var_fields.get field_seen_pos a.var.v_flags in
+    let seen_neg = Bool_var_fields.get field_seen_neg a.var.v_flags in
+    match seen_pos, seen_neg, pos with
+      | false, false, _ -> false
+      | true, true, _
+      | true, _, true
+      | false, _, false -> true
+      | true, false, false
+      | false, true, true -> false
 
-  let mark a =
+  let seen_both_atoms (v:bool_var) =
+    let seen_pos = Bool_var_fields.get field_seen_pos v.v_flags in
+    let seen_neg = Bool_var_fields.get field_seen_neg v.v_flags in
+    seen_pos && seen_neg
+
+  let mark_atom a =
     let pos = (a == a.var.pa) in
-    match a.var.seen with
-      | Both -> ()
-      | Nope ->
-        a.var.seen <- (if pos then Positive else Negative)
-      | Positive ->
-        if pos then () else a.var.seen <- Both
-      | Negative ->
-        if pos then a.var.seen <- Both else ()
+    if pos then (
+      a.var.v_flags <- Bool_var_fields.set field_seen_pos true a.var.v_flags
+    ) else (
+      a.var.v_flags <- Bool_var_fields.set field_seen_neg true a.var.v_flags
+    )
+
+  let seen_var v = Bool_var_fields.get field_seen_var v.v_flags
+
+  let mark_var v =
+    v.v_flags <- Bool_var_fields.set field_seen_var true v.v_flags
 
   (* Decisions & propagations *)
   type t =
