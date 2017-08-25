@@ -6,6 +6,9 @@ Copyright 2014 Simon Cruanes
 
 (* Tests that require the API *)
 
+open Minismt_core
+open Minismt_sat
+
 module F = Sat.Expr
 module T = Tseitin.Make(F)
 

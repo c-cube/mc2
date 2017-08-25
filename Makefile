@@ -27,6 +27,13 @@ install: lib
 uninstall:
 	jbuilder uninstall
 
+test:
+	@echo "run API tests…"
+	jbuilder runtest
+	@echo "run benchmarks…"
+	# @/usr/bin/time -f "%e" ./tests/run smt
+	@/usr/bin/time -f "%e" ./src/tests/run mcsat
+
 reinstall: | uninstall install
 
 ocp-indent:
