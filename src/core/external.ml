@@ -56,8 +56,10 @@ module Make
 
   let pp_all lvl status =
     Log.debugf lvl
-      "@[<v>%s - Full resume:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,@[<hov 2>Hyps:@\n%a@]@,@[<hov 2>Lemmas:@\n%a@]@,@]@."
-      (fun k -> k status
+      (fun k -> k
+          "@[<v>%s - Full resume:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,\
+           @[<hov 2>Hyps:@\n%a@]@,@[<hov 2>Lemmas:@\n%a@]@,@]@."
+          status
           (Vec.print ~sep:"" St.pp) (S.trail ())
           (Vec.print ~sep:"" St.pp_clause) (S.temp ())
           (Vec.print ~sep:"" St.pp_clause) (S.hyps ())

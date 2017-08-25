@@ -118,12 +118,12 @@ let add_assign t v =
 
 let rec iter_aux f = function
   | { Expr_smt.term = Expr_smt.Var _; _ } as t ->
-    Log.debugf 10 "Adding %a as assignable" (fun k -> k Expr_smt.Term.print t);
+    Log.debugf 10 (fun k -> k "Adding %a as assignable" Expr_smt.Term.print t);
     f t
   | { Expr_smt.term = Expr_smt.App (_, _, l); _ } as t ->
     if l <> [] then add_watch t (t :: l);
     List.iter (iter_aux f) l;
-    Log.debugf 10 "Adding %a as assignable" (fun k -> k Expr_smt.Term.print t);
+    Log.debugf 10 (fun k -> k "Adding %a as assignable" Expr_smt.Term.print t);
     f t
 
 let iter_assignable f = function

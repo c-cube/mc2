@@ -41,8 +41,8 @@ module Make
   let check_model state =
     let check_clause c =
       let l = List.map (function a ->
-          Log.debugf 99 "Checking value of %a"
-            (fun k -> k S.St.pp_atom (S.St.add_atom a));
+          Log.debugf 99
+            (fun k -> k "Checking value of %a" S.St.pp_atom (S.St.add_atom a));
           state.Solver_intf.eval a) c in
       List.exists (fun x -> x) l
     in
@@ -66,7 +66,7 @@ module Make
           if !p_dot_proof <> "" then begin
             CCIO.with_out !p_dot_proof
               (fun oc ->
-                 Log.debugf 1 "write proof into `%s`" (fun k->k !p_dot_proof);
+                 Log.debugf 1 (fun k->k "write proof into `%s`" !p_dot_proof);
                  let fmt = Format.formatter_of_out_channel oc in
                  Dot.print fmt p;
                  Format.pp_print_flush fmt (); flush oc)

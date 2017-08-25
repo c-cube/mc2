@@ -12,7 +12,7 @@ let debug_level_ = ref 0
 let set_debug l = debug_level_ := l
 let get_debug () = !debug_level_
 
-let debugf _ _ _ = ()
+let debugf _ _ = ()
 let debug _ _ = ()
 
 let set_debug_out _ = ()

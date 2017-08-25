@@ -14,11 +14,14 @@ let debug_fmt_ = ref Format.err_formatter
 
 let set_debug_out f = debug_fmt_ := f
 
-let debugf l format k =
-  if l <= !debug_level_
-  then
-    k (Format.kfprintf
-        (fun fmt -> Format.fprintf fmt "@]@.")
-        !debug_fmt_ format)
+let debug_real_ l k =
+  k (fun fmt ->
+    CCFormat.fprintf !debug_fmt_ "@[<2>@{<Blue>[debug %d]@}@ " l;
+    Format.kfprintf
+      (fun fmt -> Format.fprintf fmt "@]@.")
+      !debug_fmt_ fmt)
 
-let debug l msg = debugf l "%s" (fun k->k msg)
+let[@inline] debugf l k =
+  if l <= !debug_level_ then debug_real_ l k
+
+let[@inline] debug l msg = debugf l (fun k->k "%s" msg)
