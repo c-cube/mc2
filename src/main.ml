@@ -34,7 +34,7 @@ module Make
     val do_task : Dolmen.Statement.t -> unit
   end = struct
 
-  module D = Minismt_backend.Dot.Make(S.Proof)(Minismt_backend.Dot.Default(S.Proof))
+  module Dot = Minismt_backend.Dot.Make(S.Proof)(Minismt_backend.Dot.Default(S.Proof))
 
   let hyps = ref []
 
@@ -64,8 +64,12 @@ module Make
           let p = state.Solver_intf.get_proof () in
           S.Proof.check p;
           if !p_dot_proof <> "" then begin
-            let fmt = Format.formatter_of_out_channel (open_out !p_dot_proof) in
-            D.print fmt p
+            CCIO.with_out !p_dot_proof
+              (fun oc ->
+                 Log.debugf 1 "write proof into `%s`" (fun k->k !p_dot_proof);
+                 let fmt = Format.formatter_of_out_channel oc in
+                 Dot.print fmt p;
+                 Format.pp_print_flush fmt (); flush oc)
           end
         end;
         let t' = Sys.time () -. t in
