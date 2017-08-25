@@ -769,6 +769,14 @@ module Make
       | Local -> env.clauses_temp
       | Lemma _ | History _ -> env.clauses_learnt
 
+  (* swap elements of array *)
+  let swap_arr a i j =
+    if i<>j then (
+      let tmp = a.(i) in
+      a.(i) <- a.(j);
+      a.(j) <- tmp;
+    )
+
   (* Add a new clause, simplifying, propagating, and backtracking if
      the clause is false in the current trail *)
   let add_clause (init:clause) : unit =
@@ -826,22 +834,29 @@ module Make
           end
         | a::b::_ ->
           Vec.push vec clause;
-          if a.neg.is_true then begin
-            (* Atoms need to be sorted in decreasing order of decision level,
-               or we might watch the wrong literals. *)
-            Array.sort
-              (fun a b -> compare b.var.v_level a.var.v_level)
+          if a.neg.is_true then (
+            (* put the two atoms with highest decision level at the beginning
+               of the clause, so that watch literals are always fine *)
+            let ats = clause.atoms in
+            Array.iteri
+              (fun i a ->
+                 if i>0 && a.var.v_level > ats.(0).var.v_level then (
+                   swap_arr ats 0 i
+                 ) else if i>1 && a.var.v_level > ats.(1).var.v_level then (
+                   swap_arr ats 1 i;
+                 ))
               clause.atoms;
+            assert(ats.(0).var.v_level >= ats.(1).var.v_level);
             attach_clause clause;
             add_boolean_conflict clause
-          end else begin
+          ) else (
             attach_clause clause;
-            if b.neg.is_true && not a.is_true && not a.neg.is_true then begin
+            if b.neg.is_true && not a.is_true && not a.neg.is_true then (
               let lvl = List.fold_left (fun m a -> max m a.var.v_level) 0 atoms in
               cancel_until (max lvl (base_level ()));
               enqueue_bool a ~level:lvl (Bcp clause)
-            end
-          end
+            )
+          )
     with Trivial ->
       Vec.push vec init;
       Log.debugf info (fun k->k "Trivial clause ignored : @[%a@]" St.pp_clause init)
