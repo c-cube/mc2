@@ -1,61 +1,31 @@
 # copyright (c) 2014, guillaume bury
+# copyright (c) 2017, simon cruanes
 
-LOG=build.log
-COMP=ocamlbuild -log $(LOG) -use-ocamlfind
-FLAGS=
-DOC=src/msat.docdir/index.html
-BIN=main.native
-TEST_BIN=tests/test_api.native
+.PHONY: clean build build-dev
 
-NAME=msat
+TARGETS=src/main.exe
+OPTS= -j 3
 
-LIB=$(addprefix $(NAME), .cma .cmxa .cmxs)
+build:
+	jbuilder build $(TARGETS) $(OPTS)
 
-all: lib test
-
-lib:
-	$(COMP) $(FLAGS) $(LIB)
-
-doc:
-	$(COMP) $(FLAGS) $(DOC)
-
-bin:
-	$(COMP) $(FLAGS) $(BIN)
-	cp $(BIN) $(NAME) && rm $(BIN)
-
-test_bin:
-	$(COMP) $(FLAGS) $(TEST_BIN)
-
-test: bin test_bin
-	@echo "run API tests…"
-	@./test_api.native
-	@echo "run benchmarks…"
-	# @/usr/bin/time -f "%e" ./tests/run smt
-	@/usr/bin/time -f "%e" ./tests/run mcsat
+build-dev:
+	jbuilder build $(TARGETS) $(OPTS) --dev
 
 enable_log:
-	cd src/util; ln -sf log_real.ml log.ml
+	cd src/core; ln -sf log_real.ml log.ml
 
 disable_log:
-	cd src/util; ln -sf log_dummy.ml log.ml
+	cd src/core; ln -sf log_dummy.ml log.ml
 
 clean:
-	$(COMP) -clean
-	rm -rf $(NAME)
-
-TO_INSTALL_LIB=$(addsuffix .a, $(NAME)) $(addsuffix .cmi, $(NAME))
-TO_INSTALL=META $(addprefix _build/src/,$(LIB) $(TO_INSTALL_LIB))
+	jbuilder clean
 
 install: lib
-	ocamlfind install $(NAME) $(TO_INSTALL)
-	if [ -d "$(NAME).docdir" ]; then \
-		mkdir -p $(DOCDIR) ; \
-		cp -v $(NAME).docdir/*.html $(NAME).docdir/*.css $(DOCDIR) ; \
-	fi
+	jbuilder install
 
 uninstall:
-	ocamlfind remove $(NAME)
-	rm -rf $(DOCDIR)
+	jbuilder uninstall
 
 reinstall: | uninstall install
 
@@ -68,5 +38,11 @@ ocp-indent:
 reindent: ocp-indent
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 echo "reindenting: "
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 ocp-indent -i
+
+watch:
+	while find src/ -print0 | xargs -0 inotifywait -e delete_self -e modify ; do \
+		echo "============ at `date` ==========" ; \
+		make build-dev ; \
+	done
 
 .PHONY: clean doc all bench install uninstall remove reinstall enable_log disable_log bin test

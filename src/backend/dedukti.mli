@@ -8,6 +8,7 @@ Copyright 2014 Simon Cruanes
 
     Work in progress...
 *)
+open Minismt_core
 
 module type S = Backend_intf.S
 

@@ -119,19 +119,10 @@ module Make
   let new_lit = S.new_lit
   let new_atom = S.new_atom
 
-  (* Dimacs & iCNF export *)
-  module D = Dimacs.Make(St)(struct end)
-
-  let export_dimacs fmt () =
-    let hyps = S.hyps () in
-    let history = S.history () in
-    let local = S.temp () in
-    D.export fmt ~hyps ~history ~local
-
-  let export_icnf fmt () =
-    let hyps = S.hyps () in
-    let history = S.history () in
-    let local = S.temp () in
-    D.export_icnf fmt ~hyps ~history ~local
-
+  let clause_sets () = {
+    Solver_intf.
+    cs_hyps = S.hyps ();
+    cs_history = S.history ();
+    cs_local = S.temp ();
+  }
 end

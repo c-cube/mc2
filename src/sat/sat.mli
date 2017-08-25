@@ -8,6 +8,7 @@ Copyright 2016 Guillaume Bury
     This modules instanciates a pure sat solver using integers to represent
     atomic propositions.
 *)
+open Minismt_core
 
 module Expr : sig
   (** SAT Formulas

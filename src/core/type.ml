@@ -1,6 +1,6 @@
 
 (** Typechecking of terms from Dolmen.Term.t
-    This module defines the requirements for typing expre'ssions from dolmen. *)
+    This module defines the requirements for typing expressions from dolmen. *)
 
 module type S = sig
 

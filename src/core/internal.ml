@@ -477,7 +477,7 @@ module Make
 
   (* Unsatisfiability is signaled through an exception, since it can happen
      in multiple places (adding new clauses, or solving for instance). *)
-  let report_unsat ({atoms=atoms} as confl) : _ =
+  let report_unsat confl : _ =
     Log.debugf info "@[Unsat conflict: %a@]" (fun k -> k St.pp_clause confl);
     env.unsat_conflict <- Some confl;
     raise Unsat
@@ -492,7 +492,7 @@ module Make
     | (Bcp cl) as r ->
       let l, history = partition cl.atoms in
       begin match l with
-        | [ a ] ->
+        | [ _ ] ->
           if history = [] then r
           (* no simplification has been done, so [cl] is actually a clause with only
              [a], so it is a valid reason for propagating [a]. *)
@@ -543,7 +543,7 @@ module Make
       let lvl = List.fold_left (fun acc {l_level; _} ->
           assert (l_level > 0); max acc l_level) 0 l in
       Iheap.grow_to_at_least env.order (St.nb_elt ());
-      enqueue_bool a lvl Semantic
+      enqueue_bool a ~level:lvl Semantic
     end
 
   (* MCsat semantic assignment *)
@@ -579,7 +579,7 @@ module Make
   let backtrack_lvl : atom list -> int * bool = function
     | [] | [_] ->
       0, true
-    | a :: b :: r ->
+    | a :: b :: _ ->
       assert(a.var.v_level > base_level ());
       if a.var.v_level > b.var.v_level then begin
         (* backtrack below [a], so we can propagate [not a] *)
@@ -679,7 +679,7 @@ module Make
           assert (n > 0);
           assert (p.var.v_level >= conflict_level);
           c := cl
-        | n, _ -> assert false
+        | _ -> assert false
     done;
     List.iter (fun q -> clear q.var) !seen;
     let l = List.fast_sort (fun p q -> compare q.var.v_level p.var.v_level) !learnt in
@@ -819,7 +819,7 @@ module Make
             if b.neg.is_true && not a.is_true && not a.neg.is_true then begin
               let lvl = List.fold_left (fun m a -> max m a.var.v_level) 0 atoms in
               cancel_until (max lvl (base_level ()));
-              enqueue_bool a lvl (Bcp clause)
+              enqueue_bool a ~level:lvl (Bcp clause)
             end
           end
     with Trivial ->
@@ -883,7 +883,7 @@ module Make
         end else begin
           match th_eval first with
             | None -> (* clause is unit, keep the same watches, but propagate *)
-              enqueue_bool first (decision_level ()) (Bcp c)
+              enqueue_bool first ~level:(decision_level ()) (Bcp c)
             | Some true -> ()
             | Some false ->
               env.elt_head <- Vec.size env.elt_queue;
@@ -931,7 +931,7 @@ module Make
     match Vec.get env.elt_queue i with
       | Atom a ->
         Plugin_intf.Lit a.lit
-      | Lit {term; assigned = Some v} ->
+      | Lit {term; assigned = Some v; _} ->
         Plugin_intf.Assign (term, v)
       | Lit _ -> assert false
 
@@ -957,7 +957,7 @@ module Make
         else begin
           Iheap.grow_to_at_least env.order (St.nb_elt ());
           insert_subterms_order p.var;
-          enqueue_bool p (decision_level ()) (Bcp c)
+          enqueue_bool p ~level:(decision_level ()) (Bcp c)
         end
       else
         raise (Invalid_argument "Msat.Internal.slice_propagate")
@@ -1046,7 +1046,7 @@ module Make
         env.decisions <- env.decisions + 1;
         new_decision_level();
         let current_level = decision_level () in
-        enqueue_bool atom current_level Decision
+        enqueue_bool atom ~level:current_level Decision
       | Plugin_intf.Valued (b, l) ->
         let a = if b then atom else atom.neg in
         enqueue_semantic a l

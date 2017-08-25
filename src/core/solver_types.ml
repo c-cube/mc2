@@ -346,11 +346,11 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
   let pp_atoms_vec out vec =
     Array.iter (fun a -> Format.fprintf out "%a@ " pp_atom a) vec
 
-  let pp_clause out {name=name; atoms=arr; cpremise=cp; } =
+  let pp_clause out {name=name; atoms=arr; cpremise=cp; _} =
     Format.fprintf out "%s@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
       name pp_atoms_vec arr pp_premise cp
 
-  let pp_dimacs fmt { atoms; } =
+  let pp_dimacs fmt { atoms; _} =
     let aux fmt a =
       Array.iter (fun p ->
         Format.fprintf fmt "%s%d "

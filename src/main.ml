@@ -4,6 +4,9 @@ Copyright 2014 Guillaume Bury
 Copyright 2014 Simon Cruanes
 *)
 
+open Minismt_core
+open Minismt_sat
+
 exception Incorrect_model
 exception Out_of_time
 exception Out_of_space
@@ -31,7 +34,7 @@ module Make
     val do_task : Dolmen.Statement.t -> unit
   end = struct
 
-  module D = Dot.Make(S.Proof)(Dot.Default(S.Proof))
+  module D = Minismt_backend.Dot.Make(S.Proof)(Minismt_backend.Dot.Default(S.Proof))
 
   let hyps = ref []
 
@@ -47,7 +50,7 @@ module Make
     List.for_all (fun x -> x) l
 
   let prove ~assumptions =
-    let res = S.solve () in
+    let res = S.solve ~assumptions () in
     let t = Sys.time () in
     begin match res with
       | S.Sat state ->
@@ -82,10 +85,10 @@ module Make
         hyps := cnf @ !hyps;
         S.assume cnf
       | Dolmen.Statement.Pack [
-          { Dolmen.Statement.descr = Dolmen.Statement.Push 1; };
-          { Dolmen.Statement.descr = Dolmen.Statement.Antecedent f; };
-          { Dolmen.Statement.descr = Dolmen.Statement.Prove; };
-          { Dolmen.Statement.descr = Dolmen.Statement.Pop 1; };
+          { Dolmen.Statement.descr = Dolmen.Statement.Push 1; _ };
+          { Dolmen.Statement.descr = Dolmen.Statement.Antecedent f; _ };
+          { Dolmen.Statement.descr = Dolmen.Statement.Prove; _ };
+          { Dolmen.Statement.descr = Dolmen.Statement.Pop 1; _ };
         ] ->
         let assumptions = T.assumptions f in
         prove ~assumptions
@@ -97,13 +100,11 @@ module Make
 end
 
 module Sat = Make(Sat.Make(struct end))(Type_sat)
-module Smt = Make(Smt.Make(struct end))(Type_smt)
 module Mcsat = Make(Mcsat.Make(struct end))(Type_smt)
 
 let solver = ref (module Sat : S)
 let solver_list = [
   "sat", (module Sat : S);
-  "smt", (module Smt : S);
   "mcsat", (module Mcsat : S);
 ]
 

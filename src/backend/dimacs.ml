@@ -4,15 +4,17 @@ Copyright 2014 Guillaume Bury
 Copyright 2014 Simon Cruanes
 *)
 
+open Minismt_core
+
+type 'c clause_sets = 'c Solver_intf.clause_sets
+
 module type S = sig
 
   type clause
 
   val export :
     Format.formatter ->
-    hyps:clause Vec.t ->
-    history:clause Vec.t ->
-    local:clause Vec.t ->
+    clause clause_sets ->
     unit
   (** Export the given clause vectors to the dimacs format.
       The arguments should be transmitted directly from the corresponding
@@ -20,13 +22,14 @@ module type S = sig
 
   val export_icnf :
     Format.formatter ->
-    hyps:clause Vec.t ->
-    history:clause Vec.t ->
-    local:clause Vec.t ->
+    clause clause_sets ->
     unit
     (** Export the given clause vectors to the dimacs format.
         The arguments should be transmitted directly from the corresponding
-        function of the {Internal} module. *)
+        function of the {Internal} module.
+        This function may be called multiple times in order to add
+        new clauses (and new local hyps) to the problem.
+    *)
 
 end
 
@@ -40,12 +43,12 @@ module Make(St : Solver_types.S)(Dummy: sig end) = struct
     Format.fprintf fmt "c Local assumptions@,a %a@," St.pp_dimacs vec
 
   let export_icnf_aux r name map_filter fmt vec =
-    let aux fmt v =
+    let aux fmt _ =
       for i = !r to (Vec.size vec) - 1 do
         let x = Vec.get vec i in
         match map_filter x with
           | None -> ()
-          | Some y -> Format.fprintf fmt "%a@," St.pp_dimacs (Vec.get vec i)
+          | Some _ -> Format.fprintf fmt "%a@," St.pp_dimacs (Vec.get vec i)
       done;
       r := Vec.size vec
     in
@@ -74,7 +77,9 @@ module Make(St : Solver_types.S)(Dummy: sig end) = struct
     ) learnt;
     lemmas
 
-  let export fmt ~hyps ~history ~local =
+  open Solver_intf
+
+  let export fmt {cs_hyps=hyps; cs_history=history; cs_local=local} =
     assert (Vec.for_all (function
         | { St.cpremise = St.Hyp; _} -> true | _ -> false
       ) hyps);
@@ -99,14 +104,14 @@ module Make(St : Solver_types.S)(Dummy: sig end) = struct
   let icnf_hyp = ref 0
   let icnf_lemmas = ref 0
 
-  let export_icnf fmt ~hyps ~history ~local =
+  let export_icnf fmt {cs_hyps=hyps; cs_history=history; cs_local=local} =
     assert (Vec.for_all (function
         | { St.cpremise = St.Hyp; _} -> true | _ -> false
       ) hyps);
     let lemmas = history in
     (* Local assertions *)
     let l = List.map (function
-        | {St.cpremise = St.Local; atoms = [| a |] } -> a
+        | {St.cpremise = St.Local; atoms = [| a |]; _ } -> a
         | _ -> assert false) (Vec.to_list local) in
     let local = St.make_clause "local (tmp)" l St.Local in
     (* Number of atoms and clauses *)

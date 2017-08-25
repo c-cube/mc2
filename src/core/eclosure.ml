@@ -223,7 +223,7 @@ module Make(T : Key) = struct
       | () -> ()
       | exception Equal (a, b) ->
         raise (Unsat (a, b, expl t a b))
-      | exception Same_tag (x, y) ->
+      | exception Same_tag (_, _) ->
         add_eq_aux t i j;
         let res = expl t i j in
         raise (Unsat (i, j, res))

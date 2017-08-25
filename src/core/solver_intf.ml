@@ -38,6 +38,13 @@ type ('clause, 'proof) unsat_state = {
 }
 (** The type of values returned when the solver reaches an UNSAT state. *)
 
+type 'clause clause_sets = {
+  cs_hyps: 'clause Vec.t;
+  cs_history: 'clause Vec.t;
+  cs_local: 'clause Vec.t;
+}
+(** Current state of the SAT solver *)
+
 (** The external interface implemented by safe solvers, such as the one
     created by the {!Solver.Make} and {!Mcsolver.Make} functors. *)
 module type S = sig
@@ -96,14 +103,7 @@ module type S = sig
   val get_tag : St.clause -> int option
   (** Recover tag from a clause, if any *)
 
-  val export_dimacs : Format.formatter -> unit -> unit
-  (** Prints the entire set of clauses in the input problem
-      (including hypothesis, lemmas and local assumptions),
-      in the dimacs format. *)
-
-  val export_icnf : Format.formatter -> unit -> unit
-  (** Export the current problem contents to iCNF format.
-      This function is meant to be used icnrementally, i.e.
-      called for each return value of the solve function. *)
+  val clause_sets : unit -> St.clause clause_sets
+  (** Iterate on current sets of clauses *)
 end
 

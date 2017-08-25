@@ -6,6 +6,7 @@ Copyright 2014 Simon Cruanes
 
 (* Log&Module Init *)
 (* ************************************************************************ *)
+open Minismt_core
 
 module Id = Dolmen.Id
 module Ast = Dolmen.Term
@@ -34,27 +35,27 @@ let find_id id =
 (* ************************************************************************ *)
 
 let rec parse = function
-  | { Ast.term = Ast.Builtin Ast.True } ->
+  | { Ast.term = Ast.Builtin Ast.True ;_} ->
     Formula.f_true
-  | { Ast.term = Ast.Builtin Ast.False } ->
+  | { Ast.term = Ast.Builtin Ast.False ;_} ->
     Formula.f_false
-  | { Ast.term = Ast.Symbol id } ->
+  | { Ast.term = Ast.Symbol id ;_} ->
     let s = find_id id in
     Formula.make_atom s
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Not }, [p]) }
-  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "not" } }, [p]) } ->
+  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Not ;_}, [p]) ;_}
+  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "not" ;_} ;_}, [p]) ;_} ->
     Formula.make_not (parse p)
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.And }, l) }
-  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "and" } }, l) } ->
+  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.And ;_}, l) ;_}
+  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "and" ;_} ;_}, l) ;_} ->
     Formula.make_and (List.map parse l)
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Or }, l) }
-  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "or" } }, l) } ->
+  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Or ;_}, l) ;_}
+  | { Ast.term = Ast.App ({Ast.term = Ast.Symbol { Id.name = "or" ;_} ;_}, l) ;_} ->
     Formula.make_or (List.map parse l)
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Imply }, [p; q]) } ->
+  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Imply ;_}, [p; q]) ;_} ->
     Formula.make_imply (parse p) (parse q)
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Equiv }, [p; q]) } ->
+  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Equiv ;_}, [p; q]) ;_} ->
     Formula.make_equiv (parse p) (parse q)
-  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Xor }, [p; q]) } ->
+  | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Xor ;_}, [p; q]) ;_} ->
     Formula.make_xor (parse p) (parse q)
   | t ->
     raise (Typing_error ("Term is not a pure proposition", t))

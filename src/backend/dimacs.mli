@@ -10,6 +10,10 @@ Copyright 2014 Simon Cruanes
     iCNF formats.
 *)
 
+open Minismt_core
+
+type 'c clause_sets = 'c Solver_intf.clause_sets
+
 module type S = sig
 
   type clause
@@ -17,9 +21,7 @@ module type S = sig
 
   val export :
     Format.formatter ->
-    hyps:clause Vec.t ->
-    history:clause Vec.t ->
-    local:clause Vec.t ->
+    clause clause_sets ->
     unit
   (** Export the given clause vectors to the dimacs format.
       The arguments should be transmitted directly from the corresponding
@@ -27,9 +29,7 @@ module type S = sig
 
   val export_icnf :
     Format.formatter ->
-    hyps:clause Vec.t ->
-    history:clause Vec.t ->
-    local:clause Vec.t ->
+    clause clause_sets ->
     unit
     (** Export the given clause vectors to the dimacs format.
         The arguments should be transmitted directly from the corresponding

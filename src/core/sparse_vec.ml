@@ -20,7 +20,7 @@ let init sz f default =
   if sz > Sys.max_array_length then _size_too_big();
   {data = Array.init sz (fun i -> f i); sz ; default}
 
-let length {sz} = sz
+let length {sz;_} = sz
 
 let grow_to t new_capa =
   assert (new_capa >= Array.length t.data);
@@ -52,7 +52,7 @@ let decr v =
   if v.sz = 0 then invalid_arg "Sparse_vec.decr";
   resize v (v.sz - 1)
 
-let is_empty {sz} = sz=0
+let is_empty {sz;_} = sz=0
 
 let clear v = v.sz <- 0
 

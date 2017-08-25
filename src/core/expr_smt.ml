@@ -85,7 +85,7 @@ module Print = struct
   let rec list f sep fmt = function
     | [] -> ()
     | [x] -> f fmt x
-    | x :: ((y :: _) as r) ->
+    | x :: ((_ :: _) as r) ->
       Format.fprintf fmt "%a%s" f x sep;
       list f sep fmt r
 

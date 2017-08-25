@@ -242,7 +242,7 @@ module Make (F : Tseitin_intf.Arg) = struct
         (fun (_, acc) f ->
            match cnf f with
              | _, [] -> assert false
-             | cmb, [a] -> Some And, a :: acc
+             | _, [a] -> Some And, a :: acc
              | Some And, l ->
                Some And, l @@ acc
              (* let proxy = mk_proxy () in *)
@@ -261,7 +261,7 @@ module Make (F : Tseitin_intf.Arg) = struct
         (fun (_, acc) f ->
            match cnf f with
              | _, [] -> assert false
-             | cmb, [a] -> Some Or, a :: acc
+             | _, [a] -> Some Or, a :: acc
              | Some Or, l ->
                Some Or, l @@ acc
              (* let proxy = mk_proxy () in *)
