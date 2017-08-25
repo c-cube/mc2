@@ -126,3 +126,128 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     try H.find tbl view
     with Not_found -> make_real_ view ty
 end
+
+(* TODO: update this *)
+
+  let rec dummy_var =
+    { vid = -101;
+      pa = dummy_atom;
+      na = dummy_atom;
+      used = 0;
+      v_flags = Bool_var_fields.empty;
+      v_level = -1;
+      v_weight = -1.;
+      v_assignable = None;
+      reason = None;
+    }
+  and dummy_atom =
+    { var = dummy_var;
+      lit = dummy_lit;
+      watched = Obj.magic 0;
+      (* should be [Vec.make_empty dummy_clause]
+         but we have to break the cycle *)
+      neg = dummy_atom;
+      is_true = false;
+      aid = -102 }
+  let dummy_clause =
+    { name = "";
+      tag = None;
+      atoms = [| |];
+      activity = -1.;
+      attached = false;
+      visited = false;
+      cpremise = History [] }
+
+  let make_semantic_var t =
+    try MT.find t_map t
+    with Not_found ->
+      let res = {
+        lid = !cpt_mk_var;
+        term = t;
+        l_weight = 1.;
+        l_level = -1;
+        assigned = None;
+      } in
+      incr cpt_mk_var;
+      MT.add t_map t res;
+      Vec.push vars (E_lit res);
+      res
+
+  let make_boolean_var : formula -> bool_var * Expr_intf.negated =
+    fun t ->
+      let lit, negated = E.Formula.norm t in
+      try
+        MF.find f_map lit, negated
+      with Not_found ->
+        let cpt_fois_2 = !cpt_mk_var lsl 1 in
+        let rec var  =
+          { vid = !cpt_mk_var;
+            pa = pa;
+            na = na;
+            used = 0;
+            v_flags = Bool_var_fields.empty;
+            v_level = -1;
+            v_weight = 0.;
+            v_assignable = None;
+            reason = None;
+          }
+        and pa =
+          { var = var;
+            lit = lit;
+            watched = Vec.make 10 dummy_clause;
+            neg = na;
+            is_true = false;
+            aid = cpt_fois_2 (* aid = vid*2 *) }
+        and na =
+          { var = var;
+            lit = E.Formula.neg lit;
+            watched = Vec.make 10 dummy_clause;
+            neg = pa;
+            is_true = false;
+            aid = cpt_fois_2 + 1 (* aid = vid*2+1 *) } in
+        MF.add f_map lit var;
+        incr cpt_mk_var;
+        Vec.push vars (E_var var);
+        var, negated
+
+(* TODO: move this in theory of booleans?
+   ensure that [not a] shares the same atoms as [a], but inverted
+   (i.e. [(not a).pa = a.na] and conversely
+   OR: share the variable but have a bool field for "negated" *)
+  let add_atom lit =
+    let var, negated = make_boolean_var lit in
+    match negated with
+      | Formula_intf.Negated -> var.na
+      | Formula_intf.Same_sign -> var.pa
+
+  (* Marking helpers *)
+  let clear v = v.v_flags <- Bool_var_fields.empty
+
+  let seen_var v = Bool_var_fields.get field_seen_var v.v_flags
+
+  let mark_var v =
+    v.v_flags <- Bool_var_fields.set field_seen_var true v.v_flags
+
+  (* Complete debug printing *)
+  let sign a = if a == a.var.pa then "+" else "-"
+  let pp_value fmt a =
+    if a.is_true then
+      Format.fprintf fmt "T%a" pp_level a
+    else if a.neg.is_true then
+      Format.fprintf fmt "F%a" pp_level a
+    else
+      Format.fprintf fmt ""
+
+
+  let pp_assign fmt v =
+    match v.assigned with
+      | None ->
+        Format.fprintf fmt ""
+      | Some t ->
+        Format.fprintf fmt "@[<hov>@@%d->@ %a@]" v.l_level E.Term.print t
+  let pp_lit out v =
+    Format.fprintf out "%d[%a][lit:@[<hov>%a@]]"
+      (v.lid+1) pp_assign v E.Term.print v.term
+
+let pp_level fmt t =
+  Reason.pp fmt (t.t_level, t.t_reason)

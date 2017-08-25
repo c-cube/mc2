@@ -1,38 +1,12 @@
 
 (** {1 Modular Term Structure} *)
 
-module Fields : BitField.S
+module Fields = Solver_types.Term_fields
 
-(** Extensible view. Each plugin might declare its own terms. *)
-type view = ..
-
-type plugin_id = private int
-(** Unique ID of a plugin *)
-
-type t = private {
-  mutable id: int;
-  (** unique ID, made of:
-      - 4 bits plugin_id
-      - the rest is for plugin-specific id *)
-  view: view;
-  (** view *)
-  ty: Type.t;
-  (** type of the term *)
-  mutable fields: Fields.t;
-  (** bitfield for storing various info *)
-}
-
-(** {2 Fields} *)
-
-val field_set : Fields.field -> bool -> t -> unit
-
-val field_get : Fields.field -> t -> bool
-
-val field_is_value : Fields.field
-(** Is the field a value (i.e. usable in assignments)? *)
-
-val field_is_deleted : Fields.field
-(** Term that has been collected *)
+type view = Solver_types.term_view
+type plugin_id = Solver_types.plugin_id (** Unique ID of a plugin *)
+type atom = Solver_types.atom
+type t = Solver_types.term
 
 (** {2 Basics} *)
 
@@ -71,20 +45,15 @@ end
 
 val dummy : t
 (** Dummy term. Do not use it in any function, just for initializing
-      vectors. *)
+    vectors. *)
 (**/**)
 
-(** {2 Hashconsing of a Theory Terms} *)
+(** {2 Hashconsing of terms belonging to a Plugin} *)
 
 module type TERM_ALLOC_OPS = sig
-  val p_id : plugin_id
-  (** ID of the theory *)
-
-  val equal : view -> view -> bool
-  (** Shallow equality of two views of the plugin *)
-
-  val hash : view -> int
-  (** Shallow hash of a view of the plugin *)
+  val p_id : plugin_id (** ID of the theory *)
+  val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
+  val hash : view -> int (** Shallow hash of a view of the plugin *)
 end
 
 module Term_allocator(T : TERM_ALLOC_OPS) : sig
@@ -94,3 +63,19 @@ module Term_allocator(T : TERM_ALLOC_OPS) : sig
   val delete : t -> unit
   (** Delete a term of the theory *)
 end
+
+(* TODO: add a submodule for boolean terms (with their vars) *)
+(* TODO: add this properly *)
+
+val seen_both_atoms : t -> bool
+(** Did we see both polarities of this var in the same clause? *)
+
+val mark : t -> unit
+(** Mark the variable *)
+
+val seen: t -> bool
+(** Was {!mark_var} called on this var? *)
+
+val clear : t -> unit
+(** Clear the fields of the variable. *)
+
