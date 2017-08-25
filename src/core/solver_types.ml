@@ -214,6 +214,7 @@ module McMake (E : Expr_intf.S)(Dummy : sig end) = struct
   (* Marking helpers *)
   let clear v = v.seen <- Nope
 
+  (* TODO: use bitfield seen_pos, seen_neg *)
   let seen a =
     let pos = (a == a.var.pa) in
     match a.var.seen, pos with

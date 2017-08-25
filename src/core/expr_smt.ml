@@ -135,7 +135,7 @@ module Print = struct
     match f.atom with
       | Equal (a, b) ->
         Format.fprintf fmt "%a %s %a"
-          term a (if f.sign then "=" else "<>") term b
+          term a (if f.sign then "=" else "≠") term b
       | Pred t ->
         Format.fprintf fmt "%s%a" (if f.sign then "" else "¬ ") term t
 
@@ -499,9 +499,12 @@ module Atom = struct
     else
       mk_formula (Pred t)
 
-  let fresh () =
-    let id = Id.ty "fresh" Ty.prop in
-    pred (Term.of_id id)
+  let fresh =
+    let n = ref 0 in
+    fun () ->
+      let id = Id.ty ("fresh_" ^ string_of_int !n) Ty.prop in
+      incr n;
+      pred (Term.of_id id)
 
   let neg f =
     { f with sign = not f.sign }

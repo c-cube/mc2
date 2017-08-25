@@ -118,7 +118,7 @@ end
 module Sat = Make(Sat.Make(struct end))(Type_sat)
 module Mcsat = Make(Mcsat.Make(struct end))(Type_smt)
 
-let solver = ref (module Sat : S)
+let solver = ref (module Mcsat : S)
 let solver_list = [
   "sat", (module Sat : S);
   "mcsat", (module Mcsat : S);
@@ -177,8 +177,8 @@ let argspec = Arg.align [
     " If provided, print the dot proof in the given file";
     "-gc", Arg.Unit setup_gc_stat,
     " Outputs statistics about the GC";
-    "-s", Arg.String set_solver,
-    "{sat,smt,mcsat} Sets the solver to use (default smt)";
+    "-s", Arg.Symbol (List.map fst solver_list, set_solver),
+    "Sets the solver to use (default mcsat)";
     "-size", Arg.String (int_arg size_limit),
     "<s>[kMGT] Sets the size limit for the sat solver";
     "-time", Arg.String (int_arg time_limit),
@@ -199,6 +199,7 @@ let check () =
 
 
 let main () =
+  CCFormat.set_color_default true;
   (* Administrative duties *)
   Arg.parse argspec input_file usage;
   if !file = "" then begin

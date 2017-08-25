@@ -318,15 +318,17 @@ module Make
     if i >= Array.length arr then []
     else Array.to_list (Array.sub arr i (Array.length arr - i))
 
-  (* Eliminates atom doublons in clauses *)
-  let eliminate_doublons clause : clause =
+  (* Eliminates atom doublons in clauses.
+     returns [true] if something changed. *)
+  let eliminate_doublons clause : clause * bool =
     let trivial = ref false in
     let duplicates = ref [] in
     let res = ref [] in
     Array.iter (fun a ->
       if seen a then duplicates := a :: !duplicates
-      else (mark a; res := a :: !res)
-    ) clause.atoms;
+      else (mark a; res := a :: !res))
+      clause.atoms;
+    (* cleanup *)
     List.iter (fun a ->
       begin match a.var.seen with
         | Both -> trivial := true
@@ -336,9 +338,9 @@ module Make
     if !trivial then
       raise Trivial
     else if !duplicates = [] then
-      clause
+      clause, false
     else
-      make_clause (fresh_lname ()) !res (History [clause])
+      make_clause (fresh_lname ()) !res (History [clause]), true
 
   (* Partition literals for new clauses, into:
      - true literals (maybe makes the clause trivial if the lit is proved true at level 0)
@@ -763,8 +765,11 @@ module Make
     Array.iter (fun x -> insert_var_order (elt_of_var x.var)) init.atoms;
     let vec = clause_vector init in
     try
-      let c = eliminate_doublons init in
-      Log.debugf debug (fun k -> k "Doublons eliminated: %a" St.pp_clause c);
+      let c, has_remove_doublons = eliminate_doublons init in
+      if has_remove_doublons then (
+        Log.debugf debug
+          (fun k -> k "Doublons eliminated: %a :from %a" St.pp_clause c St.pp_clause init);
+      );
       let atoms, history = partition c.atoms in
       let clause =
         if history = []

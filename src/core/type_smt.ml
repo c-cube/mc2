@@ -29,15 +29,15 @@ type res =
 type env = {
 
   (* local variables (mostly quantified variables) *)
-  type_vars : (Expr.ttype Expr.id)  M.t;
-  term_vars : (Expr.ty Expr.id)     M.t;
+  type_vars : Expr.ttype Expr.id M.t;
+  term_vars : Expr.ty Expr.id M.t;
 
   (* Bound variables (through let constructions) *)
-  term_lets : Expr.term     M.t;
+  term_lets : Expr.term M.t;
   prop_lets : Expr.Formula.t M.t;
 
   (* Typing options *)
-  expect   : expect;
+  expect : expect;
 }
 
 (* Exceptions *)
@@ -180,28 +180,6 @@ let find_let env name =
         `Not_found
     end
 
-(* Some helper functions *)
-(* ************************************************************************ *)
-
-let flat_map f l = List.flatten (List.map f l)
-
-let take_drop n l =
-  let rec aux acc = function
-    | 0, res | _, ([] as res) -> List.rev acc, res
-    | m, x :: r -> aux (x :: acc) (m - 1, r)
-  in
-  aux [] (n, l)
-
-let diagonal l =
-  let rec single x acc = function
-    | [] -> acc
-    | y :: r -> single x ((x, y) :: acc) r
-  and aux acc = function
-    | [] -> acc
-    | x :: r -> aux (single x acc r) r
-  in
-  aux [] l
-
 (* Wrappers for expression building *)
 (* ************************************************************************ *)
 
@@ -276,8 +254,7 @@ let infer env s args =
       decl_term s res;
       `Term res
 
-(* Expression parsing *)
-(* ************************************************************************ *)
+(** {2 Parsing Expressions} *)
 
 let rec parse_expr (env : env) t =
   match t with
@@ -355,7 +332,7 @@ let rec parse_expr (env : env) t =
 
     | { Ast.term = Ast.App ({Ast.term = Ast.Builtin Ast.Distinct;_}, args) ;_} as t ->
       let l' = List.map (parse_term env) args in
-      let l'' = diagonal l' in
+      let l'' = CCList.diagonal l' in
       Formula (
         Expr.Formula.make_and
           (List.map (fun (a, b) ->
@@ -474,7 +451,7 @@ and parse_app_ty env ast f args =
 
 and parse_app_term env ast f args =
   let n = List.length Expr.(f.id_type.fun_vars) in
-  let ty_l, t_l = take_drop n args in
+  let ty_l, t_l = CCList.take_drop n args in
   let ty_args = List.map (parse_ty env) ty_l in
   let t_args = List.map (parse_term env) t_l in
   Term (term_apply env ast f ty_args t_args)
@@ -485,7 +462,7 @@ and parse_app_subst_ty env ast id args f_args body =
 
 and parse_app_subst_term env ast id args f_ty_args f_t_args body =
   let n = List.length f_ty_args in
-  let ty_l, t_l = take_drop n args in
+  let ty_l, t_l = CCList.take_drop n args in
   let ty_args = List.map (parse_ty env) ty_l in
   let t_args = List.map (parse_term env) t_l in
   Term (term_subst ast id ty_args t_args f_ty_args f_t_args body)
@@ -560,7 +537,7 @@ and parse_sig_arrow ttype_vars (ty_args: (Ast.t * res) list) env = function
     end
 
 and parse_sig_args env l =
-  flat_map (parse_sig_arg env) l
+  CCList.flat_map (parse_sig_arg env) l
 
 and parse_sig_arg env = function
   | { Ast.term = Ast.App ({ Ast.term = Ast.Builtin Ast.Product;_}, l) ;_} ->
@@ -584,8 +561,7 @@ let rec parse_fun ty_args t_args env = function
       | Formula _ -> _expected "type or term" ast
     end
 
-(* High-level parsing functions *)
-(* ************************************************************************ *)
+(** {2 High Level Functions} *)
 
 let decl id t =
   let env = empty_env () in
@@ -613,10 +589,11 @@ let formula t =
 
 let assumptions t =
   let cnf = Expr.Formula.make_cnf (formula t) in
-  List.map (function
-    | [ x ] -> x
-    | _ -> assert false
-  ) cnf
+  List.map
+    (function
+      | [ x ] -> x
+      | _ -> assert false)
+    cnf
 
 let antecedent t =
   Expr.Formula.make_cnf (formula t)
