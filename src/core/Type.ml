@@ -43,6 +43,9 @@ let mk_ =
 let const id : t = mk_ (Atomic (id, [| |]))
 let app id a : t = mk_ (Atomic (id, a))
 
+let prop_id = ID.make "Bool"
+let prop = const prop_id
+
 let fun_ a b : t = mk_ (Fun (a,b))
 let fun_l args ret : t = List.fold_right fun_ args ret
 

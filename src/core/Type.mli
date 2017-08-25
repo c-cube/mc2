@@ -11,6 +11,9 @@ and view =
 
 val view : t -> view
 
+val prop_id : ID.t
+val prop : t
+
 val const : ID.t -> t
 val app : ID.t -> t array -> t
 

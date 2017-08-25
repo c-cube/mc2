@@ -6,6 +6,9 @@ module Fields : CCBitField.S
 (** Extensible view. Each plugin might declare its own terms. *)
 type view = ..
 
+type plugin_id = private int
+(** Unique ID of a plugin *)
+
 type t = private {
   mutable id: int;
   (** unique ID, made of:
@@ -28,6 +31,9 @@ val field_get : Fields.field -> t -> bool
 val field_is_value : Fields.field
 (** Is the field a value (i.e. usable in assignments)? *)
 
+val field_is_deleted : Fields.field
+(** Term that has been collected *)
+
 (** {2 Basics} *)
 
 val id : t -> int
@@ -47,19 +53,44 @@ val plugin_id_width : int
 (** Number of bits dedicated to plugin IDs.
     There can be at most [2 ** plugin_id_width] plugins in a solver. *)
 
-val plugin_id : t -> int
+val plugin_id : t -> plugin_id
 (** Which plugin owns this term? *)
 
 val plugin_specific_id : t -> int
 (** ID of the term for the plugin itself *)
 
 (** {2 Low Level constructors. Use at your own risks.} *)
+(**/**)
 module Unsafe : sig
   val max_plugin_id: int
 
-  val make : p_id:int -> p_specific_id:int -> view -> Type.t -> t
-  (** [make ~p_id view ty] makes a term with the given view and type.
-      @param p_id the ID of the plugin that owns this term
-      @param p_specific_id the unique ID of the term in this plugin
-  *)
+  val mk_plugin_id : int -> plugin_id
+  (** Convert an int into a plugin ID.
+      Should only be used in {!Plugin_db}. *)
+end
+
+val dummy : t
+(** Dummy term. Do not use it in any function, just for initializing
+      vectors. *)
+(**/**)
+
+(** {2 Hashconsing of a Theory Terms} *)
+
+module type TERM_ALLOC_OPS = sig
+  val p_id : plugin_id
+  (** ID of the theory *)
+
+  val equal : view -> view -> bool
+  (** Shallow equality of two views of the plugin *)
+
+  val hash : view -> int
+  (** Shallow hash of a view of the plugin *)
+end
+
+module Term_allocator(T : TERM_ALLOC_OPS) : sig
+  val make : view -> Type.t -> t
+  (** Make a term of the theory *)
+
+  val delete : t -> unit
+  (** Delete a term of the theory *)
 end

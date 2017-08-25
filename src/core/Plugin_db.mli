@@ -12,7 +12,7 @@
     Each plugin has a unique ID that is allocated by the DB.
 *)
 
-type id = private int
+type id = Term.plugin_id
 (** Uniquely identifies a given plugin. Should be small. *)
 
 type term = Term.t
@@ -31,6 +31,14 @@ module type PLUGIN = sig
 
   val name : string
   (** Descriptive name *)
+
+  val gc_mark_sub : (Term.t -> unit) -> Term.view -> unit
+  (** [gc_mark_sub f t] should call [f] on every subterm of [t]
+      to retain them during GC *)
+
+  val gc_iter_terms : Term.t Sequence.t
+  (** Iterate on all terms known to the plugin. Used for
+      garbage collection. *)
 
   val pp_term : Term.t CCFormat.printer -> Term.view CCFormat.printer
   (** [pp_term pp_sub] is a term-view printer.
@@ -57,3 +65,4 @@ val add_plugin : t -> plugin_mk -> plugin
     and returns it.
     @raise Failure if all plugin IDs have been allocated
 *)
+
