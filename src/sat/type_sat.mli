@@ -10,5 +10,5 @@ Copyright 2014 Simon Cruanes
 
 open Minismt_core
 
-include Type.S with type atom := Sat.Expr.t
+include Typing_intf.S with type atom := Sat.Expr.t
 

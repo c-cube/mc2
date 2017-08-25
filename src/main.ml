@@ -29,7 +29,7 @@ end
 
 module Make
     (S : External.S)
-    (T : Type.S with type atom := S.atom)
+    (T : Typing_intf.S with type atom := S.atom)
   : sig
     val do_task : Dolmen.Statement.t -> unit
   end = struct
