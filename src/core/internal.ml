@@ -743,7 +743,7 @@ module Make
     env.conflicts <- env.conflicts + 1;
     assert (decision_level() >= base_level ());
     if decision_level() = base_level ()
-    || Array_util.for_all (fun a -> a.var.v_level <= base_level ()) confl.atoms then
+    || CCArray.for_all (fun a -> a.var.v_level <= base_level ()) confl.atoms then
       report_unsat confl; (* Top-level conflict *)
     let cr = analyze confl in
     cancel_until (max cr.cr_backtrack_lvl (base_level ()));
@@ -1262,7 +1262,7 @@ module Make
         if a.is_true then true
         else if a.neg.is_true then false
         else raise UndecidedLit) c.atoms in
-    let res = Array_util.exists (fun x -> x) tmp in
+    let res = CCArray.exists (fun x -> x) tmp in
     if res then true
     else (
       Log.debugf debug
