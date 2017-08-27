@@ -8,3 +8,10 @@ val of_term : term -> t
 val of_atom : atom -> t
 (** Constructors and destructors *)
 
+
+(**/**)
+
+val dummy : t
+(** Only use for filling vectors *)
+
+(**/**)

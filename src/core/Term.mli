@@ -79,3 +79,6 @@ val seen: t -> bool
 val clear : t -> unit
 (** Clear the fields of the variable. *)
 
+
+val weight : t -> float
+(** Heuristic weight *)

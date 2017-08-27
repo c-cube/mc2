@@ -61,6 +61,14 @@ val pp_term : t -> term CCFormat.printer
 (** Print term using the plugins from this DB.
     @raise Plugin_not_found if a subterm belongs to an unknown plugin. *)
 
+val iter_terms : t -> Term.t Sequence.t
+(** Iterate on all terms known to plugins.
+    Used for checking all variables to assign, and for garbage collection. *)
+
+val gc_mark_sub : t -> (Term.t -> unit) -> Term.t -> unit
+(** [gc_mark_sub f t] should call [f] on every subterm of [t]
+    to retain them during GC *)
+
 val add_plugin : t -> plugin_mk -> plugin
 (** [add_plugin db f] allocates a new plugin, stores it into [db],
     and returns it.

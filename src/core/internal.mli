@@ -12,103 +12,103 @@ Copyright 2014 Simon Cruanes
     at surprising times, mutating is dangerous for maintaining invariants, etc...).
 *)
 
-module Make
-    (St : Solver_types.S)
-    (Th : Plugin_intf.S with type term = St.term and type formula = St.formula and type proof = St.proof)
-    (Dummy: sig end)
-  : sig
-    (** Functor to create a solver parametrised by the atomic formulas and a theory. *)
 
-    (** {2 Solving facilities} *)
+(** {2 Solving facilities} *)
 
-    exception Unsat
-    exception UndecidedLit
+open Solver_types
 
-    val solve : unit -> unit
-    (** Try and solves the current set of assumptions.
-        @return () if the current set of clauses is satisfiable
-        @raise Unsat if a toplevel conflict is found *)
+exception Unsat
+exception UndecidedLit
 
-    val assume : ?tag:int -> St.formula list list -> unit
-    (** Add the list of clauses to the current set of assumptions.
-        Modifies the sat solver state in place. *)
+type t
+(** The core solver structure *)
 
-    val new_lit : St.term -> unit
-    (** Add a new litteral (i.e term) to the solver. This term will
-        be decided on at some point during solving, wether it appears
-        in clauses or not. *)
+val create : Plugins.t -> t
+(** Create a solver interfaced with the given set of plugins *)
 
-    val new_atom : St.formula -> unit
-    (** Add a new atom (i.e propositional formula) to the solver.
-        This formula will be decided on at some point during solving,
-        wether it appears in clauses or not. *)
+val solve : t -> unit
+(** Try and solves the current set of assumptions.
+    @return () if the current set of clauses is satisfiable
+    @raise Unsat if a toplevel conflict is found *)
 
-    val push : unit -> unit
-    (** Create a decision level for local assumptions.
-        @raise Unsat if a conflict is detected in the current state. *)
+val assume : t -> ?tag:int -> term list list -> unit
+(** Add the list of clauses to the current set of assumptions.
+    Modifies the sat solver state in place. *)
 
-    val pop : unit -> unit
-    (** Pop a decision level for local assumptions. *)
+val new_lit : t -> term -> unit
+(** Add a new litteral (i.e term) to the solver. This term will
+    be decided on at some point during solving, wether it appears
+    in clauses or not. *)
 
-    val local : St.formula list -> unit
-    (** Add local assumptions
-        @param assumptions list of additional local assumptions to make,
-          removed after the callback returns a value *)
+(* TODO: remove this? *)
+val new_atom : term -> unit
+(** Add a new atom (i.e propositional term) to the solver.
+    This term will be decided on at some point during solving,
+    wether it appears in clauses or not. *)
 
-    (** {2 Propositional models} *)
+val push : t -> unit
+(** Create a decision level for local assumptions.
+    @raise Unsat if a conflict is detected in the current state. *)
 
-    val eval : St.formula -> bool
-    (** Returns the valuation of a formula in the current state
-        of the sat solver.
-        @raise UndecidedLit if the literal is not decided *)
+val pop : t -> unit
+(** Pop a decision level for local assumptions. *)
 
-    val eval_level : St.formula -> bool * int
-    (** Return the current assignement of the literals, as well as its
-        decision level. If the level is 0, then it is necessary for
-        the atom to have this value; otherwise it is due to choices
-        that can potentially be backtracked.
-        @raise UndecidedLit if the literal is not decided *)
+val local : t -> term list -> unit
+(** Add local assumptions
+    @param assumptions list of additional local assumptions to make,
+      removed after the callback returns a value *)
 
-    val model : unit -> (St.term * St.term) list
-    (** Returns the model found if the formula is satisfiable. *)
+(** {2 Propositional models} *)
 
-    val check : unit -> bool
-    (** Check the satisfiability of the current model. Only has meaning
-        if the solver finished proof search and has returned [Sat]. *)
+val eval : t -> term -> bool
+(** Returns the valuation of a term in the current state
+    of the sat solver.
+    @raise UndecidedLit if the literal is not decided *)
 
-    (** {2 Proofs and Models} *)
+val eval_level : t -> term -> bool * int
+(** Return the current assignement of the literals, as well as its
+    decision level. If the level is 0, then it is necessary for
+    the atom to have this value; otherwise it is due to choices
+    that can potentially be backtracked.
+    @raise UndecidedLit if the literal is not decided *)
 
-    module Proof : Res.S with module St = St
+val model : t -> (term * term) list
+(** Returns the model found if the term is satisfiable. *)
 
-    val unsat_conflict : unit -> St.clause option
-    (** Returns the unsat clause found at the toplevel, if it exists (i.e if
-        [solve] has raised [Unsat]) *)
+val check : t -> bool
+(** Check the satisfiability of the current model. Only has meaning
+    if the solver finished proof search and has returned [Sat]. *)
 
-    val full_slice : unit -> (St.term, St.formula, St.proof) Plugin_intf.slice
-    (** View the current state of the trail as a slice. Mainly useful when the
-        solver has reached a SAT conclusion. *)
+(** {2 Proofs and Models} *)
 
-    (** {2 Internal data}
-        These functions expose some internal data stored by the solver, as such
-        great care should be taken to ensure not to mess with the values returned. *)
+type proof = Res.proof
 
-    val trail : unit -> St.t Vec.t
-    (** Returns the current trail.
-        *DO NOT MUTATE* *)
+val unsat_conflict : t -> clause option
+(** Returns the unsat clause found at the toplevel, if it exists (i.e if
+    [solve] has raised [Unsat]) *)
 
-    val hyps : unit -> St.clause Vec.t
-    (** Returns the vector of assumptions used by the solver. May be slightly different
-        from the clauses assumed because of top-level simplification of clauses.
-        *DO NOT MUTATE* *)
+val full_slice : t -> (term, term, proof) Plugin_intf.slice
+(** View the current state of the trail as a slice. Mainly useful when the
+    solver has reached a SAT conclusion. *)
 
-    val temp : unit -> St.clause Vec.t
-    (** Returns the clauses coreesponding to the local assumptions.
-        All clauses in this vec are assured to be unit clauses.
-        *DO NOT MUTATE* *)
+(** {2 Internal data}
+    These functions expose some internal data stored by the solver, as such
+    great care should be taken to ensure not to mess with the values returned. *)
 
-    val history : unit -> St.clause Vec.t
-    (** Returns the history of learnt clauses, with no guarantees on order.
-        *DO NOT MUTATE* *)
+val trail : t -> t Vec.t
+(** Returns the current trail.
+    {b DO NOT MUTATE} *)
 
-  end
+val hyps : t -> clause Vec.t
+(** Returns the vector of assumptions used by the solver. May be slightly different
+    from the clauses assumed because of top-level simplification of clauses.
+    {b DO NOT MUTATE} *)
 
+val temp : t -> clause Vec.t
+(** Returns the clauses coreesponding to the local assumptions.
+    All clauses in this vec are assured to be unit clauses.
+    {b DO NOT MUTATE} *)
+
+val history : t -> clause Vec.t
+(** Returns the history of learnt clauses, with no guarantees on order.
+    {b DO NOT MUTATE} *)

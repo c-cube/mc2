@@ -1,28 +1,43 @@
 
 open Solver_types
 
+module Fields = Solver_types.Clause_fields
+
 type t = clause
 
-let dummy : t =
-  { name = "";
-    tag = None;
-    atoms = [| |];
-    activity = -1.;
-    attached = false;
-    visited = false;
-    cpremise = History [] }
+(** Is the clause attached, i.e. does it watch literals. *)
+let field_attached = Fields.mk_field()
 
-let make ?tag name ali premise : t=
-  let atoms = Array.of_list ali in
-  { name  = name;
-    tag = tag;
-    atoms = atoms;
-    attached = false;
-    visited = false;
-    activity = 0.;
-    cpremise = premise}
+(** Used during propagation and proof generation. *)
+let field_visited = Fields.mk_field()
+
+let dummy : t =
+  { c_name = "";
+    c_tag = None;
+    c_atoms = [| |];
+    c_activity = -1.;
+    c_fields=Fields.empty;
+    c_premise = History [];
+  }
+
+let[@inline] make_arr ?tag c_name c_atoms c_premise : t=
+  { c_name;
+    c_tag = tag;
+    c_atoms = c_atoms;
+    c_fields = Fields.empty;
+    c_activity = 0.;
+    c_premise = c_premise;
+  }
+
+let make ?tag c_name ali c_premise : t=
+  let c_atoms = Array.of_list ali in
+  make_arr ?tag c_name c_atoms c_premise
 
 let empty : t = make "⊥" [] (History [])
+
+let visited c = Fields.get field_visited c.c_fields
+let mark_visited c = c.c_fields <- Fields.set field_visited true c.c_fields
+let clear_visited c = c.c_fields <- Fields.set field_visited false c.c_fields
 
 (* Name generation *)
 let fresh_lname =
@@ -42,35 +57,35 @@ let fresh_name =
   fun () -> incr cpt; "C" ^ (string_of_int !cpt)
 
 
-let print_atoms fmt v =
+let pp_atoms out v =
   if Array.length v = 0 then
-    Format.fprintf fmt "∅"
-  else begin
-    print_atom fmt v.(0);
-    if (Array.length v) > 1 then begin
+    Format.fprintf out "∅"
+  else (
+    Atom.pp out v.(0);
+    if (Array.length v) > 1 then (
       for i = 1 to (Array.length v) - 1 do
-        Format.fprintf fmt " ∨ %a" print_atom v.(i)
+        Format.fprintf out " ∨ %a" Atom.pp v.(i)
       done
-    end
-  end
+    )
+  )
 
 let print_clause fmt c =
-  Format.fprintf fmt "%s : %a" c.name print_atoms c.atoms
+  Format.fprintf fmt "%s : %a" c.c_name pp_atoms c.c_atoms
 
-let pp_atoms_vec out vec =
-  Array.iter (fun a -> Format.fprintf out "%a@ " pp_atom a) vec
+let pp_atoms_vec out vec = Util.pp_array ~sep:" " Atom.pp out vec
 
-let pp_clause out {name=name; atoms=arr; cpremise=cp; _} =
+let pp out {c_name; c_atoms; c_premise=cp; _} =
   Format.fprintf out "%s@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
-    name pp_atoms_vec arr pp_premise cp
+    c_name pp_atoms_vec c_atoms Premise.pp cp
 
-let pp_dimacs fmt { atoms; _} =
+let pp_dimacs fmt { c_atoms; _} =
   let aux fmt a =
     Array.iter (fun p ->
       Format.fprintf fmt "%s%d "
-        (if p == p.var.pa then "-" else "")
-        (p.var.vid+1)
-    ) a
+        (* FIXME: use [Term.as_bvar_exn] here *)
+        (if p == p.a_term.pa then "-" else "")
+        (p.a_term.t_id+1))
+      a
   in
-  Format.fprintf fmt "%a0" aux atoms
+  Format.fprintf fmt "%a0" aux c_atoms
 

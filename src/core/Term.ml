@@ -37,8 +37,9 @@ let[@inline] field_get f t = Fields.get f t.fields
 
 let[@inline] field_set f b t = t.fields <- Fields.set f b t.fields
 
-let field_is_value = Fields.mk_field ()
-let field_is_deleted = Fields.mk_field ()
+let field_is_value = Fields.mk_field () (* (model) value of the theory *)
+let field_is_deleted = Fields.mk_field () (* term deleted during GC? *)
+let field_is_added = Fields.mk_field() (* term added to core solver? *)
 
 (** {2 ID Management} *)
 
@@ -126,6 +127,8 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     try H.find tbl view
     with Not_found -> make_real_ view ty
 end
+
+let weight t = t.t_weight
 
 (* TODO: update this *)
 

@@ -15,6 +15,7 @@
 *)
 
 module Term_fields = BitField.Make(struct end)
+module Clause_fields = BitField.Make(struct end)
 
 (** {2 Type definitions} *)
 
@@ -23,9 +24,9 @@ type plugin_id = int
 type term_view = ..
 (** Extensible view. Each plugin might declare its own terms. *)
 
-type proof = ..
+type lemma = ..
 (** Extensible proof object
-    FIXME: shouldn't this be simpler? *)
+    FIXME: shouldn't this be simpler? or more complicated, like typeclass + variant*)
 
 type term = {
   mutable t_id: int;
@@ -72,14 +73,14 @@ and atom = {
     [a.neg] wraps the theory negation of [f]. *)
 
 and clause = {
-  name : string;              (** Clause name, mainly for printing, unique. *)
-  tag : int option;           (** User-provided tag for clauses. *)
-  atoms : atom array;         (** The atoms that constitute the clause.*)
-  mutable cpremise : premise; (** The premise of the clause, i.e. the justification
-                                  of why the clause must be satisfied. *)
-  mutable activity : float;   (** Clause activity, used for the heap heuristics. *)
-  mutable attached : bool;    (** Is the clause attached, i.e. does it watch literals. *)
-  mutable visited : bool;     (** Boolean used during propagation and proof generation. *)
+  c_name : string; (** Clause name, mainly for printing, unique. *)
+  c_tag : int option; (** User-provided tag for clauses. *)
+  c_atoms : atom array; (** The atoms that constitute the clause.*)
+  mutable c_premise : premise;
+  (** The premise of the clause, i.e. the justification of why the clause must
+      be satisfied. *)
+  mutable c_activity : float;   (** Clause activity, used for the heap heuristics. *)
+  mutable c_fields: Clause_fields.t; (** bitfield for clauses *)
 }
 (** The type of clauses. Each clause generated should be true, i.e. enforced
     by the current problem (for more information, see the cpremise field). *)
@@ -96,8 +97,8 @@ and reason =
 and premise =
   | Hyp (** The clause is a hypothesis, provided by the user. *)
   | Local
-  (** The clause is a 1-atom clause, where the atom is a local assumption*)
-  | Lemma of proof
+  (** The clause is a 1-atom clause, where the atom is a local assumption *)
+  | Lemma of lemma
   (** The clause is a theory-provided tautology, with the given proof. *)
   | History of clause list
   (** The clause can be obtained by resolution of the clauses
@@ -117,3 +118,4 @@ type assignment =
   | Assign_term of term
   | Assign_atom of atom
   (** Either a lit of an atom *)
+

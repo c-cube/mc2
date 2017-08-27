@@ -7,4 +7,8 @@ val mark : t -> unit
 val seen  : t -> bool
 (** Returns wether the atom has been marked as seen. *)
 
-val print : Format.formatter -> t -> unit
+val equal : t -> t -> bool
+
+val compare : t -> t -> int
+
+val pp : t CCFormat.printer
