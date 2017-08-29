@@ -26,7 +26,7 @@ module Make(Elt : RANKED) = struct
 
   let _absent_index = -1
 
-  let init () =
+  let create () =
     { heap = Vec.make_empty Elt.dummy; }
 
   let left i = (i lsl 1) + 1 (* i*2 + 1 *)

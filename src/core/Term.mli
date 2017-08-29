@@ -27,16 +27,18 @@ val mark : t -> unit (** Mark the variable *)
 val unmark : t -> unit (** Clear the fields of the variable. *)
 val marked : t -> bool (** Was {!mark} called on this var? *)
 
-val is_added : t -> bool
 val is_deleted : t -> bool
-val set_added : t -> unit
+val level : t -> int
 
-val weight : t -> float
-(** Heuristic weight *)
+val weight : t -> float (** Heuristic weight *)
+val set_weight : t -> float -> unit
 
 val field_get : Term_fields.field -> t -> bool
 val field_set : Term_fields.field -> t -> unit
 val field_clear : Term_fields.field -> t -> unit
+
+val has_var : t -> bool (** is there a variable for the term? *)
+val setup_var : t -> unit (** create a variable for the term *)
 
 (** {2 Bool terms} *)
 

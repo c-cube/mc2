@@ -34,16 +34,15 @@ type lemma_view = ..
 type term = {
   mutable t_id: int;
   (** unique ID, made of:
-      - 4 bits plugin_id
+      - [k] bits plugin_id (with k small)
       - the rest is for plugin-specific id *)
-  t_view: term_view;
-  (** view *)
-  t_ty: Type.t;
-  (** type of the term *)
+  t_view: term_view; (** view *)
+  t_ty: Type.t; (** type of the term *)
+  mutable t_idx: int; (** position in heap *)
+  mutable t_weight : float; (** Weight (for the heap) *)
   mutable t_fields: Term_fields.t;
   (** bitfield for storing various info *)
   mutable t_level : int; (** Decision level of the assignment *)
-  mutable t_weight : float; (** Weight (for the heap) *)
   mutable t_reason : reason option;
   (** The reason for propagation/decision of the literal *)
   mutable t_var: var;
@@ -108,12 +107,15 @@ and reason =
   (** The atom has been decided by the sat solver *)
   | Bcp of clause
   (** The atom has been propagated by the given clause *)
-  | Semantic_bool_eval of term list
+  | Semantic of term list
   (** The atom can be evaluated using the terms in the list *)
+
+(* TODO?
   | Consequence of term * lemma lazy_t
   (** [Consequence (l, p)] means that the formulas in [l] imply the propagated
       formula [f]. The proof should be a proof of the clause "[l] implies [f]".
   *)
+   *)
 (** Reasons of propagation/decision of atoms/terms. *)
 
 and premise =
@@ -156,6 +158,7 @@ type term_view += Dummy
 
 let dummy_term : term = {
   t_id= ~-1;
+  t_idx= ~-1;
   t_view=Dummy;
   t_ty=Type.prop;
   t_fields= Term_fields.empty;
@@ -172,6 +175,13 @@ let dummy_clause : clause = {
   c_activity = -1.;
   c_fields = Clause_fields.empty;
   c_premise = History [];
+}
+
+let dummy_atom : atom = {
+  a_id= -1;
+  a_term=dummy_term;
+  a_is_true=false;
+  a_watched=Vec.make_empty dummy_clause;
 }
 
 type bool_term = term (** Alias for boolean terms *)

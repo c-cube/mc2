@@ -5,20 +5,10 @@ module Fields = Solver_types.Clause_fields
 
 type t = clause
 
-(** Is the clause attached, i.e. does it watch literals. *)
-let field_attached = Fields.mk_field()
+let field_attached = Fields.mk_field() (** Is the clause attached, i.e. does it watch literals. *)
+let field_visited = Fields.mk_field() (** Used during propagation and proof generation. *)
 
-(** Used during propagation and proof generation. *)
-let field_visited = Fields.mk_field()
-
-let dummy : t =
-  { c_name = "";
-    c_tag = None;
-    c_atoms = [| |];
-    c_activity = -1.;
-    c_fields=Fields.empty;
-    c_premise = History [];
-  }
+let dummy : t = dummy_clause
 
 let[@inline] make_arr ?tag c_name c_atoms c_premise : t=
   { c_name;
@@ -35,10 +25,13 @@ let make ?tag c_name ali c_premise : t=
 
 let empty : t = make "⊥" [] (History [])
 
-let visited c = Fields.get field_visited c.c_fields
-let mark_visited c = c.c_fields <- Fields.set field_visited true c.c_fields
-let clear_visited c = c.c_fields <- Fields.set field_visited false c.c_fields
-let get_tag c = c.c_tag
+let[@inline] visited c = Fields.get field_visited c.c_fields
+let[@inline] mark_visited c = c.c_fields <- Fields.set field_visited true c.c_fields
+let[@inline] clear_visited c = c.c_fields <- Fields.set field_visited false c.c_fields
+let[@inline] get_tag c = c.c_tag
+
+let[@inline] attached c = Fields.get field_attached c.c_fields
+let[@inline] set_attached c = c.c_fields <- Fields.set field_attached true c.c_fields
 
 (* Name generation *)
 let fresh_name_gen prefix =

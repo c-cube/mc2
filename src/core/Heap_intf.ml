@@ -15,7 +15,7 @@ module type S = sig
   (** Heap of {!elt}, whose priority is increased or decreased
       incrementally (see {!decrease} for instance) *)
 
-  val init : unit -> t
+  val create : unit -> t
   (** Create a heap *)
 
   val decrease : t -> elt -> unit

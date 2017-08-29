@@ -69,7 +69,7 @@ module type S = sig
   (** Last call before answering "sat". If the current trail is not
       theory-satisfiable, the plugin {b MUST} give a conflict here. *)
 
-  val eval_bool : bool_term -> bool option
+  val eval_bool : bool_term -> eval_res
   (** Evaluate boolean term in current trail *)
 
   val iter_sub : term -> term Sequence.t
@@ -84,6 +84,9 @@ module type S = sig
   (** [gc_mark_sub f t] should call [f] on every subterm of [t]
       to retain them during GC *)
 
+  val term_of_value : value -> term
+  (** Turn a value of this plugin into a term of this plugin. *)
+
   val pp_term : term CCFormat.printer -> term_view CCFormat.printer
   (** [pp_term pp_sub] is a term-view printer.
       It is only ever called with terms that belong to this plugin,
@@ -95,7 +98,16 @@ end
 
 type t = (module S)
 
-type factory = plugin_id -> t
+type factory =
+  plugin_id:plugin_id ->
+  on_backtrack:(int -> (unit -> unit) -> unit) ->
+  t
+(** A plugin factory, i.e. the method to build a plugin with a given ID.
+    The plugin is allowed to register actions to be taken upon backtracking.
+    @param plugin_id the unique ID of the plugin
+    @param on_backtrack to call to register backtrack actions
+      [on_backtrack lev f] will call [f] when level [lev] is backtracked.
+*)
 
-let[@inline] owns_term (module P : S) (t:term) : bool =
-  Term.plugin_id t = P.id
+let[@inline] owns_term (module P : S) (t:term) : bool = Term.plugin_id t = P.id
+let[@inline] name (module P : S) = P.name

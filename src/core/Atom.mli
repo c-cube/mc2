@@ -12,7 +12,10 @@ val neg : t -> t (** Negation *)
 
 val mark : t -> unit (** Mark the atom as seen, using fields in the variable. *)
 val marked : t -> bool (** Returns wether the atom has been marked as seen. *)
+val unmark : t -> unit
 
+val level : t -> int (** decision level of the variable *)
+val reason : t -> reason option
 val is_true : t -> bool (** True in current model? *)
 val is_false : t -> bool
 val is_undef : t -> bool

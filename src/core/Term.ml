@@ -28,10 +28,9 @@ let p_mask = (1 lsl plugin_id_width) - 1
 let[@inline] plugin_id t : int = id t land p_mask
 let[@inline] plugin_specific_id t : int = id t lsr plugin_id_width
 let[@inline] weight t = t.t_weight
+let[@inline] set_weight t f = t.t_weight <- f
 
-let[@inline] is_added t = field_get field_t_is_added t
 let[@inline] is_deleted t = field_get field_t_is_deleted t
-let[@inline] set_added t = field_set field_t_is_added t
 
 (** {2 Assignment view} *)
 
@@ -121,36 +120,47 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     let t_level = -1 in
     let t_reason = None in
     let t_weight = 0. in
-    if Type.equal Type.prop t_ty then (
-      let t_id_double = t_id lsl 1 in
-      let rec t = {
-        t_id; t_view; t_ty; t_fields; t_var; t_level; t_reason; t_weight;
-      } and t_var = V_bool {pa;na}
-      and pa = {
-        a_term=t;
-        a_watched = Vec.make 10 dummy_clause;
-        a_is_true = false;
-        a_id = t_id_double; (* aid = vid*2 *)
-      } and na = {
-        a_term=t;
-        a_watched = Vec.make 10 dummy_clause;
-        a_is_true = false;
-        a_id = t_id_double + 1; (* aid = vid*2+1 *)
-      } in
-      t
-    ) else (
-      let t_var = V_semantic {
-          v_value=None;
-          v_watched=Vec.make_empty dummy_term;
-        } in
-      { t_id; t_view; t_ty; t_fields; t_var; t_level; t_reason; t_weight; }
-    )
+    let t_idx = ~-1 in
+    { t_id; t_view; t_ty; t_fields; t_level; t_reason; t_weight; t_idx;
+      t_var=V_none; }
 
   (* inline make function *)
   let[@inline] make (view:view) (ty:Type.t) : t =
     try H.find tbl view
     with Not_found -> make_real_ view ty
 end
+
+(* make a fresh variable for this term *)
+let mk_var_ (t:t): var =
+  if Type.equal Type.prop t.t_ty then (
+    let t_id_double = t.t_id lsl 1 in
+    let pa = {
+      a_term=t;
+      a_watched = Vec.make 10 dummy_clause;
+      a_is_true = false;
+      a_id = t_id_double; (* aid = vid*2 *)
+    } and na = {
+        a_term=t;
+        a_watched = Vec.make 10 dummy_clause;
+        a_is_true = false;
+        a_id = t_id_double + 1; (* aid = vid*2+1 *)
+      } in
+    V_bool {pa; na}
+  ) else (
+    V_semantic {
+      v_value=None;
+      v_watched=Vec.make_empty dummy_term;
+    }
+  )
+
+let[@inline] has_var t = t.t_var <> V_none
+
+let[@inline] setup_var t =
+  if not (has_var t) then (
+    let v = mk_var_ t in
+    t.t_var <- v;
+    assert (has_var t);
+  )
 
 let marked t = Term_fields.get field_t_seen t.t_fields
 let mark t = t.t_fields <- Term_fields.set field_t_seen true t.t_fields

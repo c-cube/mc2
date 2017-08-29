@@ -20,6 +20,8 @@ let[@inline] is_true (a:t): bool = a.a_is_true
 let[@inline] is_false (a:t): bool = is_true (neg a)
 let[@inline] is_undef (a:t): bool = not (is_true a) && not (is_false a)
 let[@inline] term (a:t) = a.a_term
+let[@inline] level (a:t) = a.a_term.t_level
+let[@inline] reason (a:t) = a.a_term.t_reason
 let[@inline] watched (a:t) = a.a_watched
 
 let mark (a:t) =
@@ -27,6 +29,13 @@ let mark (a:t) =
     a.a_term.t_fields <- Term_fields.set field_t_mark_pos true a.a_term.t_fields
   ) else (
     a.a_term.t_fields <- Term_fields.set field_t_mark_neg true a.a_term.t_fields
+  )
+
+let unmark (a:t) =
+  if is_pos a then (
+    a.a_term.t_fields <- Term_fields.set field_t_mark_pos false a.a_term.t_fields
+  ) else (
+    a.a_term.t_fields <- Term_fields.set field_t_mark_neg false a.a_term.t_fields
   )
 
 let marked (a:t) : bool =

@@ -12,6 +12,6 @@ let pp out = function
     Format.fprintf out "@@%d" n
   | n, Some Bcp c ->
     Format.fprintf out "->%d/%s" n c.c_name
-  | n, Some Semantic ->
+  | n, Some (Semantic _) ->
     Format.fprintf out "::%d" n
 
