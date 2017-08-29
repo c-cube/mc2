@@ -10,7 +10,13 @@ let field_visited = Fields.mk_field() (** Used during propagation and proof gene
 
 let dummy : t = dummy_clause
 
-let[@inline] make_arr ?tag c_name c_atoms c_premise : t=
+(* Name generation *)
+let fresh_name =
+  let n = ref 0 in
+  fun () -> incr n; !n
+
+let[@inline] make_arr ?tag c_atoms c_premise : t=
+  let c_name = fresh_name() in
   { c_name;
     c_tag = tag;
     c_atoms = c_atoms;
@@ -19,29 +25,24 @@ let[@inline] make_arr ?tag c_name c_atoms c_premise : t=
     c_premise = c_premise;
   }
 
-let make ?tag c_name ali c_premise : t=
+let make ?tag ali c_premise : t=
   let c_atoms = Array.of_list ali in
-  make_arr ?tag c_name c_atoms c_premise
+  make_arr ?tag c_atoms c_premise
 
-let empty : t = make "⊥" [] (History [])
+let empty : t = make [] (History [])
 
 let[@inline] visited c = Fields.get field_visited c.c_fields
 let[@inline] mark_visited c = c.c_fields <- Fields.set field_visited true c.c_fields
 let[@inline] clear_visited c = c.c_fields <- Fields.set field_visited false c.c_fields
-let[@inline] get_tag c = c.c_tag
 
 let[@inline] attached c = Fields.get field_attached c.c_fields
 let[@inline] set_attached c = c.c_fields <- Fields.set field_attached true c.c_fields
 
-(* Name generation *)
-let fresh_name_gen prefix =
-  let cpt = ref 0 in
-  fun () -> incr cpt; prefix ^ (string_of_int !cpt)
-
-let fresh_lname = fresh_name_gen "L"
-let fresh_hname = fresh_name_gen "G"
-let fresh_tname = fresh_name_gen "T"
-let fresh_name = fresh_name_gen "C"
+let[@inline] get_tag c = c.c_tag
+let[@inline] name c = c.c_name
+let[@inline] premise c = c.c_premise
+let[@inline] activity c = c.c_activity
+let[@inline] atoms c = c.c_atoms
 
 let pp_atoms pp_t out v =
   if Array.length v = 0 then
@@ -56,13 +57,18 @@ let pp_atoms pp_t out v =
   )
 
 let debug pp_t out c =
-  Format.fprintf out "%s : %a" c.c_name (pp_atoms pp_t) c.c_atoms
+  Format.fprintf out "%s%d : %a" (Premise.prefix c.c_premise)
+    c.c_name (pp_atoms pp_t) c.c_atoms
 
-let pp_atoms_vec pp_t out vec = Util.pp_array ~sep:" " (Atom.pp pp_t) out vec
+let pp_atoms_vec pp_a out vec = Util.pp_array ~sep:" " pp_a out vec
 
 let pp pp_t out {c_name; c_atoms; c_premise=cp; _} =
-  Format.fprintf out "%s@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
-    c_name (pp_atoms_vec pp_t) c_atoms Premise.pp cp
+  Format.fprintf out "%s%d@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
+    (Premise.prefix cp) c_name (pp_atoms_vec (Atom.pp pp_t)) c_atoms Premise.pp cp
+
+let pp_simple out {c_name; c_atoms; c_premise=cp; _} =
+  Format.fprintf out "%s%d@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
+    (Premise.prefix cp) c_name (pp_atoms_vec Atom.pp_simple) c_atoms Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =
   let aux fmt a =

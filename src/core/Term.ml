@@ -29,6 +29,8 @@ let[@inline] plugin_id t : int = id t land p_mask
 let[@inline] plugin_specific_id t : int = id t lsr plugin_id_width
 let[@inline] weight t = t.t_weight
 let[@inline] set_weight t f = t.t_weight <- f
+let[@inline] level t = t.t_level
+let[@inline] reason t = t.t_reason
 
 let[@inline] is_deleted t = field_get field_t_is_deleted t
 
@@ -173,6 +175,16 @@ module Bool = struct
     let seen_pos = Term_fields.get field_t_mark_pos t.t_fields in
     let seen_neg = Term_fields.get field_t_mark_neg t.t_fields in
     seen_pos && seen_neg
+
+  let assigned_atom t : atom option = match t.t_var with
+    | V_bool {pa; _} when pa.a_is_true -> Some pa
+    | V_bool {na; _} when na.a_is_true -> Some na
+    | _ -> None
+
+  let assigned_atom_exn t : atom = match t.t_var with
+    | V_bool {pa; _} when pa.a_is_true -> pa
+    | V_bool {na; _} when na.a_is_true -> na
+    | _ -> assert false
 end
 
 (* TODO: move this in theory of booleans?

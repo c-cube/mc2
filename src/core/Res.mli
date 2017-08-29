@@ -106,10 +106,6 @@ val unsat_core : proof -> clause list
 val check : proof -> unit
 (** Check the contents of a proof. Mainly for internal use *)
 
-val print_clause : Format.formatter -> clause -> unit
-(** A nice looking printer for clauses, which sort the atoms before printing. *)
-
-
 (** {3 Unsafe} *)
 
 module H : Hashtbl.S with type key = clause

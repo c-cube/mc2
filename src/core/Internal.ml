@@ -367,7 +367,7 @@ let eliminate_doublons clause : clause * bool =
     clause, false
   ) else (
     (* make a new clause, simplified *)
-    Clause.make ~name:(Clause.fresh_lname ()) !res (History [clause]), true
+    Clause.make !res (History [clause]), true
   )
 
 (* Partition literals for new clauses, into:
@@ -524,7 +524,7 @@ let simpl_reason (env:t) : reason -> reason = function
              and set it as the cause for the propagation of [a], that way we can
              rebuild the whole resolution tree when we want to prove [a]. *)
           let c' =
-            Clause.make ~name:(Clause.fresh_lname ()) l (History (cl :: history))
+            Clause.make l (History (cl :: history))
           in
           Log.debugf debug
             (fun k -> k "Simplified reason: @[<v>%a@,%a@]"
@@ -617,20 +617,39 @@ let th_eval (env:t) (a:atom) : bool option =
 (* find which level to backtrack to, given a conflict clause
    and a boolean stating whether it is a UIP ("Unique Implication Point")
    precond: the atom list is sorted by decreasing decision level *)
-let backtrack_lvl (env:t) : atom list -> int * bool = function
-  | [] | [_] ->
+let backtrack_lvl (env:t) : atom array -> int * bool = function
+  | [||] | [|_|] ->
     0, true
-  | a :: b :: _ ->
-    assert (Atom.level a > base_level env);
-    if Atom.level a > Atom.level b then (
+  | a ->
+    assert (Atom.level a.(0) > base_level env);
+    if Atom.level a.(0) > Atom.level a.(1) then (
       (* backtrack below [a], so we can propagate [not a] *)
-      Atom.level b, true
+      Atom.level a.(1), true
     ) else (
       (* semantic split *)
-      assert (Atom.level a = Atom.level b);
-      assert (Atom.level a >= base_level env);
-      max (Atom.level a - 1) (base_level env), false
+      assert (Atom.level a.(0) = Atom.level a.(1));
+      assert (Atom.level a.(0) >= base_level env);
+      max (Atom.level a.(0) - 1) (base_level env), false
     )
+
+(* swap elements of array *)
+let[@inline] swap_arr a i j =
+  if i<>j then (
+    let tmp = a.(i) in
+    a.(i) <- a.(j);
+    a.(j) <- tmp;
+  )
+
+(* move atoms assigned at high levels first *)
+let put_high_level_atoms_first (arr:atom array) : unit =
+  Array.iteri
+    (fun i a ->
+       if i>0 && Atom.level a > Atom.level arr.(0) then (
+         swap_arr arr 0 i
+       ) else if i>1 && Atom.level a > Atom.level arr.(1) then (
+         swap_arr arr 1 i;
+       ))
+    arr
 
 (* result of conflict analysis, containing the learnt clause and some
    additional info.
@@ -640,20 +659,16 @@ let backtrack_lvl (env:t) : atom list -> int * bool = function
    (boolean conflict i.e hypothesis, or theory lemma) *)
 type conflict_res = {
   cr_backtrack_lvl : int; (* level to backtrack to *)
-  cr_learnt: atom list; (* lemma learnt from conflict *)
+  cr_learnt: atom array; (* lemma learnt from conflict *)
   cr_history: clause list; (* justification *)
   cr_is_uip: bool; (* conflict is UIP? *)
 }
-
-let get_atom i =
-  match Vec.get env.trail i with
-    | Lit _ -> assert false | Atom x -> x
 
 (* conflict analysis for SAT
    Same idea as the mcsat analyze function (without semantic propagations),
    except we look the the Last UIP (TODO: check ?), and do it in an imperative
    and efficient manner. *)
-let analyze_sat c_clause : conflict_res =
+let analyze (env:t) (c_clause:clause) : conflict_res =
   let pathC  = ref 0 in
   let learnt = ref [] in
   let cond   = ref true in
@@ -662,254 +677,239 @@ let analyze_sat c_clause : conflict_res =
   let c      = ref (Some c_clause) in
   let tr_ind = ref (Vec.size env.trail - 1) in
   let history = ref [] in
-  assert (decision_level () > 0);
+  assert (decision_level env > 0);
   let conflict_level =
-    Array.fold_left (fun acc p -> max acc p.var.v_level) 0 c_clause.atoms
+    Array.fold_left (fun acc p -> max acc (Atom.level p)) 0 c_clause.c_atoms
   in
   Log.debugf debug
-    (fun k -> k "Analyzing conflict (%d): %a" conflict_level St.pp_clause c_clause);
+    (fun k -> k "Analyzing conflict (%d): %a" conflict_level (pp_clause env) c_clause);
   while !cond do
     begin match !c with
       | None ->
         Log.debug debug "skipping resolution for semantic propagation"
       | Some clause ->
-        Log.debugf debug (fun k->k "Resolving clause: %a" St.pp_clause clause);
-        begin match clause.cpremise with
-          | History _ -> bump_clause_activity clause
+        Log.debugf debug (fun k->k "Resolving clause: %a" (pp_clause env) clause);
+        begin match clause.c_premise with
+          | History _ -> bump_clause_activity env clause
           | Hyp | Local | Lemma _ -> ()
         end;
         history := clause :: !history;
         (* visit the current predecessors *)
-        for j = 0 to Array.length clause.atoms - 1 do
-          let q = clause.atoms.(j) in
-          assert (q.is_true || q.neg.is_true && q.var.v_level >= 0); (* unsure? *)
-          if q.var.v_level <= 0 then begin
-            assert (q.neg.is_true);
-            match q.var.reason with
+        for j = 0 to Array.length clause.c_atoms - 1 do
+          let q = clause.c_atoms.(j) in
+          assert (Atom.is_true q || Atom.is_false q && Atom.level q >= 0); (* unsure? *)
+          if Atom.level q <= 0 then begin
+            assert (Atom.is_true q);
+            begin match Atom.reason q with
               | Some Bcp cl -> history := cl :: !history
               | _ -> assert false
-          end;
-          if not (seen_var q.var) then begin
-            mark_var q.var;
-            seen := q :: !seen;
-            if q.var.v_level > 0 then begin
-              bump_term_activity q.var;
-              if q.var.v_level >= conflict_level then begin
-                incr pathC;
-              end else begin
-                learnt := q :: !learnt;
-                blevel := max !blevel q.var.v_level
-              end
             end
-          end
+          end;
+          if not (Term.marked q.a_term) then (
+            Term.mark q.a_term;
+            seen := q :: !seen;
+            if Atom.level q > 0 then (
+              bump_term_activity env q.a_term;
+              if Atom.level q >= conflict_level then (
+                incr pathC;
+              ) else (
+                learnt := q :: !learnt;
+                blevel := max !blevel (Atom.level q)
+              )
+            )
+          )
         done
     end;
 
     (* look for the next node to expand *)
     while
-      let a = Vec.get env.trail !tr_ind in
-      Log.debugf debug (fun k -> k "looking at: %a" St.pp a);
-      begin match a with
-        | Atom q ->
-          (not (seen_var q.var)) ||
-          (q.var.v_level < conflict_level)
-        | Lit _ -> true
+      let t = Vec.get env.trail !tr_ind in
+      Log.debugf debug (fun k -> k "looking at: %a" (pp_term env) t);
+      begin match t.t_var with
+        | V_none -> assert false
+        | V_semantic _ -> true (* skip semantic assignments *)
+        | V_bool _ ->
+          (not (Term.marked t)) ||
+          (Term.level t < conflict_level)
       end
     do
       decr tr_ind;
     done;
-    let p = get_atom !tr_ind in
+    let t = Vec.get env.trail !tr_ind in
+    let p = Term.Bool.assigned_atom_exn t in
     decr pathC;
     decr tr_ind;
-    begin match !pathC, p.var.reason with
+    begin match !pathC, Term.reason t with
       | 0, _ ->
         cond := false;
-        learnt := p.neg :: (List.rev !learnt)
-      | n, Some Semantic ->
+        learnt := Atom.neg p :: (List.rev !learnt)
+      | n, Some (Semantic _) ->
         assert (n > 0);
-        learnt := p.neg :: !learnt;
+        learnt := Atom.neg p :: !learnt;
         c := None
       | n, Some Bcp cl ->
         assert (n > 0);
-        assert (p.var.v_level >= conflict_level);
+        assert (Atom.level p >= conflict_level);
         c := Some cl
       | _ -> assert false
     end
   done;
-  List.iter (fun q -> clear q.var) !seen;
-  let l = List.fast_sort (fun p q -> compare q.var.v_level p.var.v_level) !learnt in
-  let level, is_uip = backtrack_lvl l in
+  List.iter Atom.unmark !seen;
+  (* put high level atoms first *)
+  let learnt_a = Array.of_list !learnt in
+  put_high_level_atoms_first learnt_a;
+  let level, is_uip = backtrack_lvl env learnt_a in
   { cr_backtrack_lvl = level;
-    cr_learnt = l;
+    cr_learnt = learnt_a;
     cr_history = List.rev !history;
     cr_is_uip = is_uip;
   }
 
-let analyze c_clause : conflict_res =
-  analyze_sat c_clause
-    (*
-  if St.mcsat
-  then analyze_mcsat c_clause
-  else analyze_sat c_clause
-       *)
-
 (* add the learnt clause to the clause database, propagate, etc. *)
-let record_learnt_clause (confl:clause) (cr:conflict_res): unit =
+let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
   begin match cr.cr_learnt with
-    | [] -> assert false
-    | [fuip] ->
+    | [||] -> assert false
+    | [|fuip|] ->
       assert (cr.cr_backtrack_lvl = 0);
-      if fuip.neg.is_true then
-        report_unsat confl
-      else begin
-        let name = fresh_lname () in
-        let uclause = make_clause name cr.cr_learnt (History cr.cr_history) in
+      if Atom.is_false fuip then (
+        report_unsat env confl
+      ) else (
+        let uclause = Clause.make_arr cr.cr_learnt (History cr.cr_history) in
         Vec.push env.clauses_learnt uclause;
         (* no need to attach [uclause], it is true at level 0 *)
-        enqueue_bool fuip ~level:0 (Bcp uclause)
-      end
-    | fuip :: _ ->
-      let name = fresh_lname () in
-      let lclause = make_clause name cr.cr_learnt (History cr.cr_history) in
+        enqueue_bool env fuip ~level:0 (Bcp uclause)
+      )
+    | c_learnt ->
+      let fuip = c_learnt.(0) in
+      let lclause = Clause.make_arr c_learnt (History cr.cr_history) in
       Vec.push env.clauses_learnt lclause;
-      attach_clause lclause;
-      bump_clause_activity lclause;
-      if cr.cr_is_uip then
-        enqueue_bool fuip ~level:cr.cr_backtrack_lvl (Bcp lclause)
-      else begin
-        env.next_decision <- Some fuip.neg
-      end
+      attach_clause env lclause;
+      bump_clause_activity env lclause;
+      if cr.cr_is_uip then (
+        enqueue_bool env fuip ~level:cr.cr_backtrack_lvl (Bcp lclause)
+      ) else (
+        (* semantic split: pick negation of one of top-level lits *)
+        env.next_decision <- Some (Atom.neg fuip)
+      )
   end;
-  var_decay_activity ();
-  clause_decay_activity ()
+  var_decay_activity env;
+  clause_decay_activity env
 
 (* process a conflict:
    - learn clause
    - backtrack
    - report unsat if conflict at level 0
 *)
-let add_boolean_conflict (confl:clause): unit =
-  Log.debugf info (fun k -> k"Boolean conflict: %a"  St.pp_clause confl);
+let add_boolean_conflict (env:t) (confl:clause): unit =
+  Log.debugf info (fun k -> k"Boolean conflict: %a" (pp_clause env) confl);
   env.next_decision <- None;
   env.conflicts <- env.conflicts + 1;
-  assert (decision_level() >= base_level ());
-  if decision_level() = base_level ()
-  || CCArray.for_all (fun a -> a.var.v_level <= base_level ()) confl.atoms then
-    report_unsat confl; (* Top-level conflict *)
-  let cr = analyze confl in
-  cancel_until (max cr.cr_backtrack_lvl (base_level ()));
-  record_learnt_clause confl cr
+  assert (decision_level env >= base_level env);
+  if decision_level env = base_level env ||
+     CCArray.for_all
+       (fun a -> Atom.level a <= base_level env)
+       confl.c_atoms
+  then (
+    report_unsat env confl; (* Top-level conflict *)
+  );
+  let cr = analyze env confl in
+  cancel_until env (max cr.cr_backtrack_lvl (base_level env));
+  record_learnt_clause env confl cr
 
 (* Get the correct vector to insert a clause in. *)
-let clause_vector c =
-  match c.cpremise with
-    | Hyp -> env.clauses_hyps
-    | Local -> env.clauses_temp
-    | Lemma _ | History _ -> env.clauses_learnt
-
-(* swap elements of array *)
-let swap_arr a i j =
-  if i<>j then (
-    let tmp = a.(i) in
-    a.(i) <- a.(j);
-    a.(j) <- tmp;
-  )
+let clause_vector env c = match c.c_premise with
+  | Hyp -> env.clauses_hyps
+  | Local -> env.clauses_temp
+  | Lemma _ | History _ -> env.clauses_learnt
 
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
-let add_clause (init:clause) : unit =
-  Log.debugf debug (fun k -> k "Adding clause: @[<hov>%a@]" St.pp_clause init);
+let add_clause (env:t) (init:clause) : unit =
+  Log.debugf debug (fun k -> k "Adding clause: @[<hov>%a@]" (pp_clause env) init);
   (* Insertion of new lits is done before simplification. Indeed, else a lit in a
      trivial clause could end up being not decided on, which is a bug. *)
-  Array.iter (fun x -> insert_var_order (elt_of_var x.var)) init.atoms;
-  let vec = clause_vector init in
+  Array.iter (fun a -> add_term env a.a_term) init.c_atoms;
+  let vec = clause_vector env init in
   try
     let c, has_remove_doublons = eliminate_doublons init in
     if has_remove_doublons then (
       Log.debugf debug
-        (fun k -> k "Doublons eliminated: %a :from %a" St.pp_clause c St.pp_clause init);
+        (fun k -> k "Doublons eliminated: %a :from %a" (pp_clause env) c (pp_clause env) init);
     );
-    let atoms, history = partition c.atoms in
+    let atoms, history = partition c.c_atoms in
     let clause =
       if history = []
       then (
         (* update order of atoms *)
-        List.iteri (fun i a -> c.atoms.(i) <- a) atoms;
+        List.iteri (fun i a -> c.c_atoms.(i) <- a) atoms;
         c
+      ) else (
+        Clause.make atoms (History (c :: history))
       )
-      else make_clause (fresh_name ()) atoms (History (c :: history))
     in
-    Log.debugf info (fun k->k "New clause: @[<hov>%a@]" St.pp_clause clause);
-    match atoms with
+    Log.debugf info (fun k->k "New clause: @[<hov>%a@]" (pp_clause env) clause);
+    begin match atoms with
       | [] ->
         (* Report_unsat will raise, and the current clause will be lost if we do not
            store it somewhere. Since the proof search will end, any of env.clauses_to_add
            or env.clauses_root is adequate. *)
         Stack.push clause env.clauses_root;
-        report_unsat clause
+        report_unsat env clause
       | [a]   ->
-        cancel_until (base_level ());
-        if a.neg.is_true then begin
+        cancel_until env (base_level env);
+        if Atom.is_false a then (
           (* Since we cannot propagate the atom [a], in order to not lose
              the information that [a] must be true, we add clause to the list
              of clauses to add, so that it will be e-examined later. *)
           Log.debug debug "Unit clause, adding to clauses to add";
           Stack.push clause env.clauses_to_add;
-          report_unsat clause
-        end else if a.is_true then begin
+          report_unsat env clause
+        ) else if Atom.is_true a then (
           (* If the atom is already true, then it should be because of a local hyp.
              However it means we can't propagate it at level 0. In order to not lose
              that information, we store the clause in a stack of clauses that we will
              add to the solver at the next pop. *)
           Log.debug debug "Unit clause, adding to root clauses";
-          assert (0 < a.var.v_level && a.var.v_level <= base_level ());
+          assert (0 < Atom.level a && Atom.level a <= base_level env);
           Stack.push clause env.clauses_root;
           ()
-        end else begin
-          Log.debugf debug (fun k->k "Unit clause, propagating: %a" St.pp_atom a);
+        ) else (
+          Log.debugf debug (fun k->k "Unit clause, propagating: %a" (pp_atom env) a);
           Vec.push vec clause;
-          enqueue_bool a ~level:0 (Bcp clause)
-        end
+          enqueue_bool env a ~level:0 (Bcp clause)
+        )
       | a::b::_ ->
         Vec.push vec clause;
-        if a.neg.is_true then (
+        if Atom.is_false a then (
           (* put the two atoms with highest decision level at the beginning
              of the clause, so that watch literals are always fine *)
-          let ats = clause.atoms in
-          Array.iteri
-            (fun i a ->
-               if i>0 && a.var.v_level > ats.(0).var.v_level then (
-                 swap_arr ats 0 i
-               ) else if i>1 && a.var.v_level > ats.(1).var.v_level then (
-                 swap_arr ats 1 i;
-               ))
-            clause.atoms;
-          assert(ats.(0).var.v_level >= ats.(1).var.v_level);
-          attach_clause clause;
-          add_boolean_conflict clause
+          let ats = clause.c_atoms in
+          put_high_level_atoms_first ats;
+          assert(Atom.level ats.(0) >= Atom.level ats.(1));
+          attach_clause env clause;
+          add_boolean_conflict env clause
         ) else (
-          attach_clause clause;
-          if b.neg.is_true && not a.is_true && not a.neg.is_true then (
-            let lvl = List.fold_left (fun m a -> max m a.var.v_level) 0 atoms in
-            cancel_until (max lvl (base_level ()));
-            enqueue_bool a ~level:lvl (Bcp clause)
+          attach_clause env clause;
+          if Atom.is_false b && Atom.is_undef a then (
+            let lvl = List.fold_left (fun m a -> max m (Atom.level a)) 0 atoms in
+            cancel_until env (max lvl (base_level env));
+            enqueue_bool env a ~level:lvl (Bcp clause)
           )
         )
+    end
   with Trivial ->
     Vec.push vec init;
-    Log.debugf info (fun k->k "Trivial clause ignored : @[%a@]" St.pp_clause init)
+    Log.debugf info (fun k->k "Trivial clause ignored : @[%a@]" (pp_clause env) init)
 
-let flush_clauses () =
+let flush_clauses (env:t) =
   if not (Stack.is_empty env.clauses_to_add) then begin
-    let nbv = St.nb_elt () in
     let nbc = env.nb_init_clauses + Stack.length env.clauses_to_add in
-    Iheap.grow_to_at_least env.order nbv;
     Vec.grow_to_at_least env.clauses_hyps nbc;
     Vec.grow_to_at_least env.clauses_learnt nbc;
     env.nb_init_clauses <- nbc;
     while not (Stack.is_empty env.clauses_to_add) do
       let c = Stack.pop env.clauses_to_add in
-      add_clause c
+      add_clause env c
     done
   end
 
@@ -922,8 +922,8 @@ type watch_res =
    [i] is the index of [c] in [a.watched]
    @return whether [c] was removed from [a.watched]
 *)
-let propagate_in_clause (a:atom) (c:clause) (i:int): watch_res =
-  let atoms = c.atoms in
+let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
+  let atoms = c.c_atoms in
   let first = atoms.(0) in
   if first == a.neg then (
     (* false lit must be at index 1 *)

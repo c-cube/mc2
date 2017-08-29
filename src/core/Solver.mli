@@ -11,7 +11,7 @@ open Solver_types
 
 type formula = term
 type proof = Res.proof
-type atom = formula (** The type of atoms given by the module argument for formulas *)
+type nonrec atom = atom (** The type of atoms given by the module argument for formulas *)
 
 (** {2 Types} *)
 
@@ -111,7 +111,7 @@ type res =
   | Unsat of Unsat_state.t (** Returned when the solver reaches UNSAT *)
 (** Result type for the solver *)
 
-val solve : t -> ?assumptions:atom list -> unit -> res
+val solve : ?assumptions:atom list -> t -> res
 (** Try and solves the current set of assumptions. *)
 
 (** {2 Print} *)

@@ -6,8 +6,6 @@ Copyright 2014 Simon Cruanes
 
 open Minismt_core
 
-module So = Solver
-
 exception Incorrect_model
 exception Out_of_time
 exception Out_of_space
@@ -28,109 +26,96 @@ module P =
 (* TODO: uniform typing interface for dimacs/smtlib *)
 (* TODO: tseitin theory *)
 
-module Make
-    (T : Typing_intf.S with type atom := Term.t)
-  : sig
-    val do_task : Dolmen.Statement.t -> unit
-  end = struct
+module Dot = Minismt_backend.Dot.Make(Minismt_backend.Dot.Default)
 
-  module Dot = Minismt_backend.Dot.Make(Minismt_backend.Dot.Default)
+let hyps = ref []
 
-  let hyps = ref []
-
-  let check_model state =
-    let s = So.state_solver state in
-    let check_clause c =
-      let l =
-        List.map
-          (fun a ->
-             Log.debugf 99
-               (fun k -> k "Checking value of %a" (So.pp_term s) (Atom.term a));
-             Solver.Sat_state.eval state a)
-          c
-      in
-      List.exists (fun x -> x) l
+let check_model state =
+  let s = Solver.state_solver state in
+  let check_clause c =
+    let l =
+      List.map
+        (fun a ->
+           Log.debugf 99
+             (fun k -> k "Checking value of %a" (Solver.pp_term s) (Atom.term a));
+           Solver.Sat_state.eval state (Atom.term a))
+        c
     in
-    let l = List.map check_clause !hyps in
-    List.for_all (fun x -> x) l
+    List.exists (fun x -> x) l
+  in
+  let l = List.map check_clause !hyps in
+  List.for_all (fun x -> x) l
 
-  let prove ~assumptions =
-    let res = S.solve ~assumptions () in
-    let t = Sys.time () in
-    begin match res with
-      | S.Sat state ->
-        if !p_check then
-          if not (check_model state) then
-            raise Incorrect_model;
-        let t' = Sys.time () -. t in
-        Format.printf "Sat (%f/%f)@." t t'
-      | S.Unsat state ->
-        if !p_check then begin
-          let p = state.Solver_intf.get_proof () in
-          S.Proof.check p;
-          if !p_dot_proof <> "" then begin
-            CCIO.with_out !p_dot_proof
-              (fun oc ->
-                 Log.debugf 1 (fun k->k "write proof into `%s`" !p_dot_proof);
-                 let fmt = Format.formatter_of_out_channel oc in
-                 Dot.print fmt p;
-                 Format.pp_print_flush fmt (); flush oc)
-          end
-        end;
-        let t' = Sys.time () -. t in
-        Format.printf "Unsat (%f/%f)@." t t'
-    end
+let prove ~assumptions s =
+  let res = Solver.solve s ~assumptions in
+  let t = Sys.time () in
+  begin match res with
+    | Solver.Sat state ->
+      if !p_check then
+        if not (check_model state) then
+          raise Incorrect_model;
+      let t' = Sys.time () -. t in
+      Format.printf "Sat (%f/%f)@." t t'
+    | Solver.Unsat state ->
+      if !p_check then (
+        let p = Solver.Unsat_state.get_proof state in
+        Res.check p;
+        if !p_dot_proof <> "" then (
+          CCIO.with_out !p_dot_proof
+            (fun oc ->
+               Log.debugf 1 (fun k->k "write proof into `%s`" !p_dot_proof);
+               let fmt = Format.formatter_of_out_channel oc in
+               Dot.print fmt p;
+               Format.pp_print_flush fmt (); flush oc)
+        )
+      );
+      let t' = Sys.time () -. t in
+      Format.printf "Unsat (%f/%f)@." t t'
+  end
 
-  (* dump CNF *)
-  let pp_cnf (cnf:S.atom list list) =
-    if !p_cnf then (
-      let pp_c =
-        CCFormat.(within "[" "]" @@ hvbox ~i:2 @@ list
-            ~sep:(return " @<1>∨@ ") T.pp_atom)
-      in
-      Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
-    )
+(* dump CNF *)
+let pp_cnf (s:Solver.t) (cnf:Atom.t list list) =
+  if !p_cnf then (
+    let pp_c =
+      CCFormat.(within "[" "]" @@ hvbox ~i:2 @@ list
+          ~sep:(return " @<1>∨@ ") (Solver.pp_atom s))
+    in
+    Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
+  )
 
-  let do_task s =
-    match s.Dolmen.Statement.descr with
-      | Dolmen.Statement.Def (id, t) -> T.def id t
-      | Dolmen.Statement.Decl (id, t) -> T.decl id t
-      | Dolmen.Statement.Consequent t ->
-        let cnf = T.consequent t in
-        pp_cnf cnf;
-        hyps := cnf @ !hyps;
-        S.assume cnf
-      | Dolmen.Statement.Antecedent t ->
-        let cnf = T.antecedent t in
-        pp_cnf cnf;
-        hyps := cnf @ !hyps;
-        S.assume cnf
-      | Dolmen.Statement.Pack [
-          { Dolmen.Statement.descr = Dolmen.Statement.Push 1; _ };
-          { Dolmen.Statement.descr = Dolmen.Statement.Antecedent f; _ };
-          { Dolmen.Statement.descr = Dolmen.Statement.Prove; _ };
-          { Dolmen.Statement.descr = Dolmen.Statement.Pop 1; _ };
-        ] ->
-        let assumptions = T.assumptions f in
-        prove ~assumptions
-      | Dolmen.Statement.Prove ->
-        prove ~assumptions:[]
-      | Dolmen.Statement.Set_info _
-      | Dolmen.Statement.Set_logic _ -> ()
-      | Dolmen.Statement.Exit -> exit 0
-      | _ ->
-        Format.printf "Command not supported:@\n%a@."
-          Dolmen.Statement.print s
-end
-
-module Sat = Make(Sat.Make(struct end))(Type_sat)
-module Mcsat = Make(Mcsat.Make(struct end))(Type_smt)
-
-let solver = ref (module Mcsat : S)
-let solver_list = [
-  "sat", (module Sat : S);
-  "mcsat", (module Mcsat : S);
-]
+let do_task _solver _s =
+  assert false
+    (* FIXME
+  match s.Dolmen.Statement.descr with
+    | Dolmen.Statement.Def (id, t) -> T.def id t
+    | Dolmen.Statement.Decl (id, t) -> T.decl id t
+    | Dolmen.Statement.Consequent t ->
+      let cnf = T.consequent t in
+      pp_cnf solver cnf;
+      hyps := cnf @ !hyps;
+      S.assume s cnf
+    | Dolmen.Statement.Antecedent t ->
+      let cnf = T.antecedent t in
+      pp_cnf cnf;
+      hyps := cnf @ !hyps;
+      S.assume cnf
+    | Dolmen.Statement.Pack [
+        { Dolmen.Statement.descr = Dolmen.Statement.Push 1; _ };
+        { Dolmen.Statement.descr = Dolmen.Statement.Antecedent f; _ };
+        { Dolmen.Statement.descr = Dolmen.Statement.Prove; _ };
+        { Dolmen.Statement.descr = Dolmen.Statement.Pop 1; _ };
+      ] ->
+      let assumptions = T.assumptions f in
+      prove solver ~assumptions
+    | Dolmen.Statement.Prove ->
+      prove solver ~assumptions:[]
+    | Dolmen.Statement.Set_info _
+    | Dolmen.Statement.Set_logic _ -> ()
+    | Dolmen.Statement.Exit -> exit 0
+    | _ ->
+      Format.printf "Command not supported:@\n%a@."
+        Dolmen.Statement.print s
+       *)
 
 let error_msg opt arg l =
   Format.fprintf Format.str_formatter "'%s' is not a valid argument for '%s', valid arguments are : %a"
@@ -142,8 +127,6 @@ let set_flag opt arg flag l =
     flag := List.assoc arg l
   with Not_found ->
     invalid_arg (error_msg opt arg l)
-
-let set_solver s = set_flag "Solver" s solver solver_list
 
 (* Arguments parsing *)
 let int_arg r arg =
@@ -185,8 +168,6 @@ let argspec = Arg.align [
     " If provided, print the dot proof in the given file";
     "-gc", Arg.Unit setup_gc_stat,
     " Outputs statistics about the GC";
-    "-s", Arg.Symbol (List.map fst solver_list, set_solver),
-    "Sets the solver to use (default mcsat)";
     "-size", Arg.String (int_arg size_limit),
     "<s>[kMGT] Sets the size limit for the sat solver";
     "-time", Arg.String (int_arg time_limit),
@@ -218,11 +199,12 @@ let main () =
 
   (* Interesting stuff happening *)
   let lang, input = P.parse_file !file in
-  let module S = (val !solver : S) in
-  List.iter S.do_task input;
+  (* TODO: parse list of plugins on CLI *)
+  let solver = Solver.create() in
+  List.iter (do_task solver) input;
   (* Small hack for dimacs, which do not output a "Prove" statement *)
   begin match lang with
-    | P.Dimacs -> S.do_task @@ Dolmen.Statement.check_sat ()
+    | P.Dimacs -> do_task solver @@ Dolmen.Statement.check_sat ()
     | _ -> ()
   end;
   Gc.delete_alarm al;
@@ -241,7 +223,6 @@ let () =
     | Incorrect_model ->
       Format.printf "Internal error : incorrect *sat* model@.";
       exit 4
-    | Type_sat.Typing_error (msg, t)
     | Type_smt.Typing_error (msg, t) ->
       let b = Printexc.get_backtrace () in
       let loc = match t.Dolmen.Term.loc with

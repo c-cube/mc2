@@ -16,6 +16,10 @@ let[@inline] neg (a:t) : t = match a.a_term.t_var with
   | V_bool { pa; na } -> if a==pa then na else pa
   | V_none | V_semantic _ -> assert false
 
+let[@inline] abs (a:t) : t = match a.a_term.t_var with
+  | V_bool { pa; _ } -> pa
+  | V_none | V_semantic _ -> assert false
+
 let[@inline] is_true (a:t): bool = a.a_is_true
 let[@inline] is_false (a:t): bool = is_true (neg a)
 let[@inline] is_undef (a:t): bool = not (is_true a) && not (is_false a)
@@ -55,7 +59,9 @@ let pp_value fmt a =
   else
     Format.fprintf fmt ""
 
-let pp pp_term out a =
+let pp_simple out a: unit =
   let sign = if is_pos a then "+" else "-" in
-  Format.fprintf out "%s%d[%a][atom:@[<hov>%a@]]"
-    sign (a.a_term.t_id+1) pp_value a pp_term a.a_term
+  Format.fprintf out "%s%d[%a]" sign (a.a_term.t_id+1) pp_value a
+
+let pp pp_term out a =
+  Format.fprintf out "%a[atom:@[<hov>%a@]]" pp_simple a pp_term a.a_term

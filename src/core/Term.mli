@@ -29,6 +29,7 @@ val marked : t -> bool (** Was {!mark} called on this var? *)
 
 val is_deleted : t -> bool
 val level : t -> int
+val reason : t -> reason option
 
 val weight : t -> float (** Heuristic weight *)
 val set_weight : t -> float -> unit
@@ -47,6 +48,8 @@ module Bool : sig
   type t = bool_term
 
   val both_atoms_marked : t -> bool (** Did we see both polarities of this var in the same clause? *)
+  val assigned_atom : t -> atom option (** if assigned and bool, return corresponding atom *)
+  val assigned_atom_exn : t -> atom
 end
 
 (** {2 Assignment view} *)

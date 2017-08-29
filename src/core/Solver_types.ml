@@ -79,7 +79,7 @@ and atom = {
     [a.neg] wraps the theory negation of [f]. *)
 
 and clause = {
-  c_name : string; (** Clause name, mainly for printing, unique. *)
+  c_name : int; (** Clause name, mainly for printing, unique. *)
   c_tag : int option; (** User-provided tag for clauses. *)
   c_atoms : atom array; (** The atoms that constitute the clause.*)
   mutable c_premise : premise;
@@ -169,7 +169,7 @@ let dummy_term : term = {
 }
 
 let dummy_clause : clause = {
-  c_name = "";
+  c_name = -1;
   c_tag = None;
   c_atoms = [| |];
   c_activity = -1.;

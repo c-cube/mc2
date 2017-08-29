@@ -28,8 +28,8 @@ let resolve l =
     | a :: b :: r ->
       if Atom.equal a b then
         aux resolved (a :: acc) r
-      else if Atom.equal a.a_neg b then (* TODO: use `Term` functions *)
-        aux (a.a_term.pa :: resolved) acc r
+      else if Atom.equal (Atom.neg a) b then
+        aux (Atom.abs a :: resolved) acc r
       else
         aux resolved (a :: acc) (b :: r)
   in
@@ -39,17 +39,19 @@ let resolve l =
 (* Compute the set of doublons of a clause *)
 let find_doublons c = List.sort Atom.compare (Array.to_list (c.c_atoms))
 
-let analyze cl =
+(* TODO: comment *)
+(* conflict analysis *)
+let analyze (cl:atom list) : atom list list * atom list =
   let rec aux duplicates free = function
     | [] -> duplicates, free
     | [ x ] -> duplicates, x :: free
     | x :: ((y :: r) as l) ->
-      if equal_atoms x y then
+      if Atom.equal x y then
         count duplicates (x :: free) x [y] r
       else
         aux duplicates (x :: free) l
   and count duplicates free x acc = function
-    | (y :: r) when equal_atoms x y ->
+    | (y :: r) when Atom.equal x y ->
       count duplicates free x (y :: acc) r
     | l ->
       aux (acc :: duplicates) free l
@@ -81,7 +83,8 @@ let pp_cl fmt l =
 let cmp_cl c d =
   let rec aux = function
     | [], [] -> 0
-    | a :: r, a' :: r' -> begin match compare_atoms a a' with
+    | a :: r, a' :: r' ->
+      begin match Atom.compare a a' with
         | 0 -> aux (r, r')
         | x -> x
       end
@@ -96,42 +99,43 @@ let prove conclusion =
 
 let rec set_atom_proof a =
   let aux acc b =
-    if equal_atoms a.neg b then acc
+    if Atom.equal (Atom.neg a) b then acc
     else set_atom_proof b :: acc
   in
-  assert (a.var.v_level >= 0);
-  match (a.var.reason) with
+  assert (Atom.level a >= 0);
+  begin match Atom.reason a with
     | Some Bcp c ->
       Log.debugf debug
-        (fun k -> k "Analysing: @[%a@ %a@]" pp_atom a Clause.pp c);
-      if Array.length c.c_atoms = 1 then begin
-        Log.debugf debug (fun k -> k "Old reason: @[%a@]" pp_atom a);
+        (fun k -> k "Analysing: @[%a@ %a@]" Atom.pp_simple a Clause.pp_simple c);
+      if Array.length c.c_atoms = 1 then (
+        Log.debugf debug (fun k -> k "Old reason: @[%a@]" Atom.pp_simple a);
         c
-      end else begin
-        assert (a.neg.is_true);
+      ) else (
+        assert (Atom.is_false a);
         let r = History (c :: (Array.fold_left aux [] c.c_atoms)) in
-        let c' = Clause.make (fresh_pcl_name ()) [a.neg] r in
-        a.var.reason <- Some (Bcp c');
+        let c' = Clause.make [Atom.neg a] r in
+        a.a_term.t_reason <- Some (Bcp c');
         Log.debugf debug
-          (fun k -> k "New reason: @[%a@ %a@]" pp_atom a Clause.pp c');
+          (fun k -> k "New reason: @[%a@ %a@]" Atom.pp_simple a Clause.pp_simple c');
         c'
-      end
+      )
     | _ ->
-      Log.debugf error (fun k -> k "Error while proving atom %a" pp_atom a);
+      Log.debugf error (fun k -> k "Error while proving atom %a" Atom.pp_simple a);
       raise (Resolution_error "Cannot prove atom")
-
-let prove_unsat conflict =
-  if Array.length conflict.c_atoms = 0 then conflict
-  else begin
-    Log.debugf info (fun k -> k "Proving unsat from: @[%a@]" Clause.pp conflict);
-    let l = Array.fold_left (fun acc a -> set_atom_proof a :: acc) [] conflict.c_atoms in
-    let res = Clause.make (fresh_pcl_name ()) [] (History (conflict :: l)) in
-    Log.debugf info (fun k -> k "Proof found: @[%a@]" Clause.pp res);
-    res
   end
 
+let prove_unsat (conflict:clause) : clause =
+  if Array.length conflict.c_atoms = 0 then conflict
+  else (
+    Log.debugf info (fun k -> k "Proving unsat from: @[%a@]" Clause.pp_simple conflict);
+    let l = Array.fold_left (fun acc a -> set_atom_proof a :: acc) [] conflict.c_atoms in
+    let res = Clause.make [] (History (conflict :: l)) in
+    Log.debugf info (fun k -> k "Proof found: @[%a@]" Clause.pp_simple res);
+    res
+  )
+
 let prove_atom a =
-  if (a.is_true && a.var.v_level = 0) then
+  if (Atom.is_true a && Atom.level a = 0) then
     Some (set_atom_proof a)
   else
     None
@@ -152,29 +156,29 @@ and step =
 let rec chain_res (c, cl) = function
   | d :: r ->
     Log.debugf debug
-      (fun k -> k "Resolving clauses : @[%a@\n%a@]" Clause.pp c Clause.pp d);
+      (fun k -> k "Resolving clauses : @[%a@\n%a@]"
+          Clause.pp_simple c Clause.pp_simple d);
     let dl = to_list d in
     begin match resolve (merge cl dl) with
-      | [ a ], l ->
+      | [a], l ->
         begin match r with
-          | [] -> (l, c, d, a)
+          | [] -> l, c, d, a
           | _ ->
-            let new_clause = Clause.make (fresh_pcl_name ())
-                l (History [c; d]) in
+            let new_clause = Clause.make l (History [c; d]) in
             chain_res (new_clause, l) r
         end
       | _ ->
         Log.debugf error
           (fun k -> k "While resolving clauses:@[<hov>%a@\n%a@]"
-              Clause.pp c Clause.pp d);
+              Clause.pp_simple c Clause.pp_simple d);
         raise (Resolution_error "Clause mismatch")
     end
   | _ ->
     raise (Resolution_error "Bad history")
 
-let expand conclusion =
-  Log.debugf debug (fun k -> k "Expanding : @[%a@]" Clause.pp conclusion);
-  match conclusion.c_premise with
+let expand conclusion : proof_node =
+  Log.debugf debug (fun k -> k "Expanding : @[%a@]" Clause.pp_simple conclusion);
+  begin match conclusion.c_premise with
     | Lemma l ->
       {conclusion; step = Lemma l; }
     | Hyp ->
@@ -182,7 +186,8 @@ let expand conclusion =
     | Local ->
       { conclusion; step = Assumption; }
     | History [] ->
-      Log.debugf error (fun k -> k "Empty history for clause: %a" Clause.pp conclusion);
+      Log.debugf error
+        (fun k -> k "Empty history for clause: %a" Clause.pp_simple conclusion);
       raise (Resolution_error "Empty history")
     | History [ c ] ->
       let duplicates, res = analyze (find_doublons c) in
@@ -197,6 +202,7 @@ let expand conclusion =
       conclusion.c_premise <- History [c'; d'];
       assert (cmp_cl l (to_list conclusion) = 0);
       { conclusion; step = Resolution (c', d', a); }
+  end
 
 (* Proof nodes manipulation *)
 let is_leaf = function
