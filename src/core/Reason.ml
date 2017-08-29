@@ -11,7 +11,7 @@ let pp out = function
   | n, Some Decision ->
     Format.fprintf out "@@%d" n
   | n, Some Bcp c ->
-    Format.fprintf out "->%d/%s" n c.name
+    Format.fprintf out "->%d/%s" n c.c_name
   | n, Some Semantic ->
     Format.fprintf out "::%d" n
 

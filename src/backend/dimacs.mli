@@ -12,34 +12,24 @@ Copyright 2014 Simon Cruanes
 
 open Minismt_core
 
-type 'c clause_sets = 'c Solver_intf.clause_sets
+type clause = Clause.t
+type 'c clause_sets = 'c Solver.clause_sets
 
-module type S = sig
+val export :
+  Format.formatter ->
+  clause clause_sets ->
+  unit
+(** Export the given clause vectors to the dimacs format.
+    The arguments should be transmitted directly from the corresponding
+    function of the {Internal} module. *)
 
-  type clause
-  (** The type of clauses *)
-
-  val export :
-    Format.formatter ->
-    clause clause_sets ->
-    unit
+val export_icnf :
+  Format.formatter ->
+  clause clause_sets ->
+  unit
   (** Export the given clause vectors to the dimacs format.
       The arguments should be transmitted directly from the corresponding
-      function of the {Internal} module. *)
-
-  val export_icnf :
-    Format.formatter ->
-    clause clause_sets ->
-    unit
-    (** Export the given clause vectors to the dimacs format.
-        The arguments should be transmitted directly from the corresponding
-        function of the {Internal} module.
-        This function may be called multiple times in order to add
-        new clauses (and new local hyps) to the problem.
-    *)
-
-end
-
-module Make(St: Solver_types.S)(Dummy: sig end) : S with type clause := St.clause
-(** Functor to create a module for exporting probems to the dimacs (& iCNF) formats. *)
-
+      function of the {Internal} module.
+      This function may be called multiple times in order to add
+      new clauses (and new local hyps) to the problem.
+  *)

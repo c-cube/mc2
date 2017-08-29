@@ -66,6 +66,10 @@ val last : 'a t -> 'a
 (** Last element, or
     @raise Invalid_argument if the vector is empty *)
 
+val pop_last : 'a t -> 'a
+(** Combine {!last} and {!pop}: remove last element and return it
+    @raise Invalid_argument if empty *)
+
 val get : 'a t -> int -> 'a
 (** get the element at the given index, or
     @raise Invalid_argument if the index is not valid *)

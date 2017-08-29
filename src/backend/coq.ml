@@ -4,6 +4,7 @@ Copyright 2015 Guillaume Bury
 *)
 
 open Minismt_core
+open Solver_types
 
 module type S = Backend_intf.S
 
@@ -19,16 +20,16 @@ module type Arg = sig
 
 end
 
-module Make(S : Res.S)(A : Arg with type hyp := S.clause
-                                and type lemma := S.clause
-                                and type assumption := S.clause) = struct
+module Make(A : Arg with type hyp := Clause.t
+                     and type lemma := Clause.t
+                     and type assumption := Clause.t) = struct
 
   module M = Map.Make(struct
-      type t = S.St.atom
-      let compare a b = compare a.S.St.aid b.S.St.aid
+      type t = S.atom
+      let compare a b = compare a.S.aid b.S.aid
     end)
 
-  let name c = c.S.St.name
+  let name c = c.S.name
 
   let clause_map c =
     let rec aux acc a i =
@@ -38,11 +39,11 @@ module Make(S : Res.S)(A : Arg with type hyp := S.clause
         aux (M.add a.(i) name acc) a (i + 1)
       end
     in
-    aux M.empty c.S.St.atoms 0
+    aux M.empty c.S.atoms 0
 
   let clause_iter m format fmt clause =
     let aux atom = Format.fprintf fmt format (M.find atom m) in
-    Array.iter aux clause.S.St.atoms
+    Array.iter aux clause.S.atoms
 
   let elim_duplicate fmt goal hyp _ =
     (** Printing info comment in coq *)
@@ -61,27 +62,27 @@ module Make(S : Res.S)(A : Arg with type hyp := S.clause
            if b == a then begin
              Format.fprintf fmt "@ (fun p =>@ %s%a)"
                (name h2) (fun fmt -> (Array.iter (fun c ->
-                   if c == a.S.St.neg then
+                   if c == a.S.neg then
                      Format.fprintf fmt "@ (fun np => np p)"
                    else
                      Format.fprintf fmt "@ %s" (M.find c m)))
-             ) h2.S.St.atoms
+             ) h2.S.atoms
            end else
              Format.fprintf fmt "@ %s" (M.find b m)
-         )) h1.S.St.atoms
+         )) h1.S.atoms
 
   let resolution fmt goal hyp1 hyp2 atom =
-    let a = S.St.(atom.var.pa) in
+    let a = S.(atom.var.pa) in
     let h1, h2 =
-      if Array.memq a hyp1.S.St.atoms then hyp1, hyp2
-      else (assert (Array.memq a hyp2.S.St.atoms); hyp2, hyp1)
+      if Array.memq a hyp1.S.atoms then hyp1, hyp2
+      else (assert (Array.memq a hyp2.S.atoms); hyp2, hyp1)
     in
     (** Print some debug info *)
     Format.fprintf fmt
       "(* Clausal resolution. Goal : %s ; Hyps : %s, %s *)@\n"
       (name goal) (name h1) (name h2);
     (** Prove the goal: intro the axioms, then perform resolution *)
-    if Array.length goal.S.St.atoms = 0 then begin
+    if Array.length goal.S.atoms = 0 then begin
       let m = M.empty in
       Format.fprintf fmt "exact @[<hov 1>(%a)@].@\n" (resolution_aux m a h1 h2) ()
     end else begin
@@ -121,14 +122,13 @@ module Make(S : Res.S)(A : Arg with type hyp := S.clause
 end
 
 
-module Simple(S : Res.S)
-    (A : Arg with type hyp = S.St.formula list
-              and type lemma := S.lemma
-              and type assumption := S.St.formula) =
-  Make(S)(struct
+module Simple(A : Arg with type hyp = Term.t list
+                       and type lemma := Clause.t
+                       and type assumption := Term.t) =
+  Make(struct
 
     (* Some helpers *)
-    let lit a = a.S.St.lit
+    let lit a = a.S.lit
 
     let get_assumption c =
       match S.to_list c with
@@ -136,8 +136,8 @@ module Simple(S : Res.S)
         | _ -> assert false
 
     let get_lemma c =
-      match c.S.St.cpremise with
-        | S.St.Lemma p -> p
+      match c.S.cpremise with
+        | S.Lemma p -> p
         | _ -> assert false
 
     let prove_hyp fmt name c =

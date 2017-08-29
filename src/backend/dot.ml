@@ -30,9 +30,9 @@ module type Arg = sig
 
 end
 
-module Default(S : Res.S) = struct
+module Default = struct
 
-  let print_atom = S.St.print_atom
+  let print_atom = Atom.pp
 
   let hyp_info c =
     "hypothesis", Some "LIGHTBLUE",
@@ -142,39 +142,3 @@ module Make(S : Res.S)(A : Arg with type atom := S.atom
     Format.fprintf fmt "}@."
 
 end
-
-module Simple(S : Res.S)
-    (A : Arg with type atom := S.St.formula
-              and type hyp = S.St.formula list
-              and type lemma := S.lemma
-              and type assumption = S.St.formula) =
-  Make(S)(struct
-
-    (* Some helpers *)
-    let lit a = a.S.St.lit
-
-    let get_assumption c =
-      match S.to_list c with
-        | [ x ] -> x
-        | _ -> assert false
-
-    let get_lemma c =
-      match c.S.St.cpremise with
-        | S.St.Lemma p -> p
-        | _ -> assert false
-
-    (* Actual functions *)
-    let print_atom fmt a =
-      A.print_atom fmt a.S.St.lit
-
-    let hyp_info c =
-      A.hyp_info (List.map lit (S.to_list c))
-
-    let lemma_info c =
-      A.lemma_info (get_lemma c)
-
-    let assumption_info c =
-      A.assumption_info (lit (get_assumption c))
-
-  end)
-

@@ -49,13 +49,13 @@ let shrink t i =
   assert (i<=t.sz);
   t.sz <- t.sz - i
 
-let pop t =
+let[@inline] pop t =
   if t.sz = 0 then invalid_arg "vec.pop";
   t.sz <- t.sz - 1
 
-let size t = t.sz
+let[@inline] size t = t.sz
 
-let is_empty t = t.sz = 0
+let[@inline] is_empty t = t.sz = 0
 
 let grow_to_exact t new_capa =
   assert (new_capa > Array.length t.data);
@@ -81,22 +81,28 @@ let grow_to_at_least t new_capa =
     grow_to_exact t !capa
   )
 
-let is_full t = Array.length t.data = t.sz
+let[@inline] is_full t = Array.length t.data = t.sz
 
-let push t e =
+let[@inline] push t e =
   if is_full t then grow_to_double_size t;
   t.data.(t.sz) <- e;
   t.sz <- t.sz + 1
 
-let last t =
+let[@inline] last t =
   if t.sz = 0 then invalid_arg "vec.last";
   t.data.(t.sz - 1)
 
-let get t i =
+let[@inline] pop_last t =
+  if t.sz = 0 then invalid_arg "vec.pop_last";
+  let x = t.data.(t.sz - 1) in
+  t.sz <- t.sz - 1;
+  x
+
+let[@inline] get t i =
   if i < 0 || i >= t.sz then invalid_arg "vec.get";
   Array.unsafe_get t.data i
 
-let set t i v =
+let[@inline] set t i v =
   if i < 0 || i > t.sz then invalid_arg "vec.set";
   if i = t.sz then
     push t v

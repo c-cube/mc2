@@ -23,8 +23,24 @@ exception UndecidedLit
 type t
 (** The core solver structure *)
 
-val create : Plugins.t -> t
-(** Create a solver interfaced with the given set of plugins *)
+val create : unit -> t
+(** Create a solver *)
+
+val add_plugin : t -> Plugin.factory -> Plugin.t
+(** [add_plugin s f] creates a new plugin, stores it into [s],
+    and returns it.
+    @raise Failure if all plugin IDs have been allocated
+*)
+
+(* FIXME:
+val gc_mark_sub : t -> (Term.t -> unit) -> Term.t -> unit
+(** [gc_mark_sub f t] should call [f] on every subterm of [t]
+    to retain them during GC *)
+*)
+
+val iter_terms : t -> term Sequence.t
+(** Iterate on all terms known to plugins.
+    Used for checking all variables to assign, and for garbage collection. *)
 
 val solve : t -> unit
 (** Try and solves the current set of assumptions.
@@ -40,11 +56,9 @@ val new_lit : t -> term -> unit
     be decided on at some point during solving, wether it appears
     in clauses or not. *)
 
-(* TODO: remove this? *)
-val new_atom : term -> unit
-(** Add a new atom (i.e propositional term) to the solver.
-    This term will be decided on at some point during solving,
-    wether it appears in clauses or not. *)
+val add_term : t -> term -> unit
+(** Add term (and its subterms, recursively) to the solver.
+    It means the term will have a value in the model. *)
 
 val push : t -> unit
 (** Create a decision level for local assumptions.
@@ -87,15 +101,20 @@ val unsat_conflict : t -> clause option
 (** Returns the unsat clause found at the toplevel, if it exists (i.e if
     [solve] has raised [Unsat]) *)
 
-val full_slice : t -> (term, term, proof) Plugin_intf.slice
-(** View the current state of the trail as a slice. Mainly useful when the
-    solver has reached a SAT conclusion. *)
+val full_slice : t -> term Sequence.t
+(** View the current state of the trail as a sequence of assigned terms. *)
+
+(** {2 Print} *)
+
+val pp_term : t -> term CCFormat.printer
+val pp_atom : t -> atom CCFormat.printer
+val pp_clause : t -> clause CCFormat.printer
 
 (** {2 Internal data}
     These functions expose some internal data stored by the solver, as such
     great care should be taken to ensure not to mess with the values returned. *)
 
-val trail : t -> t Vec.t
+val trail : t -> trail
 (** Returns the current trail.
     {b DO NOT MUTATE} *)
 

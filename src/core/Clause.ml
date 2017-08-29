@@ -38,54 +38,46 @@ let empty : t = make "⊥" [] (History [])
 let visited c = Fields.get field_visited c.c_fields
 let mark_visited c = c.c_fields <- Fields.set field_visited true c.c_fields
 let clear_visited c = c.c_fields <- Fields.set field_visited false c.c_fields
+let get_tag c = c.c_tag
 
 (* Name generation *)
-let fresh_lname =
+let fresh_name_gen prefix =
   let cpt = ref 0 in
-  fun () -> incr cpt; "L" ^ (string_of_int !cpt)
+  fun () -> incr cpt; prefix ^ (string_of_int !cpt)
 
-let fresh_hname =
-  let cpt = ref 0 in
-  fun () -> incr cpt; "H" ^ (string_of_int !cpt)
+let fresh_lname = fresh_name_gen "L"
+let fresh_hname = fresh_name_gen "G"
+let fresh_tname = fresh_name_gen "T"
+let fresh_name = fresh_name_gen "C"
 
-let fresh_tname =
-  let cpt = ref 0 in
-  fun () -> incr cpt; "T" ^ (string_of_int !cpt)
-
-let fresh_name =
-  let cpt = ref 0 in
-  fun () -> incr cpt; "C" ^ (string_of_int !cpt)
-
-
-let pp_atoms out v =
+let pp_atoms pp_t out v =
   if Array.length v = 0 then
     Format.fprintf out "∅"
   else (
-    Atom.pp out v.(0);
+    Atom.pp pp_t out v.(0);
     if (Array.length v) > 1 then (
       for i = 1 to (Array.length v) - 1 do
-        Format.fprintf out " ∨ %a" Atom.pp v.(i)
+        Format.fprintf out " ∨ %a" (Atom.pp pp_t) v.(i)
       done
     )
   )
 
-let print_clause fmt c =
-  Format.fprintf fmt "%s : %a" c.c_name pp_atoms c.c_atoms
+let debug pp_t out c =
+  Format.fprintf out "%s : %a" c.c_name (pp_atoms pp_t) c.c_atoms
 
-let pp_atoms_vec out vec = Util.pp_array ~sep:" " Atom.pp out vec
+let pp_atoms_vec pp_t out vec = Util.pp_array ~sep:" " (Atom.pp pp_t) out vec
 
-let pp out {c_name; c_atoms; c_premise=cp; _} =
+let pp pp_t out {c_name; c_atoms; c_premise=cp; _} =
   Format.fprintf out "%s@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
-    c_name pp_atoms_vec c_atoms Premise.pp cp
+    c_name (pp_atoms_vec pp_t) c_atoms Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =
   let aux fmt a =
-    Array.iter (fun p ->
-      Format.fprintf fmt "%s%d "
-        (* FIXME: use [Term.as_bvar_exn] here *)
-        (if p == p.a_term.pa then "-" else "")
-        (p.a_term.t_id+1))
+    Array.iter
+      (fun p ->
+         Format.fprintf fmt "%s%d "
+           (if Atom.is_pos p then "" else "-")
+           (p.a_term.t_id+1))
       a
   in
   Format.fprintf fmt "%a0" aux c_atoms
-

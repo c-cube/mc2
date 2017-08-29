@@ -23,15 +23,10 @@ val visited : t -> bool
 val mark_visited : t -> unit
 val clear_visited : t -> unit
 
-val fresh_name : unit -> string
-val fresh_lname : unit -> string
-val fresh_tname : unit -> string
-val fresh_hname : unit -> string
-(** Fresh names for clauses *)
+val get_tag : clause -> int option
+(** Recover tag from a clause, if any *)
 
-val pp : Format.formatter -> clause -> unit
-(** Pretty printing functions for atoms and clauses *)
-
-val debug : t CCFormat.printer
+val pp : Term.t CCFormat.printer -> t CCFormat.printer
+val debug : Term.t CCFormat.printer -> t CCFormat.printer
 
 val pp_dimacs : t CCFormat.printer

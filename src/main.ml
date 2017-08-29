@@ -5,7 +5,8 @@ Copyright 2014 Simon Cruanes
 *)
 
 open Minismt_core
-open Minismt_sat
+
+module So = Solver
 
 exception Incorrect_model
 exception Out_of_time
@@ -23,27 +24,31 @@ module P =
   Dolmen.Logic.Make(Dolmen.ParseLocation)
     (Dolmen.Id)(Dolmen.Term)(Dolmen.Statement)
 
-module type S = sig
-  val do_task : Dolmen.Statement.t -> unit
-end
+(* TODO: remove the functor, there will be only one input *)
+(* TODO: uniform typing interface for dimacs/smtlib *)
+(* TODO: tseitin theory *)
 
 module Make
-    (S : External.S)
-    (T : Typing_intf.S with type atom := S.atom)
+    (T : Typing_intf.S with type atom := Term.t)
   : sig
     val do_task : Dolmen.Statement.t -> unit
   end = struct
 
-  module Dot = Minismt_backend.Dot.Make(S.Proof)(Minismt_backend.Dot.Default(S.Proof))
+  module Dot = Minismt_backend.Dot.Make(Minismt_backend.Dot.Default)
 
   let hyps = ref []
 
   let check_model state =
+    let s = So.state_solver state in
     let check_clause c =
-      let l = List.map (function a ->
-          Log.debugf 99
-            (fun k -> k "Checking value of %a" S.St.pp_atom (S.St.add_atom a));
-          state.Solver_intf.eval a) c in
+      let l =
+        List.map
+          (fun a ->
+             Log.debugf 99
+               (fun k -> k "Checking value of %a" (So.pp_term s) (Atom.term a));
+             Solver.Sat_state.eval state a)
+          c
+      in
       List.exists (fun x -> x) l
     in
     let l = List.map check_clause !hyps in

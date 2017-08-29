@@ -3,37 +3,50 @@ open Solver_types
 
 type t = atom
 
-(* TODO: migrate into term, with unsafe check that it's bool *)
+let[@inline] equal a b = a.a_id = b.a_id
+let[@inline] compare a b = CCInt.compare a.a_id b.a_id
 
-(* Misc functions *)
-let equal_atoms a b = St.(a.aid) = St.(b.aid)
-let compare_atoms a b = Pervasives.compare St.(a.aid) St.(b.aid)
+(* negation of the atom *)
+let[@inline] is_pos (a:t) : bool = match a.a_term.t_var with
+  | V_bool { pa; _ } -> a==pa
+  | V_none | V_semantic _ -> assert false
 
-let seen a =
-  let pos = (a == a.var.pa) in
-  let seen_pos = Bool_var_fields.get field_seen_pos a.var.v_flags in
-  let seen_neg = Bool_var_fields.get field_seen_neg a.var.v_flags in
-  match seen_pos, seen_neg, pos with
-    | false, false, _ -> false
-    | true, true, _
-    | true, _, true
-    | false, _, false -> true
-    | true, false, false
-    | false, true, true -> false
+(* negation of the atom *)
+let[@inline] neg (a:t) : t = match a.a_term.t_var with
+  | V_bool { pa; na } -> if a==pa then na else pa
+  | V_none | V_semantic _ -> assert false
 
-let seen_both_atoms (v:bool_var) =
-  let seen_pos = Bool_var_fields.get field_seen_pos v.v_flags in
-  let seen_neg = Bool_var_fields.get field_seen_neg v.v_flags in
-  seen_pos && seen_neg
+let[@inline] is_true (a:t): bool = a.a_is_true
+let[@inline] is_false (a:t): bool = is_true (neg a)
+let[@inline] is_undef (a:t): bool = not (is_true a) && not (is_false a)
+let[@inline] term (a:t) = a.a_term
+let[@inline] watched (a:t) = a.a_watched
 
-let mark_atom a =
-  let pos = (a == a.var.pa) in
-  if pos then (
-    a.var.v_flags <- Bool_var_fields.set field_seen_pos true a.var.v_flags
+let mark (a:t) =
+  if is_pos a then (
+    a.a_term.t_fields <- Term_fields.set field_t_mark_pos true a.a_term.t_fields
   ) else (
-    a.var.v_flags <- Bool_var_fields.set field_seen_neg true a.var.v_flags
+    a.a_term.t_fields <- Term_fields.set field_t_mark_neg true a.a_term.t_fields
   )
 
-let pp out a =
+let marked (a:t) : bool =
+  if is_pos a then (
+    Term_fields.get field_t_mark_pos a.a_term.t_fields
+  ) else (
+    Term_fields.get field_t_mark_neg a.a_term.t_fields
+  )
+
+let pp_level fmt t = Reason.pp fmt (t.t_level, t.t_reason)
+
+let pp_value fmt a =
+  if is_true a then
+    Format.fprintf fmt "T%a" pp_level (term a)
+  else if is_true (neg a) then
+    Format.fprintf fmt "F%a" pp_level (term a)
+  else
+    Format.fprintf fmt ""
+
+let pp pp_term out a =
+  let sign = if is_pos a then "+" else "-" in
   Format.fprintf out "%s%d[%a][atom:@[<hov>%a@]]"
-    (sign a) (a.var.vid+1) pp_value a E.Formula.print a.lit
+    sign (a.a_term.t_id+1) pp_value a pp_term a.a_term

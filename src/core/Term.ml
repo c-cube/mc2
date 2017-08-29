@@ -1,45 +1,21 @@
 
 (** {1 Modular Term Structure} *)
 
-module Fields = BitField.Make(struct end)
+open Solver_types
 
-(** Extensible view. Each plugin might declare its own terms. *)
-type view = ..
+module Fields = Term_fields
 
-type plugin_id = int
+type view = term_view = ..
+type t = term
 
-type t = {
-  mutable id: int;
-  (** unique ID, made of:
-      - 4 bits plugin_id
-      - the rest is for plugin-specific id *)
-  view: view;
-  (** view *)
-  ty: Type.t;
-  (** type of the term *)
-  mutable fields: Fields.t;
-  (** bitfield for storing various info *)
-}
-
-let[@inline] id t = t.id
-
-let[@inline] view t = t.view
-
-let[@inline] equal t u = t.id = u.id
-
-let[@inline] compare t u = CCInt.compare t.id u.id
-
-let[@inline] hash t = CCHash.int t.id
-
-(** {2 Fields} *)
-
-let[@inline] field_get f t = Fields.get f t.fields
-
-let[@inline] field_set f b t = t.fields <- Fields.set f b t.fields
-
-let field_is_value = Fields.mk_field () (* (model) value of the theory *)
-let field_is_deleted = Fields.mk_field () (* term deleted during GC? *)
-let field_is_added = Fields.mk_field() (* term added to core solver? *)
+let[@inline] id t = t.t_id
+let[@inline] view t = t.t_view
+let[@inline] equal t u = t.t_id = u.t_id
+let[@inline] compare t u = CCInt.compare t.t_id u.t_id
+let[@inline] hash t = CCHash.int t.t_id
+let[@inline] field_get f t = Fields.get f t.t_fields
+let[@inline] field_set f t = t.t_fields <- Fields.set f true t.t_fields
+let[@inline] field_clear f t = t.t_fields <- Fields.set f false t.t_fields
 
 (** {2 ID Management} *)
 
@@ -50,8 +26,29 @@ let plugin_id_width = 4
 let p_mask = (1 lsl plugin_id_width) - 1
 
 let[@inline] plugin_id t : int = id t land p_mask
-
 let[@inline] plugin_specific_id t : int = id t lsr plugin_id_width
+let[@inline] weight t = t.t_weight
+
+let[@inline] is_added t = field_get field_t_is_added t
+let[@inline] is_deleted t = field_get field_t_is_deleted t
+let[@inline] set_added t = field_set field_t_is_added t
+
+(** {2 Assignment view} *)
+
+let[@inline] assigned (t:term): bool = match t.t_var with
+  | V_none -> false
+  | V_bool {pa;na} -> pa.a_is_true || na.a_is_true
+  | V_semantic {v_value=Some _; _} -> true
+  | V_semantic {v_value=None; _} -> false
+
+let[@inline] assignment (t:term) = match t.t_var with
+  | V_bool {pa;na} ->
+    if pa.a_is_true then Some (A_bool (t,true))
+    else if na.a_is_true then Some (A_bool (t,false))
+    else None
+  | V_semantic {v_value=Some v; _} -> Some (A_semantic (t,v))
+  | V_none
+  | V_semantic {v_value=None; _} -> None
 
 (** {2 Low Level constructors. Use at your own risks.} *)
 module Unsafe = struct
@@ -77,10 +74,6 @@ module type TERM_ALLOC_OPS = sig
   (** Shallow hash of a view of the plugin *)
 end
 
-type view += Dummy
-
-let dummy = { id= ~-1; view=Dummy; ty=Type.prop; fields= Fields.empty; }
-
 module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   module H = CCHashtbl.Make(struct
       type t = view
@@ -99,13 +92,14 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
 
   (* delete a term: flag it for removal, then recycle its ID *)
   let delete (t:t) : unit =
-    field_set field_is_deleted true t;
+    t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
     assert (plugin_id t = Ops.p_id);
     Vec.push recycle_ids (plugin_specific_id t);
-    H.remove tbl t.view;
+    H.remove tbl (view t);
     ()
 
-  let[@inline] get_fresh_id () : int =
+  (* obtain a fresh ID, unused by any other term *)
+  let get_fresh_id () : int =
     if Vec.size recycle_ids = 0 then (
       let n = !id_alloc in
       incr id_alloc;
@@ -116,11 +110,41 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
       n
     )
 
-  let[@inline never] make_real_ view ty : t =
+  (* FIXME: only allocate a var when the term is added?
+     would even replace the flag itself *)
+
+  (* build a fresh term *)
+  let[@inline never] make_real_ t_view t_ty : t =
     let p_specific_id = get_fresh_id () in
-    let id = Ops.p_id lor (p_specific_id lsl plugin_id_width) in
-    let fields = Fields.empty in
-    { id; view; ty; fields; }
+    let t_id = Ops.p_id lor (p_specific_id lsl plugin_id_width) in
+    let t_fields = Fields.empty in
+    let t_level = -1 in
+    let t_reason = None in
+    let t_weight = 0. in
+    if Type.equal Type.prop t_ty then (
+      let t_id_double = t_id lsl 1 in
+      let rec t = {
+        t_id; t_view; t_ty; t_fields; t_var; t_level; t_reason; t_weight;
+      } and t_var = V_bool {pa;na}
+      and pa = {
+        a_term=t;
+        a_watched = Vec.make 10 dummy_clause;
+        a_is_true = false;
+        a_id = t_id_double; (* aid = vid*2 *)
+      } and na = {
+        a_term=t;
+        a_watched = Vec.make 10 dummy_clause;
+        a_is_true = false;
+        a_id = t_id_double + 1; (* aid = vid*2+1 *)
+      } in
+      t
+    ) else (
+      let t_var = V_semantic {
+          v_value=None;
+          v_watched=Vec.make_empty dummy_term;
+        } in
+      { t_id; t_view; t_ty; t_fields; t_var; t_level; t_reason; t_weight; }
+    )
 
   (* inline make function *)
   let[@inline] make (view:view) (ty:Type.t) : t =
@@ -128,129 +152,28 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     with Not_found -> make_real_ view ty
 end
 
-let weight t = t.t_weight
+let marked t = Term_fields.get field_t_seen t.t_fields
+let mark t = t.t_fields <- Term_fields.set field_t_seen true t.t_fields
+let unmark t = t.t_fields <- Term_fields.set field_t_seen false t.t_fields
 
-(* TODO: update this *)
+module Bool = struct
+  type t = bool_term
 
-  let rec dummy_var =
-    { vid = -101;
-      pa = dummy_atom;
-      na = dummy_atom;
-      used = 0;
-      v_flags = Bool_var_fields.empty;
-      v_level = -1;
-      v_weight = -1.;
-      v_assignable = None;
-      reason = None;
-    }
-  and dummy_atom =
-    { var = dummy_var;
-      lit = dummy_lit;
-      watched = Obj.magic 0;
-      (* should be [Vec.make_empty dummy_clause]
-         but we have to break the cycle *)
-      neg = dummy_atom;
-      is_true = false;
-      aid = -102 }
-  let dummy_clause =
-    { name = "";
-      tag = None;
-      atoms = [| |];
-      activity = -1.;
-      attached = false;
-      visited = false;
-      cpremise = History [] }
-
-  let make_semantic_var t =
-    try MT.find t_map t
-    with Not_found ->
-      let res = {
-        lid = !cpt_mk_var;
-        term = t;
-        l_weight = 1.;
-        l_level = -1;
-        assigned = None;
-      } in
-      incr cpt_mk_var;
-      MT.add t_map t res;
-      Vec.push vars (E_lit res);
-      res
-
-  let make_boolean_var : formula -> bool_var * Expr_intf.negated =
-    fun t ->
-      let lit, negated = E.Formula.norm t in
-      try
-        MF.find f_map lit, negated
-      with Not_found ->
-        let cpt_fois_2 = !cpt_mk_var lsl 1 in
-        let rec var  =
-          { vid = !cpt_mk_var;
-            pa = pa;
-            na = na;
-            used = 0;
-            v_flags = Bool_var_fields.empty;
-            v_level = -1;
-            v_weight = 0.;
-            v_assignable = None;
-            reason = None;
-          }
-        and pa =
-          { var = var;
-            lit = lit;
-            watched = Vec.make 10 dummy_clause;
-            neg = na;
-            is_true = false;
-            aid = cpt_fois_2 (* aid = vid*2 *) }
-        and na =
-          { var = var;
-            lit = E.Formula.neg lit;
-            watched = Vec.make 10 dummy_clause;
-            neg = pa;
-            is_true = false;
-            aid = cpt_fois_2 + 1 (* aid = vid*2+1 *) } in
-        MF.add f_map lit var;
-        incr cpt_mk_var;
-        Vec.push vars (E_var var);
-        var, negated
+  let both_atoms_marked (t:t): bool =
+    let seen_pos = Term_fields.get field_t_mark_pos t.t_fields in
+    let seen_neg = Term_fields.get field_t_mark_neg t.t_fields in
+    seen_pos && seen_neg
+end
 
 (* TODO: move this in theory of booleans?
    ensure that [not a] shares the same atoms as [a], but inverted
    (i.e. [(not a).pa = a.na] and conversely
    OR: share the variable but have a bool field for "negated" *)
+
+(* TODO: this should be named "negate" or sth
   let add_atom lit =
     let var, negated = make_boolean_var lit in
     match negated with
       | Formula_intf.Negated -> var.na
       | Formula_intf.Same_sign -> var.pa
-
-  (* Marking helpers *)
-  let clear v = v.v_flags <- Bool_var_fields.empty
-
-  let seen_var v = Bool_var_fields.get field_seen_var v.v_flags
-
-  let mark_var v =
-    v.v_flags <- Bool_var_fields.set field_seen_var true v.v_flags
-
-  (* Complete debug printing *)
-  let sign a = if a == a.var.pa then "+" else "-"
-  let pp_value fmt a =
-    if a.is_true then
-      Format.fprintf fmt "T%a" pp_level a
-    else if a.neg.is_true then
-      Format.fprintf fmt "F%a" pp_level a
-    else
-      Format.fprintf fmt ""
-
-
-  let pp_assign fmt v =
-    match v.assigned with
-      | None ->
-        Format.fprintf fmt ""
-      | Some t ->
-        Format.fprintf fmt "@[<hov>@@%d->@ %a@]" v.l_level E.Term.print t
-  let pp_lit out v =
-    Format.fprintf out "%d[%a][lit:@[<hov>%a@]]"
-      (v.lid+1) pp_assign v E.Term.print v.term
-
-let pp_level fmt t =
-  Reason.pp fmt (t.t_level, t.t_reason)
+*)

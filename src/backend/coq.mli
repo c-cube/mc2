@@ -35,14 +35,14 @@ module type Arg = sig
 
 end
 
-module Make(S : Res.S)(A : Arg with type hyp := S.clause
-                                and type lemma := S.clause
-                                and type assumption := S.clause) : S with type t := S.proof
+module Make(A : Arg with type hyp := Clause.t
+                     and type lemma := Clause.t
+                     and type assumption := Clause.t) : S with type t := Res.proof
 (** Base functor to output Coq proofs *)
 
 
-module Simple(S : Res.S)(A : Arg with type hyp = S.St.formula list
-                                  and type lemma := S.lemma
-                                  and type assumption := S.St.formula) : S with type t := S.proof
+module Simple(A : Arg with type hyp = Term.t list
+                       and type lemma := Clause.t
+                       and type assumption := Term.t) : S with type t := Res.proof
 (** Simple functo to output Coq proofs *)
 

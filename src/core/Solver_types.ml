@@ -22,11 +22,14 @@ module Clause_fields = BitField.Make(struct end)
 type plugin_id = int
 
 type term_view = ..
-(** Extensible view. Each plugin might declare its own terms. *)
+(** Extensible view on terms (generalized variables).
+    Each plugin might declare its own terms. *)
 
-type lemma = ..
-(** Extensible proof object
-    FIXME: shouldn't this be simpler? or more complicated, like typeclass + variant*)
+type value_view = ..
+(** Extensible view on values. *)
+
+type lemma_view = ..
+(** Extensible proof object *)
 
 type term = {
   mutable t_id: int;
@@ -43,14 +46,18 @@ type term = {
   mutable t_weight : float; (** Weight (for the heap) *)
   mutable t_reason : reason option;
   (** The reason for propagation/decision of the literal *)
-  t_var: var;
+  mutable t_var: var;
+  (** The "generalized variable" part, for assignments. *)
 }
 
+(** The "generalized variable" part of a term, containing the
+    current assignment, watched literals/terms, etc. *)
 and var =
   (** Semantic variable *)
   | V_semantic of {
-      mutable v_value : term option; (** Assignment *)
+      mutable v_value : value option; (** Assignment *)
       mutable v_watched : term Vec.t; (* watched terms *)
+      (* TODO: perhaps put backtracking stuff here? *)
     }
 
   (** Bool variable *)
@@ -58,11 +65,11 @@ and var =
       pa : atom; (** Link for the positive atom *)
       na : atom; (** Link for the negative atom *)
     }
+  | V_none (** Not a variable yet (not added) *)
 
 and atom = {
   a_id : int; (** Unique identifier *)
-  a_term : term ; (** Link for the parent variable *)
-  a_neg : atom; (** Link for the negation of the atom *)
+  a_term : term; (** Link for the parent variable *)
   mutable a_is_true : bool;
   (** Is the atom true ? Conversely, the atom is false iff a.neg.is_true *)
   mutable a_watched : clause Vec.t; (** The vector of clauses that watch this atom *)
@@ -85,14 +92,29 @@ and clause = {
 (** The type of clauses. Each clause generated should be true, i.e. enforced
     by the current problem (for more information, see the cpremise field). *)
 
+and value = {
+  val_plugin_id: plugin_id; (** Plugin this value belongs to *)
+  val_view: value_view; (** Actual shape of the value *)
+}
+(** A semantic value, part of the model's domain. For arithmetic, it would
+    be a number; for arrays, a finite map + default value; etc.
+    Note that terms map to values in the model but that values are
+    not necessarily normal "terms" (i.e. generalized variables in
+    the MCSat sense).
+*)
+
 and reason =
   | Decision
   (** The atom has been decided by the sat solver *)
   | Bcp of clause
   (** The atom has been propagated by the given clause *)
-  | Semantic
-  (** The atom has been propagated by the theory at the given level. *)
-(** Reasons of propagation/decision of atoms. *)
+  | Semantic_bool_eval of term list
+  (** The atom can be evaluated using the terms in the list *)
+  | Consequence of term * lemma lazy_t
+  (** [Consequence (l, p)] means that the formulas in [l] imply the propagated
+      formula [f]. The proof should be a proof of the clause "[l] implies [f]".
+  *)
+(** Reasons of propagation/decision of atoms/terms. *)
 
 and premise =
   | Hyp (** The clause is a hypothesis, provided by the user. *)
@@ -113,9 +135,64 @@ and premise =
     should be satisfied, the premise is the justification of why it should be
     satisfied by the solver. *)
 
-(** {2 Decisions and propagations} *)
-type assignment =
-  | Assign_term of term
-  | Assign_atom of atom
-  (** Either a lit of an atom *)
+and lemma = {
+  lemma_view: lemma_view; (** The lemma content *)
+  lemma_plugin_id: plugin_id; (** Plugin the lemma belongs to *)
+}
+(** A lemma belonging to some plugin. Must be a tautology of the theory. *)
 
+let field_t_is_deleted = Term_fields.mk_field () (* term deleted during GC? *)
+let field_t_is_added = Term_fields.mk_field() (* term added to core solver? *)
+let field_t_mark_pos = Term_fields.mk_field() (* positive atom marked? *)
+let field_t_mark_neg = Term_fields.mk_field() (* negative atom marked? *)
+let field_t_seen = Term_fields.mk_field() (* term seen during some traversal? *)
+let field_t_negated = Term_fields.mk_field() (* negated term? *)
+let field_t_is_true = Term_fields.mk_field() (* assigned to true? *)
+
+let field_c_attached = Clause_fields.mk_field() (* clause added to state? *)
+let field_c_visited = Clause_fields.mk_field() (* visited during some traversal? *)
+
+type term_view += Dummy
+
+let dummy_term : term = {
+  t_id= ~-1;
+  t_view=Dummy;
+  t_ty=Type.prop;
+  t_fields= Term_fields.empty;
+  t_weight= -1.;
+  t_level= -1;
+  t_reason=None;
+  t_var=V_none;
+}
+
+let dummy_clause : clause = {
+  c_name = "";
+  c_tag = None;
+  c_atoms = [| |];
+  c_activity = -1.;
+  c_fields = Clause_fields.empty;
+  c_premise = History [];
+}
+
+type bool_term = term (** Alias for boolean terms *)
+
+(** {2 Decisions and propagations} *)
+
+type trail = term Vec.t
+(** A trail is a vector of assignments. An assignment is simply
+    a term whose value is decided. *)
+
+type assignment_view =
+  | A_bool of term * bool
+  | A_semantic of term * value
+
+type propagation = {
+  propagate_term: term;
+  propagate_value: value;
+  propagate_reason: reason;
+}
+(** A semantic propagation, assigning the given term to the given value. *)
+
+
+type 'a or_conflict = ('a, clause) CCResult.t
+(** Either an ['a], or a conflict clause *)

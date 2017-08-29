@@ -13,6 +13,7 @@ exception Unsat
 exception UndecidedLit
 exception Restart
 exception Conflict of clause
+exception Plugin_not_found of plugin_id
 
 (* Log levels *)
 let error = 1
@@ -27,7 +28,7 @@ type plugin_level = int
 
 (* full state of the solver *)
 type t = {
-  plugins: Plugins.t;
+  plugins: Plugin.t CCVector.vector;
   (* the plugins responsible for enforcing the semantics of terms *)
 
   (* Clauses are simplified for eficiency purposes. In the following
@@ -52,7 +53,7 @@ type t = {
   mutable next_decision : atom option;
   (* When the last conflict was a semantic one, this stores the next decision to make *)
 
-  trail : assignment Vec.t;
+  trail : term Vec.t;
   (* main stack containing assignments (either decisions or propagations) *)
 
   decision_levels : int Vec.t;
@@ -103,7 +104,6 @@ type t = {
   remove_satisfied : bool;
   (* Wether to remove satisfied learnt clauses when simplifying *)
 
-
   restart_inc : float;
   (* multiplicative factor for restart limit, default 1.5 *)
   mutable restart_first : int;
@@ -126,8 +126,8 @@ type t = {
 }
 
 (* main building function *)
-let create (plugins:Plugins.t) : t = {
-  plugins;
+let create () : t = {
+  plugins = CCVector.create();
   unsat_conflict = None;
   next_decision = None;
 
@@ -141,7 +141,7 @@ let create (plugins:Plugins.t) : t = {
   th_head = 0;
   elt_head = 0;
 
-  trail = Vec.make 601 Assignment.dummy;
+  trail = Vec.make 601 dummy_term;
   decision_levels = Vec.make 601 (-1);
   th_levels = Vec.make 100 0;
   user_levels = Vec.make 10 (-1);
@@ -173,6 +173,32 @@ let create (plugins:Plugins.t) : t = {
   nb_init_clauses = 0;
 }
 
+(** {2 Print} *)
+
+let pp_term (db:t) out (t:term): unit =
+  let rec aux out t =
+    let id = Term.plugin_id t in
+    if (id:>int) >= CCVector.length db.plugins then (
+      raise (Plugin_not_found id);
+    );
+    let (module P) = CCVector.get db.plugins (id:>int) in
+    P.pp_term aux out (Term.view t)
+  in
+  aux out t
+
+let pp_atom env = Atom.pp (pp_term env)
+let pp_clause env = Clause.pp (pp_term env)
+  
+
+
+let add_plugin (db:t) (f:Plugin.factory) : Plugin.t =
+  let id = CCVector.length db.plugins |> Term.Unsafe.mk_plugin_id in
+  let p = f id in
+  CCVector.push db.plugins p;
+  p
+
+let[@inline] plugins t = t.plugins
+
 (* Misc functions *)
 let to_float i = float_of_int i
 let to_int f = int_of_float f
@@ -185,6 +211,8 @@ let base_level env = Vec.size env.user_levels
 (* comparison by weight *)
 let f_weight i j = Term.weight j < Term.weight i
 
+let pp_clause db = Clause.pp (pp_term db)
+
 (* Are the assumptions currently unsat ? *)
 let is_unsat t = match t.unsat_conflict with
   | Some _ -> true
@@ -194,6 +222,7 @@ let is_unsat t = match t.unsat_conflict with
    SAT will just not iterate at all.
    NOTE: might not even be useful, or maybe should be done when the
    term is activated *)
+
 (* Iteration over subterms.
    When incrementing activity, we want to be able to iterate over
    all subterms of a formula. However, the function provided by the theory
@@ -201,8 +230,25 @@ let is_unsat t = match t.unsat_conflict with
    to ignore some subterms for instance), so we want to 'cache' the list
    of subterms of each formula, so we have a field [v_assignable]
    directly in variables to do so.  *)
-let iter_sub (env:t) f (t:term): unit =
-  Plugins.iter_subs env.plugins t f
+let[@inline] iter_sub (env:t) (t:term): term Sequence.t =
+  CCVector.to_seq env.plugins
+  |> Sequence.flat_map
+    (fun (module P : Plugin.S) -> P.iter_sub t)
+
+let add_term (env:t) (t:term): unit =
+  let rec aux t =
+    if Term.is_deleted t then (
+      Util.errorf "(@[trying to add deleted term@ `%a`@])" (pp_term env) t
+    )
+    else if Term.is_added t then ()
+    else (
+      Term.set_added t;
+      (* add subterms *)
+      iter_sub env t aux;
+      (* add to priority queue for decision *)
+      Iheap.insert f_weight env.order t.t_id;
+    )
+  in aux t
 
 (* TODO: only do it for boolean terms, obviously *)
 (* When we have a new literal,

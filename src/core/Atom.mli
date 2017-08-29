@@ -1,14 +1,23 @@
 
+open Solver_types
+
 type t = Solver_types.atom
-
-val mark : t -> unit
-(** Mark the atom as seen, using the 'seen' field in the variable. *)
-
-val seen  : t -> bool
-(** Returns wether the atom has been marked as seen. *)
 
 val equal : t -> t -> bool
 
 val compare : t -> t -> int
 
-val pp : t CCFormat.printer
+val is_pos : t -> bool (** Positive atom? *)
+val neg : t -> t (** Negation *)
+
+val mark : t -> unit (** Mark the atom as seen, using fields in the variable. *)
+val marked : t -> bool (** Returns wether the atom has been marked as seen. *)
+
+val is_true : t -> bool (** True in current model? *)
+val is_false : t -> bool
+val is_undef : t -> bool
+
+val term : t -> term
+val watched : t -> clause Vec.t
+
+val pp : term CCFormat.printer -> t CCFormat.printer

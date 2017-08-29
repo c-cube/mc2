@@ -16,6 +16,7 @@ open Solver_types
 exception Insuficient_hyps
 (** Raised when a complete resolution derivation cannot be found using the current hypotheses. *)
 
+(* TODO move into its own module? *)
 type proof
 (** Lazy type for proof trees. Proofs are persistent objects, and can be
     extended to proof nodes using functions defined later. *)
