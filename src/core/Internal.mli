@@ -87,11 +87,11 @@ val eval : t -> atom -> bool
     @raise UndecidedLit if the literal is not decided *)
 
 val eval_level : t -> atom -> bool * int
-(** Return the current assignement of the literals, as well as its
-    decision level. If the level is 0, then it is necessary for
+(** Return the current assignement/evaluation of the boolean term,
+    as well as its decision level. If the level is 0, then it is necessary for
     the atom to have this value; otherwise it is due to choices
     that can potentially be backtracked.
-    @raise UndecidedLit if the literal is not decided *)
+    @raise UndecidedLit if the literal is not decided not calculable *)
 
 val model : t -> assignment_view list
 (** Returns the model found if the term is satisfiable. *)

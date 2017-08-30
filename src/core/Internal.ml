@@ -1234,11 +1234,20 @@ let search (env:t) n_of_conflicts n_of_learnts : unit =
   done
 
 (* evaluate [a] and also return its level *)
-let eval_level (_:t) (a:atom) =
+let eval_level (env:t) (a:atom) =
   let lvl = Atom.level a in
   if Atom.is_true a then true, lvl
   else if Atom.is_false a then false, lvl
-  else raise UndecidedLit
+  else (
+    let (module P) = plugin_of_term env a.a_term in
+    begin match P.eval_bool a.a_term with
+      | Plugin.Unknown -> raise UndecidedLit
+      | Plugin.Valued (b, l) ->
+        (* level is highest level of terms used to eval into [b] *)
+        let lvl = List.fold_left (fun l t -> max l (Term.level t)) 0 l in
+        if Atom.is_pos a then b, lvl else not b, lvl
+    end
+  )
 
 let[@inline] eval env a = fst (eval_level env a)
 
