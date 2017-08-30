@@ -32,6 +32,12 @@ val add_plugin : t -> Plugin.factory -> Plugin.t
     @raise Failure if all plugin IDs have been allocated
 *)
 
+val get_plugin : t -> plugin_id -> Plugin.t
+(** Get the plugin from its ID *)
+
+val actions : t -> Plugin.actions
+(** Actions available to plugins *)
+
 (* FIXME:
 val gc_mark_sub : t -> (Term.t -> unit) -> Term.t -> unit
 (** [gc_mark_sub f t] should call [f] on every subterm of [t]
@@ -86,7 +92,7 @@ val eval_level : t -> term -> bool * int
     that can potentially be backtracked.
     @raise UndecidedLit if the literal is not decided *)
 
-val model : t -> (term * term) list
+val model : t -> assignment_view list
 (** Returns the model found if the term is satisfiable. *)
 
 val check : t -> bool

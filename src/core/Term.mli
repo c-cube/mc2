@@ -50,6 +50,9 @@ module Bool : sig
   val both_atoms_marked : t -> bool (** Did we see both polarities of this var in the same clause? *)
   val assigned_atom : t -> atom option (** if assigned and bool, return corresponding atom *)
   val assigned_atom_exn : t -> atom
+
+  val pa : t -> atom
+  val na : t -> atom
 end
 
 (** {2 Assignment view} *)

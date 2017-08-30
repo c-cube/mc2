@@ -46,10 +46,25 @@ type eval_res =
 type res =
   | Sat
   (** The current set of assumptions is satisfiable. *)
-  | Unsat of bool_term list * lemma
+  | Unsat of atom list * lemma
   (** The current set of assumptions is *NOT* satisfiable, and here is a
       theory tautology (with its proof), for which every literal is false
       under the current assumptions. *)
+
+type actions = {
+  act_push_clause : clause -> unit;
+  (** push a new clause *)
+  act_propagate_bool : term -> bool -> term list -> unit;
+  (** [act_propagate_bool t b l] propagates the boolean literal [t]
+      assigned to boolean value [b], explained by evaluation of
+      (sub)terms [l] *)
+  act_on_backtrack : int -> (unit -> unit) -> unit;
+  (** [act_on_backtrack level f] will call [f] when the given [level]
+      is backtracked *)
+}
+(** Actions available to plugins when doing propagation/model building,
+    including adding clauses, registering actions to do upon
+    backtracking, etc. *)
 
 (** Main interface for plugins. Each plugin must abide by this
     interface. *)
@@ -59,13 +74,13 @@ module type S = sig
   val name : string
   (** Descriptive name *)
 
-  val decide : term -> value or_conflict
+  val decide : actions -> term -> value
   (** Pick a value for this variable to do a decision *)
 
-  val cb_assign : term -> propagation list or_conflict
+  val cb_assign : actions -> term -> res
   (** Called when a term of this plugin is assigned/propagated *)
 
-  val cb_if_sat : unit -> propagation list or_conflict
+  val cb_if_sat : actions -> unit or_conflict
   (** Last call before answering "sat". If the current trail is not
       theory-satisfiable, the plugin {b MUST} give a conflict here. *)
 
@@ -98,10 +113,7 @@ end
 
 type t = (module S)
 
-type factory =
-  plugin_id:plugin_id ->
-  on_backtrack:(int -> (unit -> unit) -> unit) ->
-  t
+type factory = plugin_id -> t
 (** A plugin factory, i.e. the method to build a plugin with a given ID.
     The plugin is allowed to register actions to be taken upon backtracking.
     @param plugin_id the unique ID of the plugin

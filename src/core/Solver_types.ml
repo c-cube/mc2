@@ -196,13 +196,5 @@ type assignment_view =
   | A_bool of term * bool
   | A_semantic of term * value
 
-type propagation = {
-  propagate_term: term;
-  propagate_value: value;
-  propagate_reason: reason;
-}
-(** A semantic propagation, assigning the given term to the given value. *)
-
-
 type 'a or_conflict = ('a, clause) CCResult.t
 (** Either an ['a], or a conflict clause *)

@@ -58,6 +58,9 @@ type t = {
   clauses_to_add : clause Stack.t;
   (* Clauses either assumed or pushed by the theory, waiting to be added. *)
 
+  actions: Plugin.actions lazy_t;
+  (* set of actions available to plugins, pre-allocated *)
+
   mutable unsat_conflict : clause option;
   (* conflict clause at [base_level], if any *)
   mutable next_decision : atom option;
@@ -75,17 +78,24 @@ type t = {
   user_levels : int Vec.t;
   (* user levels in [clauses_temp] *)
 
-  mutable th_head : int;
-  (* Start offset in the queue {!trail} of
-     unit facts not yet seen by the theory. *)
   mutable elt_head : int;
   (* Start offset in the queue {!trail} of
-     unit facts to propagate, within the trail *)
+     unit facts to propagate, within the trail.
+     The slice between {!elt_head} and the end of {!trail} has not yet been
+     boolean-propagated. *)
+
+  mutable th_head : int;
+  (* Start offset in the queue {!trail} of
+     unit facts not yet seen by the theory.
+     The slice between {!th_head} and {!elt_head} has not yet
+     been seen by the plugins *)
 
   (* invariant:
+     - th_head <= elt_head <= length trail always
      - during propagation, th_head <= elt_head
-     - then, once elt_head reaches length trail, Th.assume is
-       called so that th_head can catch up with elt_head
+     - then, once elt_head reaches length trail, each plugin's [cb_assign]
+       is called on assignments between the two, until
+       th_head can catch up with elt_head
      - this is repeated until a fixpoint is reached;
      - before a decision (and after the fixpoint),
        th_head = elt_head = length trail
@@ -134,63 +144,22 @@ type t = {
   mutable nb_init_clauses : int;
 }
 
-(* main building function *)
-let create () : t = {
-  plugins = CCVector.create();
-  unsat_conflict = None;
-  next_decision = None;
-
-  clauses_hyps = Vec.make 0 dummy_clause;
-  clauses_learnt = Vec.make 0 dummy_clause;
-  clauses_temp = Vec.make 0 dummy_clause;
-
-  clauses_root = Stack.create ();
-  clauses_to_add = Stack.create ();
-
-  th_head = 0;
-  elt_head = 0;
-
-  trail = Vec.make 601 dummy_term;
-  backtrack_stack = Vec.make 601 (Vec.make_empty (fun () -> assert false));
-  decision_levels = Vec.make 601 (-1);
-  user_levels = Vec.make 10 (-1);
-
-  order = H.create();
-
-  var_incr = 1.;
-  clause_incr = 1.;
-  var_decay = 1. /. 0.95;
-  clause_decay = 1. /. 0.999;
-
-  simpDB_assigns = -1;
-  simpDB_props = 0;
-
-  remove_satisfied = false;
-
-  restart_inc = 1.5;
-  restart_first = 100;
-
-  learntsize_factor = 1. /. 3. ;
-  learntsize_inc = 1.1;
-
-  starts = 0;
-  decisions = 0;
-  propagations = 0;
-  conflicts = 0;
-  clauses_literals = 0;
-  learnts_literals = 0;
-  nb_init_clauses = 0;
-}
-
 (** {2 Print} *)
 
-let pp_term (db:t) out (t:term): unit =
+(* obtain the plugin with this ID *)
+let[@inline] get_plugin (env:t) (p_id:plugin_id) : Plugin.t =
+  try CCVector.get env.plugins p_id
+  with _ ->
+    Log.debugf error (fun k->k "cannot find plugin %d" p_id);
+    assert false
+
+let[@inline] plugin_of_term (env:t) (t:term) : Plugin.t =
+  get_plugin env (Term.plugin_id t)
+
+let pp_term (env:t) out (t:term): unit =
   let rec aux out t =
     let id = Term.plugin_id t in
-    if (id:>int) >= CCVector.length db.plugins then (
-      raise (Plugin_not_found id);
-    );
-    let (module P) = CCVector.get db.plugins (id:>int) in
+    let (module P) = get_plugin env id in
     P.pp_term aux out (Term.view t)
   in
   aux out t
@@ -199,6 +168,7 @@ let pp_atom env = Atom.pp (pp_term env)
 let pp_clause env = Clause.pp (pp_term env)
 
 let[@inline] plugins t = t.plugins
+let[@inline] actions t = Lazy.force t.actions
 
 (* Misc functions *)
 let[@inline] to_float i = float_of_int i
@@ -212,25 +182,10 @@ let[@inline] base_level env = Vec.size env.user_levels
 (* how to add a plugin *)
 let add_plugin (db:t) (fcty:Plugin.factory) : Plugin.t =
   let id = CCVector.length db.plugins |> Term.Unsafe.mk_plugin_id in
-  let p =
-    fcty
-      ~on_backtrack:(fun lev f ->
-        if lev >= decision_level db then f()
-        else (
-          Vec.push (Vec.get db.backtrack_stack lev) f
-        ))
-      ~plugin_id:id
-  in
+  let p = fcty id in
   CCVector.push db.plugins p;
   Log.debugf info (fun k->k "add plugin %s with ID %d" (Plugin.name p) id);
   p
-
-(* obtain the plugin with this ID *)
-let[@inline] get_plugin (env:t) (p_id:plugin_id): Plugin.t =
-  try CCVector.get env.plugins p_id
-  with _ ->
-    Log.debugf error (fun k->k "cannot find plugin %d" p_id);
-    assert false
 
 let pp_clause db = Clause.pp (pp_term db)
 
@@ -280,6 +235,8 @@ let add_term (env:t) (t:term): unit =
     )
   in aux t
 
+let[@inline] add_atom (env:t) (a:atom) : unit = add_term env (Atom.term a)
+
 (* put [t] in the heap of terms to decide *)
 let schedule_decision_term (env:t) (t:term): unit =
   H.insert env.order t
@@ -327,6 +284,56 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
   if c.c_activity > 1e20 then (
     decay_all_learnt_clauses env;
   )
+
+(* main building function *)
+let create_real (actions:Plugin.actions lazy_t) : t = {
+  unsat_conflict = None;
+  next_decision = None;
+
+  plugins = CCVector.create();
+  actions;
+
+  clauses_hyps = Vec.make 0 dummy_clause;
+  clauses_learnt = Vec.make 0 dummy_clause;
+  clauses_temp = Vec.make 0 dummy_clause;
+
+  clauses_root = Stack.create ();
+  clauses_to_add = Stack.create ();
+
+  th_head = 0;
+  elt_head = 0;
+
+  trail = Vec.make 601 dummy_term;
+  backtrack_stack = Vec.make 601 (Vec.make_empty (fun () -> assert false));
+  decision_levels = Vec.make 601 (-1);
+  user_levels = Vec.make 10 (-1);
+
+  order = H.create();
+
+  var_incr = 1.;
+  clause_incr = 1.;
+  var_decay = 1. /. 0.95;
+  clause_decay = 1. /. 0.999;
+
+  simpDB_assigns = -1;
+  simpDB_props = 0;
+
+  remove_satisfied = false;
+
+  restart_inc = 1.5;
+  restart_first = 100;
+
+  learntsize_factor = 1. /. 3. ;
+  learntsize_inc = 1.1;
+
+  starts = 0;
+  decisions = 0;
+  propagations = 0;
+  conflicts = 0;
+  clauses_literals = 0;
+  learnts_literals = 0;
+  nb_init_clauses = 0;
+}
 
 (* Simplification of clauses.
 
@@ -901,8 +908,9 @@ let add_clause (env:t) (init:clause) : unit =
     Vec.push vec init;
     Log.debugf info (fun k->k "Trivial clause ignored : @[%a@]" (pp_clause env) init)
 
+(* really add clauses pushed by plugins to the solver *)
 let flush_clauses (env:t) =
-  if not (Stack.is_empty env.clauses_to_add) then begin
+  if not (Stack.is_empty env.clauses_to_add) then (
     let nbc = env.nb_init_clauses + Stack.length env.clauses_to_add in
     Vec.grow_to_at_least env.clauses_hyps nbc;
     Vec.grow_to_at_least env.clauses_learnt nbc;
@@ -911,7 +919,7 @@ let flush_clauses (env:t) =
       let c = Stack.pop env.clauses_to_add in
       add_clause env c
     done
-  end
+  )
 
 type watch_res =
   | Watch_kept
@@ -925,43 +933,44 @@ type watch_res =
 let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
   let atoms = c.c_atoms in
   let first = atoms.(0) in
-  if first == a.neg then (
+  if first == Atom.neg a then (
     (* false lit must be at index 1 *)
     atoms.(0) <- atoms.(1);
     atoms.(1) <- first
-  ) else assert (a.neg == atoms.(1));
+  ) else assert (Atom.neg a == atoms.(1));
   let first = atoms.(0) in
-  if first.is_true
+  if Atom.is_true first
   then Watch_kept (* true clause, keep it in watched *)
   else (
     try (* look for another watch lit *)
       for k = 2 to Array.length atoms - 1 do
         let ak = atoms.(k) in
-        if not (ak.neg.is_true) then begin
+        if not (Atom.is_false ak) then (
           (* watch lit found: update and exit *)
           atoms.(1) <- ak;
-          atoms.(k) <- a.neg;
+          atoms.(k) <- Atom.neg a;
           (* remove [c] from [a.watched], add it to [ak.neg.watched] *)
-          Vec.push ak.neg.watched c;
-          assert (Vec.get a.watched i == c);
-          Vec.fast_remove a.watched i;
+          Vec.push (Atom.neg ak).a_watched c;
+          assert (Vec.get a.a_watched i == c);
+          Vec.fast_remove a.a_watched i;
           raise Exit
-        end
+        )
       done;
       (* no watch lit found *)
-      if first.neg.is_true then begin
+      if Atom.is_false first then (
         (* clause is false *)
         env.elt_head <- Vec.size env.trail;
         raise (Conflict c)
-      end else begin
-        match th_eval first with
+      ) else (
+        begin match th_eval env first with
           | None -> (* clause is unit, keep the same watches, but propagate *)
-            enqueue_bool first ~level:(decision_level ()) (Bcp c)
+            enqueue_bool env first ~level:(decision_level env) (Bcp c)
           | Some true -> ()
           | Some false ->
             env.elt_head <- Vec.size env.trail;
             raise (Conflict c)
-      end;
+        end
+      );
       Watch_kept
     with Exit ->
       Watch_removed
@@ -971,16 +980,16 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
    clause watching [a] to see if the clause is false, unit, or has
    other possible watches
    @param res the optional conflict clause that the propagation might trigger *)
-let propagate_atom a (res:clause option ref) : unit =
-  let watched = a.watched in
+let propagate_atom (env:t) (a:atom) (res:clause option ref) : unit =
+  let watched = a.a_watched in
   begin
     try
       let rec aux i =
         if i >= Vec.size watched then ()
         else (
           let c = Vec.get watched i in
-          assert c.attached;
-          let j = match propagate_in_clause a c i with
+          assert (Clause.attached c);
+          let j = match propagate_in_clause env a c i with
             | Watch_kept -> i+1
             | Watch_removed -> i (* clause at this index changed *)
           in
@@ -994,26 +1003,34 @@ let propagate_atom a (res:clause option ref) : unit =
   end;
   ()
 
-(* Propagation (boolean and theory) *)
-let create_atom f =
-  let a = atom f in
-  ignore (th_eval a);
-  a
+(* build the "actions" available to the plugins *)
+let mk_actions (env:t) : Plugin.actions =
+  let act_on_backtrack lev f : unit =
+    if lev >= decision_level env then f()
+    else (
+      Vec.push (Vec.get env.backtrack_stack lev) f
+    )
+  and act_push_clause (c:clause) : unit =
+    Log.debugf debug (fun k->k "Pushing clause %a" (pp_clause env) c);
+    Stack.push c env.clauses_to_add
+  and act_propagate_bool t (b:bool) (l:term list) : unit =
+    Log.debugf debug (fun k->k "Semantic propagate %a@ :val %B" (pp_term env) t b);
+    let a = if b then Term.Bool.pa t else Term.Bool.na t in
+    enqueue_semantic_bool_eval env a l
+  in
+  { Plugin.
+    act_on_backtrack;
+    act_push_clause;
+    act_propagate_bool;
+  }
 
-let slice_get i =
-  match Vec.get env.trail i with
-    | Atom a ->
-      Plugin_intf.Lit a.lit
-    | Lit {term; assigned = Some v; _} ->
-      Plugin_intf.Assign (term, v)
-    | Lit _ -> assert false
+(* main constructor *)
+let create () : t =
+  let rec env = lazy (create_real actions)
+  and actions = lazy (mk_actions (Lazy.force env)) in
+  Lazy.force env
 
-let slice_push (l:formula list) (lemma:proof): unit =
-  let atoms = List.rev_map create_atom l in
-  let c = make_clause (fresh_tname ()) atoms (Lemma lemma) in
-  Log.debugf info (fun k->k "Pushing clause %a" St.pp_clause c);
-  Stack.push c env.clauses_to_add
-
+(* FIXME: update? the second case
 let slice_propagate f = function
   | Plugin_intf.Eval l ->
     let a = atom f in
@@ -1034,192 +1051,227 @@ let slice_propagate f = function
       end
     else
       raise (Invalid_argument "Msat.Internal.slice_propagate")
-
-let current_slice (): (_,_,_) Plugin_intf.slice = {
-  Plugin_intf.start = env.th_head;
-  length = (Vec.size env.trail) - env.th_head;
-  get = slice_get;
-  push = slice_push;
-  propagate = slice_propagate;
-}
-
-(* full slice, for [if_sat] final check *)
-let full_slice () : (_,_,_) Plugin_intf.slice = {
-  Plugin_intf.start = 0;
-  length = Vec.size env.trail;
-  get = slice_get;
-  push = slice_push;
-  propagate = (fun _ -> assert false);
-}
+*)
 
 (* some boolean literals were decided/propagated within Msat. Now we
-   need to inform the theory of those assumptions, so it can do its job.
-   @return the conflict clause, if the theory detects unsatisfiability *)
-let rec theory_propagate (): clause option =
-  assert (env.elt_head = Vec.size env.trail);
-  assert (env.th_head <= env.elt_head);
-  if env.th_head = env.elt_head then
-    None (* fixpoint/no propagation *)
-  else begin
-    let slice = current_slice () in
-    env.th_head <- env.elt_head; (* catch up *)
-    match Plugin.assume slice with
-      | Plugin_intf.Sat ->
-        propagate ()
-      | Plugin_intf.Unsat (l, p) ->
+   need to inform the plugins about these assumptions, so they can do their job.
+   @return the conflict clause, if a plugin detects unsatisfiability *)
+let rec theory_propagate (env:t) : clause option =
+  assert (env.elt_head = Vec.size env.trail); (* bcp done *)
+  assert (env.th_head <= env.elt_head); (* global invariant *)
+  if env.th_head = env.elt_head then (
+    if env.elt_head = Vec.size env.trail then (
+      None (* fixpoint/no propagation *)
+    ) else (
+      propagate env (* need to do BCP *)
+    )
+  ) else (
+    (* consider one element *)
+    let t = Vec.get env.trail env.th_head in
+    env.th_head <- env.th_head + 1;
+    (* inform corresponding plugin *)
+    let p_id = Term.plugin_id t in
+    let (module P) = get_plugin env p_id in
+    begin match P.cb_assign (actions env) t with
+      | Plugin.Sat ->
+        theory_propagate env (* next *)
+      | Plugin.Unsat (l, p) ->
         (* conflict *)
-        let l = List.rev_map create_atom l in
-        Iheap.grow_to_at_least env.order (St.nb_elt ());
-        List.iter (fun a -> insert_var_order (elt_of_var a.var)) l;
-        let c = St.make_clause (St.fresh_tname ()) l (Lemma p) in
+        List.iter (add_atom env) l;
+        let c = Clause.make l (Lemma p) in
         Some c
-  end
+    end
+  )
 
 (* fixpoint between boolean propagation and theory propagation
    @return a conflict clause, if any *)
-and propagate (): clause option =
+and propagate (env:t) : clause option =
   (* First, treat the stack of lemmas added by the theory, if any *)
-  flush_clauses ();
+  flush_clauses env;
   (* Now, check that the situation is sane *)
   assert (env.elt_head <= Vec.size env.trail);
-  if env.elt_head = Vec.size env.trail then
-    theory_propagate ()
-  else begin
-    let num_props = ref 0 in
+  if env.elt_head = Vec.size env.trail then (
+    theory_propagate env (* BCP done, now notify plugins *)
+  ) else (
     let res = ref None in
     while env.elt_head < Vec.size env.trail do
-      begin match Vec.get env.trail env.elt_head with
-        | Lit _ -> ()
-        | Atom a ->
-          incr num_props;
-          propagate_atom a res
+      let t = Vec.get env.trail env.elt_head in
+      (* propagate [t], if boolean *)
+      begin match t.t_var with
+        | V_none -> assert false
+        | V_semantic _ -> ()
+        | V_bool {pa;na} ->
+          env.propagations <- env.propagations + 1;
+          env.simpDB_props <- env.simpDB_props - 1;
+          (* propagate the atom that has been assigned to [true] *)
+          let a =
+            if Atom.is_true pa then pa
+            else if Atom.is_true na then na
+            else assert false
+          in
+          propagate_atom env a res
       end;
       env.elt_head <- env.elt_head + 1;
     done;
-    env.propagations <- env.propagations + !num_props;
-    env.simpDB_props <- env.simpDB_props - !num_props;
-    match !res with
-      | None -> theory_propagate ()
+    begin match !res with
+      | None -> theory_propagate env
       | _ -> !res
-  end
+    end
+  )
 
+(* TODO: do it from time to time, removing lower half of learnt clauses,
+   doing GC *)
 (* remove some learnt clauses
    NOTE: so far we do not forget learnt clauses. We could, as long as
    lemmas from the theory itself are kept. *)
-let reduce_db () = ()
+let reduce_db (_:t) = ()
 
 (* Decide on a new literal, and enqueue it into the trail *)
-let rec pick_branch_aux atom: unit =
-  let v = atom.var in
-  if v.v_level >= 0 then begin
-    assert (v.pa.is_true || v.na.is_true);
-    pick_branch_lit ()
-  end else match Plugin.eval atom.lit with
-    | Plugin_intf.Unknown ->
-      env.decisions <- env.decisions + 1;
-      new_decision_level();
-      let current_level = decision_level () in
-      enqueue_bool atom ~level:current_level Decision
-    | Plugin_intf.Valued (b, l) ->
-      let a = if b then atom else atom.neg in
-      enqueue_semantic_bool_eval a l
+let rec pick_branch_aux (env:t) (atom:atom) : unit =
+  let t = atom.a_term in
+  if t.t_level >= 0 then (
+    assert (not (Atom.is_undef atom));
+    pick_branch_lit env
+  ) else (
+    (* does this boolean term eval to [true]? *)
+    (* TODO: should the plugin already have propagated this?
+       or is it an optim? *)
+    let (module P) = plugin_of_term env t in
+    begin match P.eval_bool t with
+      | Plugin.Unknown ->
+        (* do a decision *)
+        env.decisions <- env.decisions + 1;
+        new_decision_level env;
+        let current_level = decision_level env in
+        enqueue_bool env atom ~level:current_level Decision
+      | Plugin.Valued (b, l) ->
+        (* already evaluates in the trail *)
+        let a = if b then atom else Atom.neg atom in
+        enqueue_semantic_bool_eval env a l
+    end
+  )
 
-and pick_branch_lit () =
-  match env.next_decision with
+and pick_branch_lit (env:t) : unit =
+  begin match env.next_decision with
     | Some atom ->
       env.next_decision <- None;
-      pick_branch_aux atom
+      pick_branch_aux env atom
     | None ->
-      begin try
-          begin match St.get_elt (Iheap.remove_min f_weight env.order) with
-            | E_lit l ->
-              if l.l_level >= 0 then
-                pick_branch_lit ()
-              else begin
-                let value = Plugin.assign l.term in
-                env.decisions <- env.decisions + 1;
-                new_decision_level();
-                let current_level = decision_level () in
-                enqueue_assign l value current_level
-              end
-            | E_var v ->
-              pick_branch_aux v.pa
-          end
-        with Not_found -> raise Sat
-      end
+      (* look into the heap for the next decision *)
+      if H.is_empty env.order then (
+        raise Sat (* full trail! *)
+      ) else (
+        (* pick some term *)
+        let t = H.remove_min env.order in
+        begin match t.t_var with
+          | V_none ->  assert false
+          | V_bool {pa; _} ->
+            (* TODO: phase saving *)
+            pick_branch_aux env pa
+          | V_semantic _ ->
+            (* semantic decision, delegate to plugin *)
+            if t.t_level >= 0 then (
+              pick_branch_lit env (* assigned already *)
+            ) else begin
+              let (module P) = plugin_of_term env t in
+              let value = P.decide (actions env) t in
+              env.decisions <- env.decisions + 1;
+              new_decision_level env;
+              let current_level = decision_level env in
+              enqueue_assign env t value current_level
+            end
+        end
+      )
+  end
 
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
-let search n_of_conflicts n_of_learnts: unit =
+let search (env:t) n_of_conflicts n_of_learnts : unit =
   let conflictC = ref 0 in
   env.starts <- env.starts + 1;
   while true do
-    match propagate () with
+    begin match propagate env with
       | Some confl -> (* Conflict *)
         incr conflictC;
         (* When the theory has raised Unsat, add_boolean_conflict
            might 'forget' the initial conflict clause, and only add the
            analyzed backtrack clause. So in those case, we use add_clause
            to make sure the initial conflict clause is also added. *)
-        if confl.attached then
-          add_boolean_conflict confl
-        else
-          add_clause confl
-
-      | None -> (* No Conflict *)
+        if Clause.attached confl then (
+          add_boolean_conflict env confl
+        ) else (
+          add_clause env confl
+        )
+      | None ->
+        (* No conflict after propagation *)
         assert (env.elt_head = Vec.size env.trail);
         assert (env.elt_head = env.th_head);
-        if Vec.size env.trail = St.nb_elt ()
-        then raise Sat;
-        if n_of_conflicts > 0 && !conflictC >= n_of_conflicts then begin
+        if H.is_empty env.order then (
+          raise Sat;
+        );
+        (* should we restart? *)
+        if n_of_conflicts > 0 && !conflictC >= n_of_conflicts then (
           Log.debug info "Restarting...";
-          cancel_until (base_level ());
+          cancel_until env (base_level env);
           raise Restart
-        end;
+        );
         (* if decision_level() = 0 then simplify (); *)
 
+        (* garbage collect? *)
         if n_of_learnts >= 0 &&
            Vec.size env.clauses_learnt - Vec.size env.trail >= n_of_learnts
-        then reduce_db();
+        then (
+          reduce_db env;
+        );
 
-        pick_branch_lit ()
+        (* next decision *)
+        pick_branch_lit env
+    end
   done
 
-let eval_level lit =
-  let var, negated = make_boolean_var lit in
-  if not var.pa.is_true && not var.na.is_true
-  then raise UndecidedLit
-  else assert (var.v_level >= 0);
-  let truth = var.pa.is_true in
-  let value = match negated with
-    | Formula_intf.Negated -> not truth
-    | Formula_intf.Same_sign -> truth
-  in
-  value, var.v_level
+(* evaluate [t] and also return its level *)
+let eval_level (_:t) (t:bool_term) =
+  let a = Term.Bool.pa t in
+  let lvl = t.t_level in
+  if Atom.is_true a then true, lvl
+  else if Atom.is_false a then false, lvl
+  else raise UndecidedLit
 
-let eval lit = fst (eval_level lit)
+let[@inline] eval env lit = fst (eval_level env lit)
 
-let unsat_conflict () = env.unsat_conflict
+let[@inline] unsat_conflict (env:t) = env.unsat_conflict
 
-let model () : (term * term) list =
-  let opt = function Some a -> a | None -> assert false in
+(* extract model *)
+let model (env:t) : assignment_view list =
   Vec.fold
-    (fun acc e -> match e with
-       | Lit v -> (v.term, opt v.assigned)  :: acc
-       | Atom _ -> acc)
+    (fun acc t -> match t.t_var with
+       | V_none -> assert false
+       | V_semantic {v_value=Some v; _} ->
+         A_semantic (t, v) :: acc
+       | V_semantic _ -> assert false
+       | V_bool {pa;na} ->
+         let b =
+           if Atom.is_true pa then true
+           else if Atom.is_true na then false
+           else assert false
+         in
+         A_bool (t,b) :: acc)
     [] env.trail
 
 (* fixpoint of propagation and decisions until a model is found, or a
    conflict is reached *)
-let solve (): unit =
+let solve (env:t) : unit =
   Log.debug 5 "solve";
-  if is_unsat () then raise Unsat;
+  if is_unsat env then (
+    raise Unsat;
+  );
   let n_of_conflicts = ref (to_float env.restart_first) in
-  let n_of_learnts = ref ((to_float (nb_clauses())) *. env.learntsize_factor) in
+  let n_of_learnts = ref ((to_float (nb_clauses env)) *. env.learntsize_factor) in
   try
     while true do
-      begin try
-          search (to_int !n_of_conflicts) (to_int !n_of_learnts)
+      begin
+        try
+          search env (to_int !n_of_conflicts) (to_int !n_of_learnts)
         with
           | Restart ->
             n_of_conflicts := !n_of_conflicts *. env.restart_inc;

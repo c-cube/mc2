@@ -176,14 +176,22 @@ module Bool = struct
     let seen_neg = Term_fields.get field_t_mark_neg t.t_fields in
     seen_pos && seen_neg
 
-  let assigned_atom t : atom option = match t.t_var with
+  let[@inline] assigned_atom t : atom option = match t.t_var with
     | V_bool {pa; _} when pa.a_is_true -> Some pa
     | V_bool {na; _} when na.a_is_true -> Some na
     | _ -> None
 
-  let assigned_atom_exn t : atom = match t.t_var with
+  let[@inline] assigned_atom_exn t : atom = match t.t_var with
     | V_bool {pa; _} when pa.a_is_true -> pa
     | V_bool {na; _} when na.a_is_true -> na
+    | _ -> assert false
+
+  let pa (t:t) : atom = match t.t_var with
+    | V_bool {pa; _} -> pa
+    | _ -> assert false
+
+  let na (t:t) : atom = match t.t_var with
+    | V_bool {na; _} -> na
     | _ -> assert false
 end
 
