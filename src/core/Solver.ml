@@ -8,9 +8,8 @@ open Solver_types
 
 module S = Internal
 
-type formula = term
 type proof = Res.proof
-type atom = term (** The type of atoms given by the module argument for formulas *)
+type nonrec atom = atom (** The type of atoms given by the module argument for formulas *)
 
 type 'clause clause_sets = {
   cs_hyps: 'clause Vec.t;
@@ -32,10 +31,7 @@ let[@inline] state_solver (type a) (st: a state) : t = match st with
   | St_sat s -> s
   | St_unsat s -> s
 
-(* Result type *)
-type res =
-  | Sat of [`SAT] state
-  | Unsat of [`UNSAT] state
+let add_plugin = S.add_plugin
 
 let pp_term = S.pp_term
 let pp_atom = S.pp_atom
@@ -56,7 +52,7 @@ let pp_all t lvl status =
 (* Wrappers around internal functions*)
 let assume = S.assume
 
-let unsat_core = Res.unsat_core
+let unsat_core _ p = Res.unsat_core p
 
 let true_at_level0 s a =
   try
@@ -112,3 +108,9 @@ let solve ?(assumptions=[]) (s:t): res =
   with S.Unsat ->
     pp_all s 99 "UNSAT";
     Unsat (St_unsat s)
+
+let create ?(plugins=[]) () =
+  let solver = S.create() in
+  List.iter (fun p -> ignore (S.add_plugin solver p)) plugins;
+  solver
+

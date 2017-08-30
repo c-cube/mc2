@@ -80,7 +80,7 @@ module type S = sig
   val cb_assign : actions -> term -> res
   (** Called when a term of this plugin is assigned/propagated *)
 
-  val cb_if_sat : actions -> unit or_conflict
+  val cb_if_sat : actions -> res
   (** Last call before answering "sat". If the current trail is not
       theory-satisfiable, the plugin {b MUST} give a conflict here. *)
 

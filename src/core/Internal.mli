@@ -53,12 +53,12 @@ val solve : t -> unit
     @return () if the current set of clauses is satisfiable
     @raise Unsat if a toplevel conflict is found *)
 
-val assume : t -> ?tag:int -> term list list -> unit
+val assume : t -> ?tag:int -> atom list list -> unit
 (** Add the list of clauses to the current set of assumptions.
     Modifies the sat solver state in place. *)
 
-val new_lit : t -> term -> unit
-(** Add a new litteral (i.e term) to the solver. This term will
+val add_term : t -> term -> unit
+(** Add a new generalized variable (i.e term) to the solver. This term will
     be decided on at some point during solving, wether it appears
     in clauses or not. *)
 
@@ -73,19 +73,20 @@ val push : t -> unit
 val pop : t -> unit
 (** Pop a decision level for local assumptions. *)
 
-val local : t -> term list -> unit
+val local : t -> atom list -> unit
 (** Add local assumptions
     @param assumptions list of additional local assumptions to make,
-      removed after the callback returns a value *)
+      removed after the callback returns a value
+    @raise Invalid_argument if no levels were {!push}ed *)
 
 (** {2 Propositional models} *)
 
-val eval : t -> term -> bool
+val eval : t -> atom -> bool
 (** Returns the valuation of a term in the current state
     of the sat solver.
     @raise UndecidedLit if the literal is not decided *)
 
-val eval_level : t -> term -> bool * int
+val eval_level : t -> atom -> bool * int
 (** Return the current assignement of the literals, as well as its
     decision level. If the level is 0, then it is necessary for
     the atom to have this value; otherwise it is due to choices
@@ -106,9 +107,6 @@ type proof = Res.proof
 val unsat_conflict : t -> clause option
 (** Returns the unsat clause found at the toplevel, if it exists (i.e if
     [solve] has raised [Unsat]) *)
-
-val full_slice : t -> term Sequence.t
-(** View the current state of the trail as a sequence of assigned terms. *)
 
 (** {2 Print} *)
 

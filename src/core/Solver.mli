@@ -9,7 +9,6 @@ Copyright 2014 Simon Cruanes
 
 open Solver_types
 
-type formula = term
 type proof = Res.proof
 type nonrec atom = atom (** The type of atoms given by the module argument for formulas *)
 
@@ -25,7 +24,7 @@ type t
 val create : ?plugins:Plugin.factory list -> unit -> t
 (** Create a new solver with the given plugins *)
 
-val add_plugin : t -> Plugin.factory -> unit
+val add_plugin : t -> Plugin.factory -> Plugin.t
 (** Add a plugin to the solver *)
 
 val assume : t -> ?tag:int -> atom list list -> unit
@@ -76,12 +75,12 @@ exception UndecidedLit
 module Sat_state : sig
   type t = [`SAT] state
 
-  val eval: t -> formula -> bool
+  val eval: t -> atom -> bool
   (** Returns the valuation of a formula in the current state
       of the sat solver.
       @raise UndecidedLit if the literal is not decided *)
 
-  val eval_level: t -> formula -> bool * int
+  val eval_level: t -> atom -> bool * int
   (** Return the current assignment of the literals, as well as its
       decision level. If the level is 0, then it is necessary for
       the atom to have this value; otherwise it is due to choices

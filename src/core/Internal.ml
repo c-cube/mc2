@@ -13,7 +13,6 @@ exception Unsat
 exception UndecidedLit
 exception Restart
 exception Conflict of clause
-exception Plugin_not_found of plugin_id
 
 (* Log levels *)
 let error = 1
@@ -54,7 +53,9 @@ type t = {
      only to have an efficient way to access the list of local assumptions. *)
 
   clauses_root : clause Stack.t;
-  (* Clauses that should propagate at level 0, but couldn't *)
+  (* Clauses that should propagate at level 0, but couldn't because they were
+     added at higher levels *)
+
   clauses_to_add : clause Stack.t;
   (* Clauses either assumed or pushed by the theory, waiting to be added. *)
 
@@ -430,6 +431,10 @@ let partition atoms : atom list * clause list =
   in
   partition_aux [] [] [] [] 0
 
+(* no propagation needed *)
+let[@inline] fully_propagated (env:t) : bool =
+  env.th_head = Vec.size env.trail &&
+  env.elt_head = Vec.size env.trail
 
 (* Making a decision.
    Before actually creatig a new decision level, we check that all propagations
@@ -437,8 +442,7 @@ let partition atoms : atom list * clause list =
    indeed takes into account the whole stack of literals, i.e we have indeed
    reached a propagation fixpoint before making a new decision *)
 let new_decision_level (env:t) : unit =
-  assert (env.th_head = Vec.size env.trail);
-  assert (env.elt_head = Vec.size env.trail);
+  assert (fully_propagated env);
   Vec.push env.decision_levels (Vec.size env.trail);
   ()
 
@@ -1229,15 +1233,14 @@ let search (env:t) n_of_conflicts n_of_learnts : unit =
     end
   done
 
-(* evaluate [t] and also return its level *)
-let eval_level (_:t) (t:bool_term) =
-  let a = Term.Bool.pa t in
-  let lvl = t.t_level in
+(* evaluate [a] and also return its level *)
+let eval_level (_:t) (a:atom) =
+  let lvl = Atom.level a in
   if Atom.is_true a then true, lvl
   else if Atom.is_false a then false, lvl
   else raise UndecidedLit
 
-let[@inline] eval env lit = fst (eval_level env lit)
+let[@inline] eval env a = fst (eval_level env a)
 
 let[@inline] unsat_conflict (env:t) = env.unsat_conflict
 
@@ -1258,6 +1261,32 @@ let model (env:t) : assignment_view list =
          A_bool (t,b) :: acc)
     [] env.trail
 
+type final_check_res =
+  | FC_sat
+  | FC_propagate
+  | FC_conflict of clause
+
+(* do the final check for plugins.
+   returns a conflict clause in case of failure *)
+let final_check (env:t) : final_check_res =
+  try
+    CCVector.iter
+      (fun (module P : Plugin.S) ->
+         begin match P.cb_if_sat (actions env) with
+           | Plugin.Sat -> ()
+           | Plugin.Unsat (l,p) ->
+             (* conflict *)
+             List.iter (add_atom env) l;
+             let c = Clause.make l (Lemma p) in
+             raise (Conflict c)
+         end)
+      env.plugins;
+    if fully_propagated env && Stack.is_empty env.clauses_to_add
+    then FC_sat
+    else FC_propagate
+  with Conflict c ->
+    FC_conflict c
+
 (* fixpoint of propagation and decisions until a model is found, or a
    conflict is reached *)
 let solve (env:t) : unit =
@@ -1277,56 +1306,53 @@ let solve (env:t) : unit =
             n_of_conflicts := !n_of_conflicts *. env.restart_inc;
             n_of_learnts   := !n_of_learnts *. env.learntsize_inc
           | Sat ->
-            assert (env.elt_head = Vec.size env.trail);
-            begin match Plugin.if_sat (full_slice ()) with
-              | Plugin_intf.Sat -> ()
-              | Plugin_intf.Unsat (l, p) ->
-                let atoms = List.rev_map create_atom l in
-                let c = make_clause (fresh_tname ()) atoms (Lemma p) in
-                Log.debugf info (fun k -> k "Theory conflict clause: %a" St.pp_clause c);
+            assert (fully_propagated env);
+            begin match final_check env with
+              | FC_sat -> raise Sat
+              | FC_conflict c ->
+                Log.debugf info (fun k -> k "Theory conflict clause: %a" (pp_clause env) c);
                 Stack.push c env.clauses_to_add
+              | FC_propagate -> () (* need to propagate *)
             end;
-            if Stack.is_empty env.clauses_to_add then raise Sat
       end
     done
   with Sat -> ()
 
-let assume ?tag cnf =
+let assume env ?tag (cnf:atom list list) =
   List.iter
     (fun l ->
-       let atoms = List.rev_map atom l in
-       let c = make_clause ?tag (fresh_hname ()) atoms Hyp in
-       Log.debugf debug (fun k -> k "Assuming clause: @[<hov 2>%a@]" pp_clause c);
+       let c = Clause.make ?tag l Hyp in
+       Log.debugf debug (fun k->k "Assuming clause: @[<hov 2>%a@]" (pp_clause env) c);
        Stack.push c env.clauses_to_add)
     cnf
 
 (* create a factice decision level for local assumptions *)
-let push (): unit =
+let push (env:t) : unit =
   Log.debug debug "Pushing a new user level";
-  cancel_until (base_level ());
+  cancel_until env (base_level env);
   Log.debugf debug
     (fun k -> k "@[<v>Status:@,@[<hov 2>trail: %d - %d@,%a@]"
-        env.elt_head env.th_head (Vec.print ~sep:"" St.pp) env.trail);
-  begin match propagate () with
+        env.elt_head env.th_head (Vec.print ~sep:"" (pp_term env)) env.trail);
+  begin match propagate env with
     | Some confl ->
-      report_unsat confl
+      report_unsat env confl
     | None ->
       Log.debugf debug
         (fun k -> k "@[<v>Current trail:@,@[<hov>%a@]@]"
-            (Vec.print ~sep:"" St.pp) env.trail);
+            (Vec.print ~sep:"" (pp_term env)) env.trail);
       Log.debug info "Creating new user level";
-      new_decision_level ();
+      new_decision_level env;
       Vec.push env.user_levels (Vec.size env.clauses_temp);
-      assert (decision_level () = base_level ())
+      assert (decision_level env = base_level env)
   end
 
 (* pop the last factice decision level *)
-let pop (): unit =
-  if base_level () = 0 then (
+let pop (env:t) : unit =
+  if base_level env = 0 then (
     Log.debug warn "Cannot pop (already at level 0)";
   ) else (
     Log.debug info "Popping user level";
-    assert (base_level () > 0);
+    assert (base_level env > 0);
     env.unsat_conflict <- None;
     let n = Vec.last env.user_levels in
     Vec.pop env.user_levels; (* before the [cancel_until]! *)
@@ -1335,83 +1361,85 @@ let pop (): unit =
     Stack.clear env.clauses_root;
     (* remove from env.clauses_temp the now invalid caluses. *)
     Vec.shrink env.clauses_temp (Vec.size env.clauses_temp - n);
-    assert (Vec.for_all (fun c -> Array.length c.atoms = 1) env.clauses_temp);
-    assert (Vec.for_all (fun c -> c.atoms.(0).var.v_level <= base_level ()) env.clauses_temp);
-    cancel_until (base_level ())
+    assert (Vec.for_all (fun c -> Array.length c.c_atoms = 1) env.clauses_temp);
+    assert (Vec.for_all (fun c -> Atom.level c.c_atoms.(0) <= base_level env) env.clauses_temp);
+    cancel_until env (base_level env)
   )
 
 (* Add local hyps to the current decision level *)
-let local l =
-  let aux lit =
-    let a = atom lit in
-    Log.debugf info (fun k-> k "Local assumption: @[%a@]" pp_atom a);
-    assert (decision_level () = base_level ());
-    if a.is_true then ()
+let local (env:t) (l:atom list) : unit =
+  let aux a =
+    Log.debugf info (fun k-> k "Local assumption: @[%a@]" (pp_atom env) a);
+    assert (decision_level env = base_level env);
+    if Atom.is_true a then ()
     else (
-      let c = make_clause (fresh_hname ()) [a] Local in
-      Log.debugf debug (fun k -> k "Temp clause: @[%a@]" pp_clause c);
+      let c = Clause.make [a] Local in
+      Log.debugf debug (fun k -> k "Temp clause: @[%a@]" (pp_clause env) c);
       Vec.push env.clauses_temp c;
-      if a.neg.is_true then (
+      if Atom.is_false a then (
         (* conflict between assumptions: UNSAT *)
-        report_unsat c;
+        report_unsat env c;
       ) else (
-        (* Grow the heap, because when the lit is backtracked,
-           it will be added to the heap. *)
-        Iheap.grow_to_at_least env.order (St.nb_elt ());
         (* make a decision, propagate *)
-        let level = decision_level() in
-        enqueue_bool a ~level (Bcp c);
+        let level = decision_level env in
+        enqueue_bool env a ~level (Bcp c);
       )
     )
   in
-  assert (base_level () > 0);
+  assert (base_level env >= 0);
+  if base_level env = 0 then (
+    invalid_arg "Solver.local: need to `push` before";
+  );
   begin match env.unsat_conflict with
     | None ->
       Log.debug info "Adding local assumption";
-      cancel_until (base_level ());
+      cancel_until env (base_level env);
       List.iter aux l
     | Some _ ->
       Log.debug warn "Cannot add local assumption (already unsat)"
   end
 
 (* Check satisfiability *)
-let check_clause c =
-  let tmp = Array.map (fun a ->
-      if a.is_true then true
-      else if a.neg.is_true then false
-      else raise UndecidedLit) c.atoms in
-  let res = CCArray.exists (fun x -> x) tmp in
+let check_clause (env:t) (c:clause) : bool =
+  let res =
+    CCArray.exists
+      (fun a ->
+         if Atom.is_true a then true
+         else if Atom.is_false a then false
+         else raise UndecidedLit)
+      c.c_atoms
+  in
   if res then true
   else (
     Log.debugf debug
-      (fun k -> k "Clause not satisfied: @[<hov>%a@]" St.pp_clause c);
+      (fun k -> k "Clause not satisfied: @[<hov>%a@]" (pp_clause env) c);
     false
   )
 
-let check_vec v =
-  Vec.for_all check_clause v
+let check_vec env v =
+  Vec.for_all (check_clause env) v
 
-let check_stack s =
+let check_stack env s =
   try
-    Stack.iter (fun c -> if not (check_clause c) then raise Exit) s;
+    Stack.iter (fun c -> if not (check_clause env c) then raise Exit) s;
     true
   with Exit ->
     false
 
-let check () =
+let check (env:t) : bool =
   Stack.is_empty env.clauses_to_add &&
-  check_stack env.clauses_root &&
-  check_vec env.clauses_hyps &&
-  check_vec env.clauses_learnt &&
-  check_vec env.clauses_temp
+  check_stack env env.clauses_root &&
+  check_vec env env.clauses_hyps &&
+  check_vec env env.clauses_learnt &&
+  check_vec env env.clauses_temp
 
 (* Unsafe access to internal data *)
 
-let hyps () = env.clauses_hyps
+let hyps env = env.clauses_hyps
 
-let history () = env.clauses_learnt
+let history env = env.clauses_learnt
 
-let temp () = env.clauses_temp
+let temp env = env.clauses_temp
 
-let trail () = env.trail
+let trail env = env.trail
 
