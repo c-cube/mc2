@@ -40,6 +40,9 @@ type t = {
   plugins: Plugin.t CCVector.vector;
   (* the plugins responsible for enforcing the semantics of terms *)
 
+  services: Service.Registry.t;
+  (* services *)
+
   (* Clauses are simplified for eficiency purposes. In the following
      vectors, the comments actually refer to the original non-simplified
      clause. *)
@@ -180,11 +183,31 @@ let[@inline] nb_clauses env = Vec.size env.clauses_hyps
 let[@inline] decision_level env = Vec.size env.decision_levels
 let[@inline] base_level env = Vec.size env.user_levels
 
+let[@inline] plugins env = CCVector.to_seq env.plugins
+
+let[@inline] get_service env (k:_ Service.Key.t) =
+  Service.Registry.find env.services k
+
 (* how to add a plugin *)
-let add_plugin (db:t) (fcty:Plugin.factory) : Plugin.t =
-  let id = CCVector.length db.plugins |> Term.Unsafe.mk_plugin_id in
-  let p = fcty id in
-  CCVector.push db.plugins p;
+let add_plugin (env:t) (fcty:Plugin.Factory.t) : Plugin.t =
+  let id = CCVector.length env.plugins |> Term.Unsafe.mk_plugin_id in
+  (* find services throught the list of keys *)
+  let rec find_services
+    : type a. a Plugin.service_key_list -> a Plugin.service_list
+    = function
+      | Plugin.K_nil -> Plugin.S_nil
+      | Plugin.K_cons (k, tail) ->
+        begin match get_service env k with
+          | None ->
+            Util.errorf "could not find service `%s`" (Service.Key.name k)
+          | Some serv ->
+            Plugin.S_cons (k, serv, find_services tail)
+        end
+  in
+  let Plugin.Factory.Factory {requires; build; _} = fcty in
+  let serv_list = find_services requires in
+  let p = build id serv_list in
+  CCVector.push env.plugins p;
   Log.debugf info (fun k->k "add plugin %s with ID %d" (Plugin.name p) id);
   p
 
@@ -292,6 +315,7 @@ let create_real (actions:Plugin.actions lazy_t) : t = {
   next_decision = None;
 
   plugins = CCVector.create();
+  services = Service.Registry.create();
   actions;
 
   clauses_hyps = Vec.make 0 dummy_clause;
@@ -607,6 +631,12 @@ let enqueue_assign (env:t) (t:term) (value:value) (lvl:int) : unit =
       Vec.push env.trail t;
       Log.debugf debug
         (fun k->k "Enqueue (%d): %a" (Vec.size env.trail) (pp_term env) t);
+      (* update watching terms *)
+      Vec.iter
+        (fun u ->
+           let (module P) = plugin_of_term env u in
+           P.update_watches u)
+        v.v_watched
   end
 
 (* evaluate an atom for MCsat, if it's not assigned

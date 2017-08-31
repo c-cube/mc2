@@ -21,11 +21,14 @@ type t
 
 (** {2 Base operations} *)
 
-val create : ?plugins:Plugin.factory list -> unit -> t
+val create : plugins:Plugin.Factory.t list -> unit -> t
 (** Create a new solver with the given plugins *)
 
-val add_plugin : t -> Plugin.factory -> Plugin.t
-(** Add a plugin to the solver *)
+val plugins : t -> Plugin.t Sequence.t
+(** Obtain the current plugins *)
+
+val get_service : t -> 'a Service.Key.t -> 'a option
+(** Obtain a service by its key *)
 
 val assume : t -> ?tag:int -> atom list list -> unit
 (** Add the list of clauses to the current set of assumptions.
@@ -87,11 +90,11 @@ module Sat_state : sig
       that can potentially be backtracked.
       @raise UndecidedLit if the literal is not decided *)
 
-  val iter_trail : t -> assignment_view Sequence.t
+  val iter_trail : t -> term Sequence.t
   (** Iterate through the formulas and terms in order of decision/propagation
       (starting from the first propagation, to the last propagation). *)
 
-  val model: t -> ('term * 'term) list
+  val model: t -> assignment_view list
   (** Returns the model found if the formula is satisfiable. *)
 end
 

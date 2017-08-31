@@ -66,6 +66,16 @@ type actions = {
     including adding clauses, registering actions to do upon
     backtracking, etc. *)
 
+(** Heterogeneous tuple of services *)
+type _ service_list =
+  | S_nil : unit service_list
+  | S_cons : 'a Service.Key.t * 'a * 'b service_list -> ('a * 'b) service_list
+
+(** Heterogeneous tuple of keys *)
+type _ service_key_list =
+  | K_nil : unit service_key_list
+  | K_cons : 'a Service.Key.t * 'b service_key_list -> ('a * 'b) service_key_list
+
 (** Main interface for plugins. Each plugin must abide by this
     interface. *)
 module type S = sig
@@ -77,6 +87,10 @@ module type S = sig
   val decide : actions -> term -> value
   (** Pick a value for this variable to do a decision *)
 
+  val provides_service : unit -> Service.any list
+  (** List of provided services, to be registered for other plugins
+      to use *)
+
   val cb_assign : actions -> term -> res
   (** Called when a term of this plugin is assigned/propagated *)
 
@@ -86,6 +100,16 @@ module type S = sig
 
   val eval_bool : bool_term -> eval_res
   (** Evaluate boolean term in current trail *)
+
+  val update_watches : term -> unit
+  (** This term was watching some other term that has just been assigned *)
+
+  val simplify : term -> term
+  (** Simplify the term into some canonical form, if possible *)
+
+  val is_absurd : bool_term -> bool
+  (** Check if the term is clearly absurd, i.e can never be satisfied.
+      Simplest implementation is [fun _ -> false] *)
 
   val iter_sub : term -> term Sequence.t
   (** Iterate on immediate sub-term *)
@@ -113,13 +137,34 @@ end
 
 type t = (module S)
 
-type factory = plugin_id -> t
-(** A plugin factory, i.e. the method to build a plugin with a given ID.
-    The plugin is allowed to register actions to be taken upon backtracking.
-    @param plugin_id the unique ID of the plugin
-    @param on_backtrack to call to register backtrack actions
-      [on_backtrack lev f] will call [f] when level [lev] is backtracked.
-*)
-
 let[@inline] owns_term (module P : S) (t:term) : bool = Term.plugin_id t = P.id
 let[@inline] name (module P : S) = P.name
+
+(** {2 Factory} *)
+
+module Factory = struct
+  type plugin = t
+
+  type t = Factory : {
+      name: string;
+      priority: int;
+      (** how prioritary this plugin is. The lower, the earlier this plugin
+          is loaded.
+          {b NOTE}: if plugin [b] requires services provided by plugin [a],
+            then we need to ensure [a.priority < b.priority] *)
+      requires: 'a service_key_list;
+      (** list of required services *)
+      build: plugin_id -> 'a service_list -> plugin
+      (** builder, taking:
+          - the unique ID of the plugin
+          - the list of services required by [requires]
+      *)
+    } -> t
+  (** A plugin factory, i.e. the method to build a plugin with a given ID. *)
+
+  (* compare factories by priority *)
+  let compare (a:t)(b:t) =
+    let Factory {priority=p_a; _} = a in
+    let Factory {priority=p_b; _} = b in
+    CCInt.compare p_a p_b
+end

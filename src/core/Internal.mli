@@ -26,14 +26,19 @@ type t
 val create : unit -> t
 (** Create a solver *)
 
-val add_plugin : t -> Plugin.factory -> Plugin.t
+val add_plugin : t -> Plugin.Factory.t -> Plugin.t
 (** [add_plugin s f] creates a new plugin, stores it into [s],
     and returns it.
     @raise Failure if all plugin IDs have been allocated
 *)
 
+val plugins : t -> Plugin.t Sequence.t
+
 val get_plugin : t -> plugin_id -> Plugin.t
 (** Get the plugin from its ID *)
+
+val get_service : t -> 'a Service.Key.t -> 'a option
+(** Obtain a service by its key *)
 
 val actions : t -> Plugin.actions
 (** Actions available to plugins *)

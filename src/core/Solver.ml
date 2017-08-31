@@ -31,7 +31,8 @@ let[@inline] state_solver (type a) (st: a state) : t = match st with
   | St_sat s -> s
   | St_unsat s -> s
 
-let add_plugin = S.add_plugin
+let[@inline] plugins t = S.plugins t
+let[@inline] get_service t k = S.get_service t k
 
 let pp_term = S.pp_term
 let pp_atom = S.pp_atom
@@ -109,8 +110,10 @@ let solve ?(assumptions=[]) (s:t): res =
     pp_all s 99 "UNSAT";
     Unsat (St_unsat s)
 
-let create ?(plugins=[]) () =
+let create ~plugins () =
   let solver = S.create() in
+  (* sort by increasing priority *)
+  let plugins = List.sort Plugin.Factory.compare plugins in
   List.iter (fun p -> ignore (S.add_plugin solver p)) plugins;
   solver
 

@@ -6,6 +6,8 @@ Copyright 2014 Simon Cruanes
 
 open Minismt_core
 
+module Ast = Minismt_smtlib.Ast
+
 exception Incorrect_model
 exception Out_of_time
 exception Out_of_space
@@ -38,7 +40,7 @@ let check_model state =
         (fun a ->
            Log.debugf 99
              (fun k -> k "Checking value of %a" (Solver.pp_term s) (Atom.term a));
-           Solver.Sat_state.eval state (Atom.term a))
+           Solver.Sat_state.eval state a)
         c
     in
     List.exists (fun x -> x) l
@@ -223,13 +225,9 @@ let () =
     | Incorrect_model ->
       Format.printf "Internal error : incorrect *sat* model@.";
       exit 4
-    | Type_smt.Typing_error (msg, t) ->
+    | Ast.Ill_typed msg ->
       let b = Printexc.get_backtrace () in
-      let loc = match t.Dolmen.Term.loc with
-        | Some l -> l | None -> Dolmen.ParseLocation.mk "<>" 0 0 0 0
-      in
-      Format.fprintf Format.std_formatter "While typing:@\n%a@\n%a: typing error\n%s@."
-        Dolmen.Term.print t Dolmen.ParseLocation.fmt loc msg;
+      Format.fprintf Format.std_formatter "typing error\n%s@." msg;
       if Printexc.backtrace_status () then
         Format.fprintf Format.std_formatter "%s@." b
 
