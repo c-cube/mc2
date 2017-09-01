@@ -1,9 +1,9 @@
 opam-version: "1.2"
-name: "msat"
+name: "mc2"
 license: "Apache"
 version: "dev"
 author: ["Sylvain Conchon" "Alain Mebsout" "Stephane Lecuyer" "Simon Cruanes" "Guillaume Bury"]
-maintainer: ["guillaume.bury@gmail.com" "simon.cruanes@inria.fr"]
+maintainer: ["simon.cruanes@inria.fr"]
 build: [
     [make "disable_log"]
     [make "lib"]
@@ -25,7 +25,7 @@ available: [
   ocaml-version >= "4.00.1"
 ]
 tags: [ "sat" "smt" ]
-homepage: "https://github.com/Gbury/mSAT"
-dev-repo: "https://github.com/Gbury/mSAT.git"
-bug-reports: "https://github.com/Gbury/mSAT/issues/"
+homepage: "https://github.com/c-cubey/mc2"
+dev-repo: "https://github.com/c-cube/mc2.git"
+bug-reports: "https://github.com/c-cube/mc2/issues/"
 

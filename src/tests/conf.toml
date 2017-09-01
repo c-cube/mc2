@@ -1,10 +1,10 @@
 
-provers = [ "minismt", "verit" ]
+provers = [ "mc2", "verit" ]
 
-[minismt]
+[mc2]
 
-binary = "./minismt"
-cmd = "./minismt -check -s mcsat $file"
+binary = "./mc2"
+cmd = "./mc2 -check -s mcsat $file"
 unsat = "UNSAT"
 sat = "SAT"
 version = "git:."
@@ -19,7 +19,7 @@ sat = "SAT"
 
 timeout=30
 problems = ".*.smt2"
-provers = [ "minismt" ]
+provers = [ "mc2" ]
 dir = [ "QF_UF" ]
 
 expect = "program:verit"

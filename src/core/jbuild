@@ -4,9 +4,9 @@
 
 ; main binary
 (library
-  ((name minismt_core)
-   (public_name minismt.core)
-   (synopsis "core data structures and algorithms for the MCSat solver")
+  ((name mc2_core)
+   (public_name mc2.core)
+   (synopsis "core data structures and algorithms for MC2")
    ; TODO: remove dolmen
    (libraries (containers sequence dolmen result))
    (flags (:standard -w +a-4-42-44-48-50-58-32-60@8 -color always))
