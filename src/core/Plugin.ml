@@ -51,21 +51,6 @@ type res =
       theory tautology (with its proof), for which every literal is false
       under the current assumptions. *)
 
-type actions = {
-  act_push_clause : clause -> unit;
-  (** push a new clause *)
-  act_propagate_bool : term -> bool -> term list -> unit;
-  (** [act_propagate_bool t b l] propagates the boolean literal [t]
-      assigned to boolean value [b], explained by evaluation of
-      (sub)terms [l] *)
-  act_on_backtrack : int -> (unit -> unit) -> unit;
-  (** [act_on_backtrack level f] will call [f] when the given [level]
-      is backtracked *)
-}
-(** Actions available to plugins when doing propagation/model building,
-    including adding clauses, registering actions to do upon
-    backtracking, etc. *)
-
 (** Heterogeneous tuple of services *)
 type _ service_list =
   | S_nil : unit service_list

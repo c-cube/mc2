@@ -47,8 +47,7 @@ let pp_all t lvl status =
         (Vec.print ~sep:"" (pp_term t)) (S.trail t)
         (Vec.print ~sep:"" (pp_clause t)) (S.temp t)
         (Vec.print ~sep:"" (pp_clause t)) (S.hyps t)
-        (Vec.print ~sep:"" (pp_clause t)) (S.history t)
-    )
+        (Vec.print ~sep:"" (pp_clause t)) (S.history t))
 
 (* Wrappers around internal functions*)
 let assume = S.assume

@@ -32,6 +32,7 @@ type lemma_view = ..
 (** Extensible proof object *)
 
 type term = {
+  t_tc: tc_term; (** typeclass for the term *)
   mutable t_id: int;
   (** unique ID, made of:
       - [k] bits plugin_id (with k small)
@@ -39,7 +40,7 @@ type term = {
   t_view: term_view; (** view *)
   t_ty: Type.t; (** type of the term *)
   mutable t_idx: int; (** position in heap *)
-  mutable t_weight : float; (** Weight (for the heap) *)
+  mutable t_weight : float; (** Weight (for the heap), tracking activity *)
   mutable t_fields: Term_fields.t;
   (** bitfield for storing various info *)
   mutable t_level : int; (** Decision level of the assignment *)
@@ -48,6 +49,27 @@ type term = {
   mutable t_var: var;
   (** The "generalized variable" part, for assignments. *)
 }
+(** Main term representation. A {!term}, contains almost all information
+    necessary to process it, including:
+
+    - its unique ID
+    - its plugin-specific representation (possibly with subterms)
+    - its current assignment, level, weight, etc.
+    - some info related to its position in the queue of terms to decide
+
+    It is worth noting that terms are also (generalized) {i variables}
+    and behave mostly the same as boolean variables for the main
+    solver, meaning that they need to be assigned a value in the model.
+*)
+
+and tc_term = {
+  tct_pp : term CCFormat.printer;
+  tct_update_watches: actions -> term -> unit; (** one of the watches was updated *)
+  tct_subterms: term -> (term->unit) -> unit; (** iterate on subterms *)
+  tct_decide: actions -> term -> value; (** decide on a value *)
+  tct_assign: actions -> term -> unit; (** notify that the term is assigned *)
+}
+(** type class for terms, packing all operations on terms *)
 
 (** The "generalized variable" part of a term, containing the
     current assignment, watched literals/terms, etc. *)
@@ -56,7 +78,6 @@ and var =
   | V_semantic of {
       mutable v_value : value option; (** Assignment *)
       mutable v_watched : term Vec.t; (* watched terms *)
-      (* TODO: perhaps put backtracking stuff here? *)
     }
 
   (** Bool variable *)
@@ -143,6 +164,21 @@ and lemma = {
 }
 (** A lemma belonging to some plugin. Must be a tautology of the theory. *)
 
+and actions = {
+  act_push_clause : clause -> unit;
+  (** push a new clause *)
+  act_propagate_bool : term -> bool -> term list -> unit;
+  (** [act_propagate_bool t b l] propagates the boolean literal [t]
+      assigned to boolean value [b], explained by evaluation of
+      (sub)terms [l] *)
+  act_on_backtrack : int -> (unit -> unit) -> unit;
+  (** [act_on_backtrack level f] will call [f] when the given [level]
+      is backtracked *)
+}
+(** Actions available to terms/plugins when doing propagation/model building,
+    including adding clauses, registering actions to do upon
+    backtracking, etc. *)
+
 let field_t_is_deleted = Term_fields.mk_field () (* term deleted during GC? *)
 let field_t_is_added = Term_fields.mk_field() (* term added to core solver? *)
 let field_t_mark_pos = Term_fields.mk_field() (* positive atom marked? *)
@@ -157,6 +193,13 @@ let field_c_visited = Clause_fields.mk_field() (* visited during some traversal?
 type term_view += Dummy
 
 let dummy_term : term = {
+  t_tc={
+    tct_pp=(fun _ _ -> assert false);
+    tct_update_watches=(fun _ _ -> assert false);
+    tct_subterms=(fun _ _ -> assert false); (** iterate on subterms *)
+    tct_decide=(fun _ _ -> assert false); (** decide on a value *)
+    tct_assign=(fun _ _ -> assert false); (** notify that the term is assigned *)
+  };
   t_id= ~-1;
   t_idx= ~-1;
   t_view=Dummy;
