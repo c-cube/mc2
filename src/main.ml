@@ -5,7 +5,9 @@ Copyright 2014 Simon Cruanes
 *)
 
 open Mc2_core
+open CCResult.Infix
 
+module E = CCResult
 module Ast = Mc2_smtlib.Ast
 
 exception Incorrect_model
@@ -84,10 +86,8 @@ let pp_cnf (cnf:Atom.t list list) =
     Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
   )
 
-let do_task _solver _s =
-  assert false
-    (* FIXME
-  match s.Dolmen.Statement.descr with
+let do_task (solver:Solver.t) (s:Ast.statement) : (unit,string) E.t =
+  begin match s with
     | Dolmen.Statement.Def (id, t) -> T.def id t
     | Dolmen.Statement.Decl (id, t) -> T.decl id t
     | Dolmen.Statement.Consequent t ->
@@ -116,7 +116,7 @@ let do_task _solver _s =
     | _ ->
       Format.printf "Command not supported:@\n%a@."
         Dolmen.Statement.print s
-       *)
+  end
 
 let error_msg opt arg l =
   Format.fprintf Format.str_formatter "'%s' is not a valid argument for '%s', valid arguments are : %a"
@@ -192,14 +192,14 @@ let main () =
   CCFormat.set_color_default true;
   (* Administrative duties *)
   Arg.parse argspec input_file usage;
-  if !file = "" then begin
+  if !file = "" then (
     Arg.usage argspec usage;
     exit 2
-  end;
+  );
   let al = Gc.create_alarm check in
 
   (* Interesting stuff happening *)
-  let lang, input = P.parse_file !file in
+  Mc2_smtlib.Ast.parse !file >>= fun input ->
   (* TODO: parse list of plugins on CLI *)
   let solver = Solver.create() in
   List.iter (do_task solver) input;
