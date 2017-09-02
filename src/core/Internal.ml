@@ -673,7 +673,13 @@ let put_high_level_atoms_first (arr:atom array) : unit =
   Array.iteri
     (fun i a ->
        if i>0 && Atom.level a > Atom.level arr.(0) then (
-         swap_arr arr 0 i
+         (* move first to second, [i]-th to first, second to wherever *)
+         let tmp = arr.(1) in
+         arr.(1) <- arr.(0);
+         arr.(0) <- arr.(i);
+         if i>1 then (
+           arr.(i) <- tmp;
+         );
        ) else if i>1 && Atom.level a > Atom.level arr.(1) then (
          swap_arr arr 1 i;
        ))
