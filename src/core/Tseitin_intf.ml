@@ -12,13 +12,8 @@
 
 (** Interfaces for Tseitin's CNF conversion *)
 
+(** Atomic formulas. *)
 module type Arg = sig
-  (** Formulas
-
-      This defines what is needed of formulas in order to implement
-      Tseitin's CNF conversion.
-  *)
-
   type t
   (** Type of atomic formulas. *)
 
@@ -26,20 +21,18 @@ module type Arg = sig
   (** Negation of atomic formulas. *)
 
   val fresh : unit -> t
-  (** Generate fresh formulas (that are different from any other). *)
+  (** Generate fresh formulas (that must be different from any other). *)
 
-  val print : Format.formatter -> t -> unit
+  val pp : t CCFormat.printer
   (** Print the given formula. *)
-
 end
 
+(** CNF conversion
+
+    This modules allows to convert arbitrary boolean formulas
+    into CNF.
+*)
 module type S = sig
-  (** CNF conversion
-
-      This modules allows to convert arbitrary boolean formulas
-      into CNF.
-  *)
-
   type atom
   (** The type of atomic formulas. *)
 
@@ -48,39 +41,39 @@ module type S = sig
       can be built using functions in this module, and then converted
       to a CNF, which is a list of clauses that only use atomic formulas. *)
 
-  val f_true : t
+  val true_ : t
   (** The [true] formula, i.e a formula that is always satisfied. *)
 
-  val f_false : t
+  val false_ : t
   (** The [false] formula, i.e a formula that cannot be satisfied. *)
 
-  val make_atom : atom -> t
-  (** [make_atom p] builds the boolean formula equivalent to the atomic formula [p]. *)
+  val atom : atom -> t
+  (** [atom p] builds the boolean formula equivalent to the atomic formula [p]. *)
 
-  val make_not : t -> t
+  val not_ : t -> t
   (** Creates the negation of a boolean formula. *)
 
-  val make_and : t list -> t
+  val and_ : t list -> t
   (** Creates the conjunction of a list of formulas. An empty conjunction is always satisfied. *)
 
-  val make_or : t list -> t
+  val or_ : t list -> t
   (** Creates the disjunction of a list of formulas. An empty disjunction is never satisfied. *)
 
-  val make_xor : t -> t -> t
-  (** [make_xor p q] creates the boolean formula "[p] xor [q]". *)
+  val xor : t -> t -> t
+  (** [xor p q] creates the boolean formula "[p] xor [q]". *)
 
-  val make_imply : t -> t -> t
-  (** [make_imply p q] creates the boolean formula "[p] implies [q]". *)
+  val imply : t -> t -> t
+  (** [imply p q] creates the boolean formula "[p] implies [q]". *)
 
-  val make_equiv : t -> t -> t
-  (** [make_equiv p q] creates the boolena formula "[p] is equivalent to [q]". *)
+  val equiv : t -> t -> t
+  (** [equiv p q] creates the boolena formula "[p] is equivalent to [q]". *)
 
-  val make_cnf : t -> atom list list
-  (** [make_cnf f] returns a conjunctive normal form of [f] under the form: a
+  val cnf : ?simplify:bool -> t -> atom list list
+  (** [cnf f] returns a conjunctive normal form of [f] under the form: a
       list (which is a conjunction) of lists (which are disjunctions) of
-      atomic formulas. *)
+      atomic formulas.
+      @param simplify if true (default) simplifiy formula *)
 
-  val print : Format.formatter -> t -> unit
-  (** [print fmt f] prints the formula on the formatter [fmt].*)
-
+  val pp : t CCFormat.printer
+  (** [pp fmt f] prints the formula on the formatter [fmt].*)
 end
