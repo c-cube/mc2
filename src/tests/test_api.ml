@@ -6,8 +6,8 @@ Copyright 2014 Simon Cruanes
 
 (* Tests that require the API *)
 
-open Minismt_core
-open Minismt_sat
+open Mc2_core
+open Mc2_sat
 
 module F = Sat.Expr
 module T = Tseitin.Make(F)

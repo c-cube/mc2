@@ -28,8 +28,8 @@ val name : t -> int
 val premise : t -> premise
 val get_tag : clause -> int option (** Recover tag from a clause, if any *)
 
-val pp : Term.t CCFormat.printer -> t CCFormat.printer
-val debug : Term.t CCFormat.printer -> t CCFormat.printer
-val pp_simple : t CCFormat.printer
+val pp : t CCFormat.printer
+val pp_name : t CCFormat.printer
+val debug : t CCFormat.printer
 
 val pp_dimacs : t CCFormat.printer

@@ -115,9 +115,3 @@ type res =
 
 val solve : ?assumptions:atom list -> t -> res
 (** Try and solves the current set of assumptions. *)
-
-(** {2 Print} *)
-
-val pp_term : t -> term CCFormat.printer
-val pp_atom : t -> atom CCFormat.printer
-val pp_clause : t -> clause CCFormat.printer

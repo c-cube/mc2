@@ -4,7 +4,8 @@ Copyright 2014 Guillaume Bury
 Copyright 2014 Simon Cruanes
 *)
 
-open Minismt_core
+open Mc2_core
+open Solver_types
 
 (** Output interface for the backend *)
 module type S = Backend_intf.S
@@ -36,32 +37,32 @@ module Default = struct
 
   let hyp_info c =
     "hypothesis", Some "LIGHTBLUE",
-    [ fun fmt () -> Format.fprintf fmt "%s" c.S.St.name]
+    [ fun fmt () -> Clause.pp_name fmt c ]
 
   let lemma_info c =
     "lemma", Some "BLUE",
-    [ fun fmt () -> Format.fprintf fmt "%s" c.S.St.name]
+    [ fun fmt () -> Clause.pp_name fmt c ]
 
   let assumption_info c =
     "assumption", Some "PURPLE",
-    [ fun fmt () -> Format.fprintf fmt "%s" c.S.St.name]
+    [ fun fmt () -> Clause.pp_name fmt c ]
 
 end
 
 (** Functor to provide dot printing *)
-module Make(S : Res.S)(A : Arg with type atom := S.atom
-                                and type hyp := S.clause
-                                and type lemma := S.clause
-                                and type assumption := S.clause) = struct
+module Make(A : Arg with type atom := atom
+                     and type hyp := clause
+                     and type lemma := clause
+                     and type assumption := clause) = struct
 
-  let node_id n = n.S.conclusion.S.St.name
+  let[@inline] node_id n = string_of_int (Clause.name n.Res.conclusion)
 
-  let res_node_id n = (node_id n) ^ "_res"
+  let[@inline] res_node_id n = node_id n ^ "_res"
 
-  let proof_id p = node_id (S.expand p)
+  let proof_id p = node_id (Res.expand p)
 
   let print_clause fmt c =
-    let v = c.S.St.atoms in
+    let v = c.c_atoms in
     if Array.length v = 0 then
       Format.fprintf fmt "⊥"
     else
@@ -72,12 +73,11 @@ module Make(S : Res.S)(A : Arg with type atom := S.atom
           Format.fprintf fmt ", "
       done
 
-  let print_edge fmt i j =
-    Format.fprintf fmt "%s -> %s;@\n" j i
+  let print_edge fmt i j = Format.fprintf fmt "%s -> %s;@\n" j i
 
   let print_edges fmt n =
-    match S.(n.step) with
-      | S.Resolution (p1, p2, _) ->
+    match n.Res.step with
+      | Res.Resolution (p1, p2, _) ->
         print_edge fmt (res_node_id n) (proof_id p1);
         print_edge fmt (res_node_id n) (proof_id p2)
       | _ -> ()
@@ -105,29 +105,29 @@ module Make(S : Res.S)(A : Arg with type atom := S.atom
   let ttify f c = fun fmt () -> f fmt c
 
   let print_contents fmt n =
-    match S.(n.step) with
+    match n.Res.step with
       (* Leafs of the proof tree *)
-      | S.Hypothesis ->
-        let rule, color, l = A.hyp_info S.(n.conclusion) in
+      | Res.Hypothesis ->
+        let rule, color, l = A.hyp_info Res.(n.conclusion) in
         let color = match color with None -> "LIGHTBLUE" | Some c -> c in
-        print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
-      | S.Assumption ->
-        let rule, color, l = A.assumption_info S.(n.conclusion) in
+        print_dot_node fmt (node_id n) "LIGHTBLUE" Res.(n.conclusion) rule color l
+      | Res.Assumption ->
+        let rule, color, l = A.assumption_info Res.(n.conclusion) in
         let color = match color with None -> "LIGHTBLUE" | Some c -> c in
-        print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
-      | S.Lemma _lemma ->
-        let rule, color, l = A.lemma_info S.(n.conclusion) in
+        print_dot_node fmt (node_id n) "LIGHTBLUE" Res.(n.conclusion) rule color l
+      | Res.Lemma _lemma ->
+        let rule, color, l = A.lemma_info Res.(n.conclusion) in
         let color = match color with None -> "YELLOW" | Some c -> c in
-        print_dot_node fmt (node_id n) "LIGHTBLUE" S.(n.conclusion) rule color l
+        print_dot_node fmt (node_id n) "LIGHTBLUE" Res.(n.conclusion) rule color l
 
       (* Tree nodes *)
-      | S.Duplicate (p, l) ->
-        print_dot_node fmt (node_id n) "GREY" S.(n.conclusion) "Duplicate" "GREY"
+      | Res.Duplicate (p, l) ->
+        print_dot_node fmt (node_id n) "GREY" Res.(n.conclusion) "Duplicate" "GREY"
           ((fun fmt () -> (Format.fprintf fmt "%s" (node_id n))) ::
              List.map (ttify A.print_atom) l);
-        print_edge fmt (node_id n) (node_id (S.expand p))
-      | S.Resolution (_, _, a) ->
-        print_dot_node fmt (node_id n) "GREY" S.(n.conclusion) "Resolution" "GREY"
+        print_edge fmt (node_id n) (node_id (Res.expand p))
+      | Res.Resolution (_, _, a) ->
+        print_dot_node fmt (node_id n) "GREY" Res.(n.conclusion) "Resolution" "GREY"
           [(fun fmt () -> (Format.fprintf fmt "%s" (node_id n)))];
         print_dot_res_node fmt (res_node_id n) a;
         print_edge fmt (node_id n) (res_node_id n)
@@ -138,7 +138,7 @@ module Make(S : Res.S)(A : Arg with type atom := S.atom
 
   let print fmt p =
     Format.fprintf fmt "digraph proof {@\n";
-    S.fold (fun () -> print_node fmt) () p;
+    Res.fold (fun () -> print_node fmt) () p;
     Format.fprintf fmt "}@."
 
 end

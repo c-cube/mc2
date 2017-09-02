@@ -40,7 +40,7 @@ val get_plugin : t -> plugin_id -> Plugin.t
 val get_service : t -> 'a Service.Key.t -> 'a option
 (** Obtain a service by its key *)
 
-val actions : t -> Plugin.actions
+val actions : t -> actions
 (** Actions available to plugins *)
 
 (* FIXME:
@@ -112,12 +112,6 @@ type proof = Res.proof
 val unsat_conflict : t -> clause option
 (** Returns the unsat clause found at the toplevel, if it exists (i.e if
     [solve] has raised [Unsat]) *)
-
-(** {2 Print} *)
-
-val pp_term : t -> term CCFormat.printer
-val pp_atom : t -> atom CCFormat.printer
-val pp_clause : t -> clause CCFormat.printer
 
 (** {2 Internal data}
     These functions expose some internal data stored by the solver, as such

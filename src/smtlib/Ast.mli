@@ -3,10 +3,9 @@
 
 (** {1 Preprocessing AST} *)
 
-open Minismt_core
+open Mc2_core
 
 type 'a or_error = ('a, string) CCResult.t
-type sexp = CCSexp.t
 
 (** {2 Types} *)
 
@@ -32,7 +31,7 @@ end
 module Ty : sig
   type t =
     | Prop
-    | Const of ID.t
+    | Atomic of ID.t * t list
     | Arrow of t * t
 
   val prop : t
@@ -66,11 +65,12 @@ end
 
 type var = Ty.t Var.t
 
-type binop =
+type op =
   | And
   | Or
   | Imply
   | Eq
+  | Distinct
 
 type binder =
   | Fun
@@ -92,7 +92,7 @@ and term_cell =
   | Bind of binder * var * term
   | Let of var * term * term
   | Not of term
-  | Binop of binop * term * term
+  | Op of op * term list
   | Bool of bool
 
 and select = {
@@ -111,10 +111,10 @@ type statement =
   | Decl of ID.t * Ty.t
   | Assert of term
   | CheckSat
+  | Goal of var list * term
         (*
   | Data of Ty.data list
   | Define of definition list
-  | Goal of var list * term
            *)
 
 (** {2 Constructors} *)
@@ -130,6 +130,7 @@ val select : select -> term -> Ty.t -> term
 val if_ : term -> term -> term -> term
 val match_ : term -> (var list * term) ID.Map.t -> term
 val let_ : var -> term -> term -> term
+val let_l : (var * term) list -> term -> term
 val bind : ty:Ty.t -> binder -> var -> term -> term
 val fun_ : var -> term -> term
 val fun_l : var list -> term -> term
@@ -140,13 +141,15 @@ val exists : var -> term -> term
 val exists_l : var list -> term -> term
 val mu : var -> term -> term
 val eq : term -> term -> term
+val eq_l : term list -> term
+val distinct : term list -> term
 val not_ : term -> term
-val binop : binop -> term -> term -> term
 val and_ : term -> term -> term
 val and_l : term list -> term
 val or_ : term -> term -> term
 val or_l : term list -> term
 val imply : term -> term -> term
+val imply_l : term list -> term
 val true_ : term
 val false_ : term
 
@@ -165,49 +168,12 @@ module Ctx : sig
   val pp : t CCFormat.printer
 end
 
-type syntax =
-  | Auto
-  (** Guess based on file extension *)
-  | Tip
-  (** Syntax for Tip (https://github.com/tip-org/)
-
-      This is a small subset of Smtlib2, so we can reuse the same S-expr
-      parser as {!Smbc} *)
-
-val string_of_syntax : syntax -> string
-
-val parse : include_dir:string -> file:string -> syntax -> statement list or_error
+val parse : string -> statement list or_error
 (** Parse the given file, type-check, etc.
     @raise Error in case the input is ill formed
     @raise Ill_typed if the input is ill typed *)
 
-val parse_stdin : syntax -> statement list or_error
+val parse_stdin : unit -> statement list or_error
 (** Parse stdin, type-check, etc.
     @raise Error in case the input is ill formed
     @raise Ill_typed if the input is ill typed *)
-
-(** {2 Environment} *)
-
-type env_entry =
-  | E_uninterpreted_ty
-  | E_uninterpreted_cst (* domain element *)
-  | E_const of Ty.t
-  | E_data of Ty.t ID.Map.t (* list of cstors *)
-  | E_cstor of Ty.t
-  | E_defined of Ty.t * term (* if defined *)
-
-type env = {
-  defs: env_entry ID.Map.t;
-}
-(** Environment with definitions and goals *)
-
-val env_empty : env
-
-val env_add_statement : env -> statement -> env
-
-val env_of_statements: statement Sequence.t -> env
-
-val env_find_def : env -> ID.t -> env_entry option
-
-val env_add_def : env -> ID.t -> env_entry -> env
-

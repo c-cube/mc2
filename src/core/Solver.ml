@@ -34,20 +34,16 @@ let[@inline] state_solver (type a) (st: a state) : t = match st with
 let[@inline] plugins t = S.plugins t
 let[@inline] get_service t k = S.get_service t k
 
-let pp_term = S.pp_term
-let pp_atom = S.pp_atom
-let pp_clause = S.pp_clause
-
 let pp_all t lvl status =
   Log.debugf lvl
     (fun k -> k
         "@[<v>%s - Full resume:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,\
          @[<hov 2>Hyps:@\n%a@]@,@[<hov 2>Lemmas:@\n%a@]@,@]@."
         status
-        (Vec.print ~sep:"" (pp_term t)) (S.trail t)
-        (Vec.print ~sep:"" (pp_clause t)) (S.temp t)
-        (Vec.print ~sep:"" (pp_clause t)) (S.hyps t)
-        (Vec.print ~sep:"" (pp_clause t)) (S.history t))
+        (Vec.print ~sep:"" Term.pp) (S.trail t)
+        (Vec.print ~sep:"" Clause.pp) (S.temp t)
+        (Vec.print ~sep:"" Clause.pp) (S.hyps t)
+        (Vec.print ~sep:"" Clause.pp) (S.history t))
 
 (* Wrappers around internal functions*)
 let assume = S.assume

@@ -9,7 +9,7 @@ Copyright 2014 Simon Cruanes
     This module provides functions to export proofs into the dot graph format.
     Graphs in dot format can be used to generates images using the graphviz tool.
 *)
-open Minismt_core
+open Mc2_core
 
 module type S = Backend_intf.S
 (** Interface for exporting proofs. *)

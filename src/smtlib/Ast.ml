@@ -3,13 +3,12 @@
 
 (** {1 Preprocessing AST} *)
 
-open Minismt_core
+open Mc2_core
 
+module Loc = Locations
 module Fmt = CCFormat
 
 type 'a or_error = ('a, string) CCResult.t
-type sexp = CCSexp.t
-type 'a to_sexp = 'a -> sexp
 
 exception Error of string
 exception Ill_typed of string
@@ -46,29 +45,32 @@ end
 module Ty = struct
   type t =
     | Prop
-    | Const of ID.t
+    | Atomic of ID.t * t list
     | Arrow of t * t
 
   let prop = Prop
-  let const id = Const id
+  let app id l = Atomic (id,l)
+  let const id = app id []
   let arrow a b = Arrow (a,b)
   let arrow_l = List.fold_right arrow
 
   let to_int_ = function
     | Prop -> 0
-    | Const _ -> 1
+    | Atomic _ -> 1
     | Arrow _ -> 2
 
   let (<?>) = CCOrd.(<?>)
 
   let rec compare a b = match a, b with
     | Prop, Prop -> 0
-    | Const a, Const b -> ID.compare a b
+    | Atomic (f1,l1), Atomic (f2,l2) ->
+      CCOrd.Infix.( ID.compare f1 f2 <?> (CCOrd.list compare, l1, l2))
     | Arrow (a1,a2), Arrow (b1,b2) ->
       compare a1 b1 <?> (compare, a2,b2)
     | Prop, _
-    | Const _, _
-    | Arrow _, _ -> CCInt.compare (to_int_ a) (to_int_ b)
+    | Atomic _, _
+    | Arrow _, _
+      -> CCInt.compare (to_int_ a) (to_int_ b)
 
   let equal a b = compare a b = 0
 
@@ -83,7 +85,8 @@ module Ty = struct
 
   let rec pp out t = match t with
     | Prop -> Fmt.string out "Bool"
-    | Const id -> ID.pp out id
+    | Atomic (id,[]) -> ID.pp out id
+    | Atomic (id,l) -> Fmt.fprintf out "(@[%a@ %a@])" ID.pp id (Util.pp_list pp) l
     | Arrow _ ->
       let args, ret = unfold t in
       Fmt.fprintf out "(@[-> %a@ %a@])" (Util.pp_list pp) args pp ret
@@ -109,11 +112,12 @@ end
 
 type var = Ty.t Var.t
 
-type binop =
+type op =
   | And
   | Or
   | Imply
   | Eq
+  | Distinct
 
 type binder =
   | Fun
@@ -135,7 +139,7 @@ and term_cell =
   | Bind of binder * var * term
   | Let of var * term * term
   | Not of term
-  | Binop of binop * term * term
+  | Op of op * term list
   | Bool of bool
 
 and select = {
@@ -151,21 +155,23 @@ type statement =
   | TyDecl of ID.t * int (* new atomic cstor *)
   | Decl of ID.t * Ty.t
   | Assert of term
+  | CheckSat
+  | Goal of var list * term
         (*
   | Data of Ty.data list
   | Define of definition list
-  | Goal of var list * term
            *)
-  | CheckSat
 
 (** {2 Helper} *)
 
-let unfold_fun t =
+let unfold_binder b t =
   let rec aux acc t = match t.term with
-    | Bind (Fun, v, t') -> aux (v::acc) t'
+    | Bind (b', v, t') when b=b' -> aux (v::acc) t'
     | _ -> List.rev acc, t
   in
   aux [] t
+
+let unfold_fun = unfold_binder Fun
 
 let pp_binder out = function
   | Forall -> Fmt.string out "forall"
@@ -173,11 +179,12 @@ let pp_binder out = function
   | Fun -> Fmt.string out "lambda"
   | Mu -> Fmt.string out "mu"
 
-let pp_binop out = function
+let pp_op out = function
   | And -> Fmt.string out "and"
   | Or -> Fmt.string out "or"
   | Imply -> Fmt.string out "=>"
   | Eq -> Fmt.string out "="
+  | Distinct -> Fmt.string out "distinct"
 
 let pp_term =
   let rec pp out t = match t.term with
@@ -198,7 +205,7 @@ let pp_term =
         pp u (Util.pp_list pp_case) (ID.Map.to_list m)
     | Bool b -> Fmt.fprintf out "%B" b
     | Not t -> Fmt.fprintf out "(@[<1>not@ %a@])" pp t
-    | Binop (o,t,u) -> Fmt.fprintf out "(@[<1>%a@ %a@ %a@])" pp_binop o pp t pp u
+    | Op (o,l) -> Fmt.fprintf out "(@[<hv1>%a@ %a@])" pp_op o (Util.pp_list pp) l
     | Bind (b,v,u) ->
       Fmt.fprintf out "(@[<1>%a ((@[%a@ %a@]))@ %a@])"
         pp_binder b Var.pp v Ty.pp (Var.ty v) pp u
@@ -222,22 +229,6 @@ let pp_data out d =
   S.of_list (ID.to_sexp d.data_id :: cstors)
    *)
 
-let pp_statement out = function
-  | SetLogic s -> Fmt.fprintf out "(set-logic %s)" s
-  | CheckSat -> Fmt.string out "(check-sat)"
-  | TyDecl (s,n) -> Fmt.fprintf out "(@[declare-sort@ %a %d@])" ID.pp s n
-  | Decl (id,ty) ->
-    let args, ret = Ty.unfold ty in
-    Fmt.fprintf out "(@[<1>declare-fun@ %a (@[%a@])@ %a@])"
-      ID.pp id (Util.pp_list Ty.pp) args Ty.pp ret
-  | Assert t -> Fmt.fprintf out "(@[assert@ %a@])" pp_term t
-    (*
-  | Data _
-  | TyDecl _
-  | Define _
-  | Goal (_,_)
-     *)
-
 (** {2 Constructors} *)
 
 let term_view t = t.term
@@ -251,7 +242,7 @@ let rec app_ty_ ty l : Ty.t = match ty, l with
       Ty.ill_typed "expected `@[%a@]`,@ got `@[%a : %a@]`"
         Ty.pp ty_a pp_term a Ty.pp a.ty
     )
-  | (Ty.Prop | Ty.Const _), a::_ ->
+  | (Ty.Prop | Ty.Atomic _), a::_ ->
     Ty.ill_typed "cannot apply ty `@[%a@]`@ to `@[%a@]`" Ty.pp ty pp_term a
 
 let mk_ term ty = {term; ty}
@@ -305,6 +296,9 @@ let let_ v t u =
       Var.pp v Ty.pp (Var.ty v) Ty.pp t.ty;
   mk_ (Let (v,t,u)) u.ty
 
+let let_l l u =
+  List.fold_right (fun (v,t) u -> let_ v t u) l u
+
 let bind ~ty b v t = mk_ (Bind(b,v,t)) ty
 
 let fun_ v t =
@@ -334,39 +328,61 @@ let fun_l = List.fold_right fun_
 let fun_a = Array.fold_right fun_
 let forall_l = List.fold_right forall
 let exists_l = List.fold_right exists
+let mu_l = List.fold_right mu
 
-let eq a b =
-  if not (Ty.equal a.ty b.ty)
-  then Ty.ill_typed "eq: `@[%a@]` and `@[%a@]` do not have the same type"
-      pp_term a pp_term b;
-  mk_ (Binop (Eq,a,b)) Ty.prop
+let eq_neq_ op l = match l with
+  | [] -> Ty.ill_typed "empty `distinct` is forbidden"
+  | a :: tail ->
+    begin match CCList.find_opt (fun b -> not @@ Ty.equal a.ty b.ty) tail with
+      | Some b ->
+        Ty.ill_typed "%a: `@[%a@]` and `@[%a@]` do not have the same type"
+          pp_op op pp_term a pp_term b;
+      | None ->
+        mk_ (Op (op, l)) Ty.prop
+    end
+
+let eq_l = eq_neq_ Eq
+let eq a b = eq_l [a;b]
+let distinct = eq_neq_ Distinct
 
 let check_prop_ t =
   if not (Ty.equal t.ty Ty.prop)
   then Ty.ill_typed "expected prop, got `@[%a : %a@]`" pp_term t Ty.pp t.ty
 
-let binop op a b = mk_ (Binop (op, a, b)) Ty.prop
-let binop_prop op a b =
-  check_prop_ a; check_prop_ b;
-  binop op a b
+let mk_prop_op op l =
+  List.iter check_prop_ l;
+  mk_ (Op (op,l)) Ty.prop
 
-let and_ = binop_prop And
-let or_ = binop_prop Or
-let imply = binop_prop Imply
+let and_l = mk_prop_op And
+let or_l = mk_prop_op Or
+let imply_l = mk_prop_op Imply
 
-let and_l = function
-  | [] -> true_
-  | [f] -> f
-  | a :: l -> List.fold_left and_ a l
-
-let or_l = function
-  | [] -> false_
-  | [f] -> f
-  | a :: l -> List.fold_left or_ a l
+let and_ a b = and_l [a;b]
+let or_ a b = or_l [a;b]
+let imply a b = imply_l [a;b]
 
 let not_ t =
   check_prop_ t;
   mk_ (Not t) Ty.prop
+
+(** {2 Printing} *)
+
+let pp_statement out = function
+  | SetLogic s -> Fmt.fprintf out "(set-logic %s)" s
+  | CheckSat -> Fmt.string out "(check-sat)"
+  | TyDecl (s,n) -> Fmt.fprintf out "(@[declare-sort@ %a %d@])" ID.pp s n
+  | Decl (id,ty) ->
+    let args, ret = Ty.unfold ty in
+    Fmt.fprintf out "(@[<1>declare-fun@ %a (@[%a@])@ %a@])"
+      ID.pp id (Util.pp_list Ty.pp) args Ty.pp ret
+  | Assert t -> Fmt.fprintf out "(@[assert@ %a@])" pp_term t
+  | Goal (vars,g) ->
+    Fmt.fprintf out "(@[assert-not@ %a@])" pp_term (forall_l vars (not_ g))
+    (*
+  | Data _
+  | TyDecl _
+  | Define _
+     *)
 
 (** {2 Parsing} *)
 
@@ -380,15 +396,19 @@ module Ctx = struct
   type kind =
     | K_ty of ty_kind
     | K_fun of Ty.t
+    | K_var of var (* local *)
+          (* FIXME
     | K_cstor of Ty.t
     | K_select of Ty.t * select
-    | K_var of var (* local *)
+             *)
 
   and ty_kind =
-    | K_data (* data type *)
     | K_uninterpreted (* uninterpreted type *)
-    | K_prop
     | K_other
+    | K_prop
+      (* FIXME
+    | K_data (* data type *)
+         *)
 
   type t = {
     names: ID.t StrTbl.t;
@@ -436,7 +456,7 @@ module Ctx = struct
     with Not_found -> errorf "did not find kind of ID `%a`" ID.pp id
 
   let as_data t (ty:Ty.t) : (ID.t * Ty.t) list = match ty with
-    | Ty.Const id ->
+    | Ty.Atomic (id,_) ->
       begin match ID.Tbl.get t.data id with
         | Some l -> l
         | None -> errorf "expected %a to be a datatype" Ty.pp ty
@@ -445,11 +465,13 @@ module Ctx = struct
 
   let pp_kind out = function
     | K_ty _ -> Format.fprintf out "type"
+        (*
     | K_cstor ty ->
       Format.fprintf out "(@[cstor : %a@])" Ty.pp ty
     | K_select (ty,s) ->
       Format.fprintf out "(@[select-%a-%d : %a@])"
         ID.pp s.select_cstor s.select_i Ty.pp ty
+           *)
     | K_fun ty ->
       Format.fprintf out "(@[fun : %a@])" Ty.pp ty
     | K_var v ->
@@ -467,6 +489,8 @@ let find_id_ ctx (s:string): ID.t =
   try StrTbl.find ctx.Ctx.names s
   with Not_found -> errorf_ctx ctx "name `%s` not in scope" s
 
+module A = Parse_ast
+
 let rec conv_ty ctx (t:A.ty) =
   try conv_ty_aux ctx t
   with Ill_typed msg ->
@@ -474,15 +498,18 @@ let rec conv_ty ctx (t:A.ty) =
 
 and conv_ty_aux ctx t = match t with
   | A.Ty_bool -> Ty.prop, Ctx.K_ty Ctx.K_prop
-  | A.Ty_const s ->
+  | A.Ty_app (s,l) ->
     let id = find_id_ ctx s in
-    Ty.const id, Ctx.find_kind ctx id
+    let l = List.map (conv_ty_fst ctx) l in
+    Ty.app id l, Ctx.find_kind ctx id
   | A.Ty_arrow (args, ret) ->
     let args = List.map (conv_ty_fst ctx) args in
     let ret, _ = conv_ty ctx ret in
     Ty.arrow_l args ret, Ctx.K_ty Ctx.K_other
 
 and conv_ty_fst ctx t = fst (conv_ty ctx t)
+
+let conv_vars ctx l = List.map (fun (v,ty) -> v, conv_ty_fst ctx ty) l
 
 let rec conv_term ctx (t:A.term) : term =
   try conv_term_aux ctx t
@@ -496,11 +523,13 @@ and conv_term_aux ctx t : term = match t with
     let id = find_id_ ctx s in
     begin match Ctx.find_kind ctx id with
       | Ctx.K_var v -> var v
-      | Ctx.K_fun ty
-      | Ctx.K_cstor ty -> const id ty
-      | Ctx.K_select _ -> errorf_ctx ctx "unapplied `select` not supported"
+      | Ctx.K_fun ty -> const id ty
       | Ctx.K_ty _ ->
         errorf_ctx ctx "expected term, not type; got `%a`" ID.pp id
+          (*
+      | Ctx.K_cstor ty -> const id ty
+      | Ctx.K_select _ -> errorf_ctx ctx "unapplied `select` not supported"
+             *)
     end
   | A.If (a,b,c) ->
     let a = conv_term ctx a in
@@ -513,30 +542,33 @@ and conv_term_aux ctx t : term = match t with
       (fun var ->
          let body = conv_term ctx body in
          fun_ var body)
-  | A.Forall ((v,ty), body) ->
-    let ty, _ty_k = conv_ty ctx ty in
-    Ctx.with_var ctx v ty
-      (fun var ->
+  | A.Forall (vars, body) ->
+    let vars = conv_vars ctx vars in
+    Ctx.with_vars ctx vars
+      (fun vars ->
          let body = conv_term ctx body in
-         forall var body)
-  | A.Exists ((v,ty), body) ->
-    let ty, _ = conv_ty ctx ty in
-    Ctx.with_var ctx v ty
-      (fun var ->
+         forall_l vars body)
+  | A.Exists (vars, body) ->
+    let vars = conv_vars ctx vars in
+    Ctx.with_vars ctx vars
+      (fun vars ->
          let body = conv_term ctx body in
-         exists var body)
-  | A.Let (v,t,u) ->
-    let t = conv_term ctx t in
-    Ctx.with_var ctx v t.ty
-      (fun var ->
+         exists_l vars body)
+  | A.Let (l,u) ->
+    let l =
+      List.map (fun (v,t) ->
+        let t = conv_term ctx t in
+        (v, ty t), t)
+        l
+    in
+    Ctx.with_vars ctx (List.map fst l)
+      (fun vars ->
+         let l = List.map2 (fun v (_,t) -> v,t) vars l in
          let u = conv_term ctx u in
-         let_ var t u)
-  | A.Mu ((x,ty), body) ->
-    let ty, _ = conv_ty ctx ty in
-    Ctx.with_var ctx x ty
-      (fun var ->
-         let body = conv_term ctx body in
-         mu var body)
+         let_l l u)
+  | A.Distinct l ->
+    let l = List.map (conv_term ctx) l in
+    distinct l
   | A.And l ->
     let l = List.map (conv_term ctx) l in
     and_l l
@@ -554,7 +586,9 @@ and conv_term_aux ctx t : term = match t with
     let a = conv_term ctx a in
     let b = conv_term ctx b in
     imply a b
-  | A.Match (lhs, l) ->
+  | A.Match (_lhs, _l) ->
+    assert false
+    (* FIXME
     (* convert a regular case *)
     let conv_case c vars rhs =
       let c_id = find_id_ ctx c in
@@ -610,7 +644,7 @@ and conv_term_aux ctx t : term = match t with
         if missing<>[]
         then errorf_ctx ctx
             "missing cases in `@[%a@]`: @[%a@]"
-            A.pp_term t (Utils.pp_list ID.pp) missing;
+            A.pp_term t (Util.pp_list ID.pp) missing;
         cases
       | Some def_rhs ->
         List.fold_left
@@ -624,28 +658,34 @@ and conv_term_aux ctx t : term = match t with
           cases all_cstors
     in
     match_ lhs cases
-  | A.App (A.Const s, args) ->
+    *)
+  | A.App (s, args) ->
     let id = find_id_ ctx s in
     let args = List.map (conv_term ctx) args in
     begin match Ctx.find_kind ctx id, args with
       | Ctx.K_var v, _ -> app (var v) args
-      | Ctx.K_fun ty, _
+      | Ctx.K_fun ty, _ -> app (const id ty) args
+      | Ctx.K_ty _, _ ->
+        errorf_ctx ctx "expected term, not type; got `%a`" ID.pp id
+        (*
       | Ctx.K_cstor ty, _ -> app (const id ty) args
       | Ctx.K_select (ty, sel), [arg] -> select sel arg ty
       | Ctx.K_select _, _ ->
         errorf_ctx ctx "select `%a`@ should be applied to exactly one arg"
           A.pp_term t
-      | Ctx.K_ty _, _ ->
-        errorf_ctx ctx "expected term, not type; got `%a`" ID.pp id
+           *)
     end
-  | A.App (f, args) ->
+  | A.HO_app (f, arg) ->
     let f = conv_term ctx f in
-    let args = List.map (conv_term ctx) args in
-    app f args
-  | A.Asserting (t,g) ->
+    let arg = conv_term ctx arg in
+    app f [arg]
+  | A.Cast (t, ty_expect) ->
     let t = conv_term ctx t in
-    let g = conv_term ctx g in
-    asserting t g
+    let ty_expect = conv_ty_fst ctx ty_expect in
+    if not (Ty.equal (ty t) ty_expect) then (
+      Ty.ill_typed "term `%a`@ should have type `%a`" pp_term t Ty.pp ty_expect
+    );
+    t
 
 let find_file_ name ~dir : string option =
   Log.debugf 2 (fun k->k "search A.%sA. in A.%sA." name dir);
@@ -654,33 +694,46 @@ let find_file_ name ~dir : string option =
   then Some abs_path
   else None
 
-let rec conv_statement ctx (syn:syntax) (s:A.statement): statement list =
+let conv_fun_decl ctx f =
+  if f.A.fun_ty_vars <> [] then (
+    errorf_ctx ctx "cannot convert polymorphic function@ %a"
+      (A.pp_fun_decl A.pp_ty) f
+  );
+  let args = List.map (conv_ty_fst ctx) f.A.fun_args in
+  let ty = Ty.arrow_l args (conv_ty_fst ctx f.A.fun_ret) in
+  f.A.fun_name, ty
+
+let conv_fun_def ctx f body =
+  if f.A.fun_ty_vars <> [] then (
+    errorf_ctx ctx "cannot convert polymorphic function@ %a"
+      (A.pp_fun_decl A.pp_typed_var) f;
+  );
+  let args = conv_vars ctx f.A.fun_args in
+  Ctx.with_vars ctx args
+    (fun args ->
+       let ty =
+         Ty.arrow_l
+           (List.map Var.ty args)
+           (conv_ty_fst ctx f.A.fun_ret)
+       in
+       f.A.fun_name, ty, fun_l args (conv_term ctx body))
+
+let rec conv_statement ctx (s:A.statement): statement list =
   Log.debugf 2 (fun k->k "(@[<1>statement_of_ast@ `@[%a@]`@])" A.pp_stmt s);
   Ctx.set_loc ctx ?loc:s.A.loc;
-  conv_statement_aux ctx syn s
+  conv_statement_aux ctx s
 
-and conv_statement_aux ctx syn (t:A.statement) : statement list = match A.view t with
-  | A.Stmt_include s ->
-    (* include now! *)
-    let dir = ctx.Ctx.include_dir in
-    begin match find_file_ s ~dir with
-      | None -> errorf "could not find included file `%s`" s
-      | Some s' when StrTbl.mem ctx.Ctx.included s' ->
-        [] (* already included *)
-      | Some s' ->
-        (* put in cache *)
-        StrTbl.add ctx.Ctx.included s' ();
-        Log.debugf 2 (fun k->k "(@[parse_include@ %S@])" s');
-        parse_file_exn ctx syn ~file:s'
-    end
-  | A.Stmt_ty_decl s ->
+and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view stmt with
+  | A.Stmt_decl_sort (s,n) ->
     let id = Ctx.add_id ctx s (Ctx.K_ty Ctx.K_uninterpreted) in
-    [TyDecl id]
-  | A.Stmt_decl (s, ty) ->
-    let ty, _ = conv_ty ctx ty in
-    let id = Ctx.add_id ctx s (Ctx.K_fun ty) in
-    [Decl (id,ty)]
-  | A.Stmt_data l ->
+    [TyDecl (id,n)]
+  | A.Stmt_decl fr ->
+    let f, ty = conv_fun_decl ctx fr in
+    let id = Ctx.add_id ctx f (Ctx.K_fun ty) in
+    [Decl (id, ty)]
+  | A.Stmt_data ([],_l) ->
+    assert false
+    (* FIXME
     (* first, read and declare each datatype (it can occur in the other
        datatypes' construtors) *)
     let pre_parse (data_name,cases) =
@@ -724,9 +777,21 @@ and conv_statement_aux ctx syn (t:A.statement) : statement list = match A.view t
         l
     in
     [Data l]
-  | A.Stmt_def defs ->
+    *)
+  | A.Stmt_data _ ->
+    errorf_ctx ctx "not implemented: parametric datatypes" A.pp_stmt stmt
+  | A.Stmt_funs_rec _defs ->
+    errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
+    (* FIXME
+    let {A.fsr_decls=decls; fsr_bodies=bodies} = defs in
+    if List.length decls <> List.length bodies then (
+      errorf_ctx ctx "declarations and bodies should have same length";
+    );
+    let l = List.map2 (conv_fun_def ctx) decls bodies in
+    [def ?loc l |> CCOpt.return
     (* parse id,ty and declare them before parsing the function bodies *)
-    let preparse (name, ty, rhs) =
+    let preparse fd =
+      let name, ty, rhs = conv_fun_def ctx
       let ty, _ = conv_ty ctx ty in
       let id = Ctx.add_id ctx name (Ctx.K_fun ty) in
       id, ty, rhs
@@ -740,99 +805,56 @@ and conv_statement_aux ctx syn (t:A.statement) : statement list = match A.view t
         defs
     in
     [Define defs]
+    *)
+  | A.Stmt_fun_rec _def ->
+    errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
+  | A.Stmt_fun_def _def ->
+    errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
   | A.Stmt_assert t ->
     let t = conv_term ctx t in
     check_prop_ t;
     [Assert t]
-  | A.Stmt_goal (vars, t) ->
-    let vars =
-      List.map
-        (fun (s,ty) ->
-           let ty, _ = conv_ty ctx ty in
-           s, ty)
-        vars
-    in
-    Ctx.with_vars ctx vars
-      (fun vars ->
-         let t = conv_term ctx t in
-         [Goal (vars, t)])
+  | A.Stmt_assert_not ([], t) ->
+    let vars, t = unfold_binder Forall (conv_term ctx t) in
+    let g = not_ t in (* negate *)
+    [Goal (vars, g)]
+  | A.Stmt_assert_not (_::_, _) ->
+    errorf_ctx ctx "cannot convert polymorphic goal@ `@[%a@]`"
+      A.pp_stmt stmt
+  | A.Stmt_lemma _ ->
+    errorf_ctx ctx "smbc does not know how to handle `lemma` statements"
+  | A.Stmt_check_sat -> [CheckSat]
 
-and parse_file_exn ctx (syn:syntax) ~file : statement list =
-  let syn = match syn with
-    | Tip -> syn
-    | Auto -> Tip
-  in
-  Log.debugf 2 (fun k->k "use syntax: %s" (string_of_syntax syn));
-  let l = match syn with
-    | Auto -> assert false
-    | Tip ->
-      (* delegate parsing to [Tip_parser] *)
-      Tip_util.parse_file_exn file
-      |> CCList.filter_map A.Tip.conv_stmt
-  in
-  CCList.flat_map (conv_statement ctx syn) l
+let parse_chan_exn ?(filename="<no name>") ic =
+  let lexbuf = Lexing.from_channel ic in
+  Loc.set_file lexbuf filename;
+  Parser.parse_list Lexer.token lexbuf
 
-let parse ~include_dir ~file syn =
-  let ctx = Ctx.create ~include_dir () in
-  try Result.Ok (parse_file_exn ctx ~file syn)
+let parse_chan ?filename ic =
+  try Result.Ok (parse_chan_exn ?filename ic)
   with e -> Result.Error (Printexc.to_string e)
 
-let parse_stdin syn = match syn with
-  | Auto -> errorf "impossible to guess input format with <stdin>"
-  | Tip ->
-    let ctx = Ctx.create ~include_dir:"." () in
-    try
-      Tip_util.parse_chan_exn ~filename:"<stdin>" stdin
-      |> CCList.filter_map A.Tip.conv_stmt
-      |> CCList.flat_map (conv_statement ctx syn)
-      |> CCResult.return
-    with e -> Result.Error (Printexc.to_string e)
+let parse_file_exn file : A.statement list =
+  CCIO.with_in file (parse_chan_exn ~filename:file)
 
-(** {2 Environment} *)
+let parse_file file =
+  try Result.Ok (parse_file_exn file)
+  with e -> Result.Error (Printexc.to_string e)
 
-type env_entry =
-  | E_uninterpreted_ty
-  | E_uninterpreted_cst (* domain element *)
-  | E_const of Ty.t
-  | E_data of Ty.t ID.Map.t (* list of cstors *)
-  | E_cstor of Ty.t (* datatype it belongs to *)
-  | E_defined of Ty.t * term (* if defined *)
+let parse_file_exn ctx file : statement list =
+  (* delegate parsing to [Tip_parser] *)
+  parse_file_exn file
+  |> CCList.flat_map (conv_statement ctx)
 
-type env = {
-  defs: env_entry ID.Map.t;
-}
-(** Environment with definitions and goals *)
+let parse file =
+  let ctx = Ctx.create () in
+  try Result.Ok (parse_file_exn ctx file)
+  with e -> Result.Error (Printexc.to_string e)
 
-let env_empty = {
-  defs=ID.Map.empty;
-}
-
-let add_def id def env = { defs=ID.Map.add id def env.defs}
-
-let env_add_statement env st =
-  match st with
-    | Data l ->
-      List.fold_left
-        (fun env {Ty.data_id; data_cstors} ->
-           let map = add_def data_id (E_data data_cstors) env in
-           ID.Map.fold
-             (fun c_id c_ty map -> add_def c_id (E_cstor c_ty) map)
-             data_cstors map)
-        env l
-    | TyDecl id -> add_def id E_uninterpreted_ty env
-    | Decl (id,ty) -> add_def id (E_const ty) env
-    | Define l ->
-      List.fold_left
-        (fun map (id,ty,def) -> add_def id (E_defined (ty,def)) map)
-        env l
-    | Goal _
-    | Assert _ -> env
-
-let env_of_statements seq =
-  Sequence.fold env_add_statement env_empty seq
-
-let env_find_def env id =
-  try Some (ID.Map.find id env.defs)
-  with Not_found -> None
-
-let env_add_def env id def = add_def id def env
+let parse_stdin () =
+  let ctx = Ctx.create () in
+  try
+    parse_chan_exn ~filename:"<stdin>" stdin
+    |> CCList.flat_map (conv_statement ctx)
+    |> CCResult.return
+  with e -> Result.Error (Printexc.to_string e)

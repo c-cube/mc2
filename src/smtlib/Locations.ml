@@ -1,53 +1,71 @@
-(*********************************************************************************)
-(*  Copyright (c) 2015, INRIA, Universite de Nancy 2 and Universidade Federal    *)
-(*  do Rio Grande do Norte.                                                      *)
-(*                                                                               *)
-(*  Permission to use, copy, modify, and distribute this software for any        *)
-(*  purpose with or without fee is hereby granted, provided that the above       *)
-(*  copyright notice and this permission notice appear in all copies.            *)
-(*                                                                               *)
-(*  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES     *)
-(*  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF             *)
-(*  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR      *)
-(*  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES       *)
-(*  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN        *)
-(*  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF      *)
-(*  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.               *)
-(*********************************************************************************)
+
+(* This file is free software, copyright Simon Cruanes. See file "LICENSE" for more details. *)
+
+(** {1 Locations} *)
 
 type t = {
-  loc_start: Lexing.position;
-  loc_end: Lexing.position;
+  file : string;
+  start_line : int;
+  start_column : int;
+  stop_line : int;
+  stop_column : int;
 }
 
-let mk_loc loc_start loc_end = { loc_start; loc_end; }
+let mk file start_line start_column stop_line stop_column =
+  { file; start_line; start_column; stop_line; stop_column; }
 
-let in_file name =
-  let loc = {
-    Lexing.pos_fname = name;
-    Lexing.pos_lnum = 1;
-    Lexing.pos_bol = 0;
-    Lexing.pos_cnum = -1;
-  }
-  in
-  { loc_start = loc; loc_end = loc; }
+let mk_pair file (a,b)(c,d) = mk file a b c d
 
-let none = in_file "_none_";;
+let mk_pos start stop =
+  let open Lexing in
+  mk
+    start.pos_fname
+    start.pos_lnum (start.pos_cnum - start.pos_bol)
+    stop.pos_lnum (stop.pos_cnum - stop.pos_bol)
 
-let dummy_loc = { loc_start = Lexing.dummy_pos; loc_end = Lexing.dummy_pos; }
+let equal = (=)
 
 let pp out pos =
-  if pos.loc_start.Lexing.pos_lnum = pos.loc_end.Lexing.pos_lnum
+  if pos.start_line = pos.stop_line
   then
     Format.fprintf out "file '%s': line %d, col %d to %d"
-      pos.loc_start.Lexing.pos_fname pos.loc_start.Lexing.pos_lnum
-      pos.loc_start.Lexing.pos_cnum pos.loc_end.Lexing.pos_cnum
+      pos.file pos.start_line pos.start_column pos.stop_column
   else
     Format.fprintf out "file '%s': line %d, col %d to line %d, col %d"
-      pos.loc_start.Lexing.pos_fname
-      pos.loc_start.Lexing.pos_lnum pos.loc_start.Lexing.pos_cnum
-      pos.loc_end.Lexing.pos_lnum pos.loc_end.Lexing.pos_cnum
+      pos.file
+      pos.start_line pos.start_column
+      pos.stop_line pos.stop_column
 
 let pp_opt out = function
   | None -> Format.fprintf out "<no location>"
   | Some pos -> pp out pos
+
+let pp_to_string pp x =
+  let buf = Buffer.create 64 in
+  let fmt = Format.formatter_of_buffer buf in
+  pp fmt x;
+  Format.pp_print_flush fmt ();
+  Buffer.contents buf
+
+let to_string_opt = pp_to_string pp_opt
+
+(** {2 Lexbuf} *)
+
+let set_file buf filename =
+  let open Lexing in
+  buf.lex_curr_p <- {buf.lex_curr_p with pos_fname=filename;};
+  ()
+
+let get_file buf =
+  let open Lexing in
+  buf.lex_curr_p.pos_fname
+
+let of_lexbuf lexbuf =
+  let start = Lexing.lexeme_start_p lexbuf in
+  let end_ = Lexing.lexeme_end_p lexbuf in
+  let s_l = start.Lexing.pos_lnum in
+  let s_c = start.Lexing.pos_cnum - start.Lexing.pos_bol in
+  let e_l = end_.Lexing.pos_lnum in
+  let e_c = end_.Lexing.pos_cnum - end_.Lexing.pos_bol in
+  let file = get_file lexbuf in
+  mk file s_l s_c e_l e_c

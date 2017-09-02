@@ -10,7 +10,6 @@ val copy : t -> t
 val id : t -> int
 
 val to_string : t -> string
-val to_sexp : t -> CCSexp.t
 val to_string_full : t -> string
 
 val equal : t -> t -> bool

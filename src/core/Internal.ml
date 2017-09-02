@@ -62,7 +62,7 @@ type t = {
   clauses_to_add : clause Stack.t;
   (* Clauses either assumed or pushed by the theory, waiting to be added. *)
 
-  actions: Plugin.actions lazy_t;
+  actions: actions lazy_t;
   (* set of actions available to plugins, pre-allocated *)
 
   mutable unsat_conflict : clause option;
@@ -160,17 +160,6 @@ let[@inline] get_plugin (env:t) (p_id:plugin_id) : Plugin.t =
 let[@inline] plugin_of_term (env:t) (t:term) : Plugin.t =
   get_plugin env (Term.plugin_id t)
 
-let pp_term (env:t) out (t:term): unit =
-  let rec aux out t =
-    let id = Term.plugin_id t in
-    let (module P) = get_plugin env id in
-    P.pp_term aux out (Term.view t)
-  in
-  aux out t
-
-let pp_atom env = Atom.pp (pp_term env)
-let pp_clause env = Clause.pp (pp_term env)
-
 let[@inline] plugins t = t.plugins
 let[@inline] actions t = Lazy.force t.actions
 
@@ -211,8 +200,6 @@ let add_plugin (env:t) (fcty:Plugin.Factory.t) : Plugin.t =
   Log.debugf info (fun k->k "add plugin %s with ID %d" (Plugin.name p) id);
   p
 
-let pp_clause db = Clause.pp (pp_term db)
-
 (* Are the assumptions currently unsat ? *)
 let[@inline] is_unsat t = match t.unsat_conflict with
   | Some _ -> true
@@ -246,7 +233,7 @@ let[@inline] iter_terms (env:t) : term Sequence.t =
 let add_term (env:t) (t:term): unit =
   let rec aux t =
     if Term.is_deleted t then (
-      Util.errorf "(@[trying to add deleted term@ `%a`@])" (pp_term env) t
+      Util.errorf "(@[trying to add deleted term@ `%a`@])" Term.pp t
     ) else if Term.has_var t then (
       assert (t.t_var <> V_none);
       assert (t.t_idx >= 0);
@@ -310,7 +297,7 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
   )
 
 (* main building function *)
-let create_real (actions:Plugin.actions lazy_t) : t = {
+let create_real (actions:actions lazy_t) : t = {
   unsat_conflict = None;
   next_decision = None;
 
@@ -474,9 +461,9 @@ let new_decision_level (env:t) : unit =
    A clause is attached (to its watching lits) when it is first added,
    either because it is assumed or learnt.
 *)
-let attach_clause (env:t) (c:clause): unit =
+let attach_clause (_env:t) (c:clause): unit =
   assert (not (Clause.attached c));
-  Log.debugf debug (fun k -> k "Attaching %a" (pp_clause env) c);
+  Log.debugf debug (fun k -> k "Attaching %a" Clause.pp c);
   Vec.push (Atom.neg c.c_atoms.(0)).a_watched c;
   Vec.push (Atom.neg c.c_atoms.(1)).a_watched c;
   Clause.set_attached c;
@@ -535,7 +522,7 @@ let cancel_until (env:t) (lvl:int) : unit =
 (* Unsatisfiability is signaled through an exception, since it can happen
    in multiple places (adding new clauses, or solving for instance). *)
 let report_unsat (env:t) (confl:clause) : _ =
-  Log.debugf info (fun k -> k "@[Unsat conflict: %a@]" (pp_clause env) confl);
+  Log.debugf info (fun k -> k "@[Unsat conflict: %a@]" Clause.pp confl);
   env.unsat_conflict <- Some confl;
   raise Unsat
 
@@ -545,7 +532,7 @@ let report_unsat (env:t) (confl:clause) : _ =
    other formulas, but has been simplified. in which case, we
    need to rebuild a clause with correct history, in order to
    be able to build a correct proof at the end of proof search. *)
-let simpl_reason (env:t) : reason -> reason = function
+let simpl_reason : reason -> reason = function
   | (Bcp cl) as r ->
     let l, history = partition cl.c_atoms in
     begin match l with
@@ -563,7 +550,7 @@ let simpl_reason (env:t) : reason -> reason = function
           in
           Log.debugf debug
             (fun k -> k "Simplified reason: @[<v>%a@,%a@]"
-                (pp_clause env) cl (pp_clause env) c');
+                Clause.pp cl Clause.pp c');
           Bcp c'
         )
       | _ ->
@@ -571,9 +558,9 @@ let simpl_reason (env:t) : reason -> reason = function
           (fun k ->
              k
                "@[<v 2>Failed at reason simplification:@,%a@,%a@]"
-               (Vec.print ~sep:"" (pp_atom env))
+               (Vec.print ~sep:"" Atom.pp)
                (Vec.from_list l (List.length l) dummy_atom)
-               (pp_clause env) cl);
+               Clause.pp cl);
         assert false
     end
   | r -> r
@@ -583,7 +570,7 @@ let simpl_reason (env:t) : reason -> reason = function
 let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   if Atom.is_false a then (
     Log.debugf error
-      (fun k->k "Trying to enqueue a false literal: %a" (pp_atom env) a);
+      (fun k->k "Trying to enqueue a false literal: %a" Atom.pp a);
     assert false
   );
   assert (not (Atom.is_true a) && Atom.level a < 0 &&
@@ -591,14 +578,14 @@ let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   (* simplify reason *)
   let reason =
     if lvl > 0 then reason
-    else simpl_reason env reason
+    else simpl_reason reason
   in
   a.a_is_true <- true;
   a.a_term.t_level <- lvl;
   a.a_term.t_reason <- Some reason;
   Vec.push env.trail a.a_term;
   Log.debugf debug
-    (fun k->k "Enqueue (%d): %a" (Vec.size env.trail) (pp_atom env) a);
+    (fun k->k "Enqueue (%d): %a" (Vec.size env.trail) Atom.pp a);
   ()
 
 (* atom [a] evaluates to [true] because of [terms] *)
@@ -622,7 +609,7 @@ let enqueue_assign (env:t) (t:term) (value:value) (lvl:int) : unit =
     | V_none | V_bool _ ->  assert false
     | V_semantic {v_value=Some _; _} ->
       Log.debugf error
-        (fun k -> k "Trying to assign an already assigned literal: %a" (pp_term env) t);
+        (fun k -> k "Trying to assign an already assigned literal: %a" Term.pp t);
       assert false
     | V_semantic ({v_value=None; _} as v) ->
       assert (t.t_level < 0);
@@ -630,7 +617,7 @@ let enqueue_assign (env:t) (t:term) (value:value) (lvl:int) : unit =
       t.t_level <- lvl;
       Vec.push env.trail t;
       Log.debugf debug
-        (fun k->k "Enqueue (%d): %a" (Vec.size env.trail) (pp_term env) t);
+        (fun k->k "Enqueue (%d): %a" (Vec.size env.trail) Term.pp t);
       (* update watching terms *)
       Vec.iter
         (fun u ->
@@ -723,13 +710,13 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
     Array.fold_left (fun acc p -> max acc (Atom.level p)) 0 c_clause.c_atoms
   in
   Log.debugf debug
-    (fun k -> k "Analyzing conflict (%d): %a" conflict_level (pp_clause env) c_clause);
+    (fun k -> k "Analyzing conflict (%d): %a" conflict_level Clause.pp c_clause);
   while !cond do
     begin match !c with
       | None ->
         Log.debug debug "skipping resolution for semantic propagation"
       | Some clause ->
-        Log.debugf debug (fun k->k "Resolving clause: %a" (pp_clause env) clause);
+        Log.debugf debug (fun k->k "Resolving clause: %a" Clause.pp clause);
         begin match clause.c_premise with
           | History _ -> bump_clause_activity env clause
           | Hyp | Local | Lemma _ -> ()
@@ -765,7 +752,7 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
     (* look for the next node to expand *)
     while
       let t = Vec.get env.trail !tr_ind in
-      Log.debugf debug (fun k -> k "looking at: %a" (pp_term env) t);
+      Log.debugf debug (fun k -> k "looking at: %a" Term.pp t);
       begin match t.t_var with
         | V_none -> assert false
         | V_semantic _ -> true (* skip semantic assignments *)
@@ -842,7 +829,7 @@ let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
    - report unsat if conflict at level 0
 *)
 let add_boolean_conflict (env:t) (confl:clause): unit =
-  Log.debugf info (fun k -> k"Boolean conflict: %a" (pp_clause env) confl);
+  Log.debugf info (fun k -> k"Boolean conflict: %a" Clause.pp confl);
   env.next_decision <- None;
   env.conflicts <- env.conflicts + 1;
   assert (decision_level env >= base_level env);
@@ -866,7 +853,7 @@ let clause_vector env c = match c.c_premise with
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
 let add_clause (env:t) (init:clause) : unit =
-  Log.debugf debug (fun k -> k "Adding clause: @[<hov>%a@]" (pp_clause env) init);
+  Log.debugf debug (fun k -> k "Adding clause: @[<hov>%a@]" Clause.pp init);
   (* Insertion of new lits is done before simplification. Indeed, else a lit in a
      trivial clause could end up being not decided on, which is a bug. *)
   Array.iter (fun a -> add_term env a.a_term) init.c_atoms;
@@ -875,7 +862,7 @@ let add_clause (env:t) (init:clause) : unit =
     let c, has_remove_doublons = eliminate_doublons init in
     if has_remove_doublons then (
       Log.debugf debug
-        (fun k -> k "Doublons eliminated: %a :from %a" (pp_clause env) c (pp_clause env) init);
+        (fun k -> k "Doublons eliminated: %a :from %a" Clause.pp c Clause.pp init);
     );
     let atoms, history = partition c.c_atoms in
     let clause =
@@ -888,7 +875,7 @@ let add_clause (env:t) (init:clause) : unit =
         Clause.make atoms (History (c :: history))
       )
     in
-    Log.debugf info (fun k->k "New clause: @[<hov>%a@]" (pp_clause env) clause);
+    Log.debugf info (fun k->k "New clause: @[<hov>%a@]" Clause.pp clause);
     begin match atoms with
       | [] ->
         (* Report_unsat will raise, and the current clause will be lost if we do not
@@ -915,7 +902,7 @@ let add_clause (env:t) (init:clause) : unit =
           Stack.push clause env.clauses_root;
           ()
         ) else (
-          Log.debugf debug (fun k->k "Unit clause, propagating: %a" (pp_atom env) a);
+          Log.debugf debug (fun k->k "Unit clause, propagating: %a" Atom.pp a);
           Vec.push vec clause;
           enqueue_bool env a ~level:0 (Bcp clause)
         )
@@ -940,7 +927,7 @@ let add_clause (env:t) (init:clause) : unit =
     end
   with Trivial ->
     Vec.push vec init;
-    Log.debugf info (fun k->k "Trivial clause ignored : @[%a@]" (pp_clause env) init)
+    Log.debugf info (fun k->k "Trivial clause ignored : @[%a@]" Clause.pp init)
 
 (* really add clauses pushed by plugins to the solver *)
 let flush_clauses (env:t) =
@@ -1038,22 +1025,21 @@ let propagate_atom (env:t) (a:atom) (res:clause option ref) : unit =
   ()
 
 (* build the "actions" available to the plugins *)
-let mk_actions (env:t) : Plugin.actions =
+let mk_actions (env:t) : actions =
   let act_on_backtrack lev f : unit =
     if lev >= decision_level env then f()
     else (
       Vec.push (Vec.get env.backtrack_stack lev) f
     )
   and act_push_clause (c:clause) : unit =
-    Log.debugf debug (fun k->k "Pushing clause %a" (pp_clause env) c);
+    Log.debugf debug (fun k->k "Pushing clause %a" Clause.pp c);
     Stack.push c env.clauses_to_add
   and act_propagate_bool t (b:bool) (l:term list) : unit =
-    Log.debugf debug (fun k->k "Semantic propagate %a@ :val %B" (pp_term env) t b);
+    Log.debugf debug (fun k->k "Semantic propagate %a@ :val %B" Term.pp t b);
     let a = if b then Term.Bool.pa t else Term.Bool.na t in
     enqueue_semantic_bool_eval env a l
   in
-  { Plugin.
-    act_on_backtrack;
+  { act_on_backtrack;
     act_push_clause;
     act_propagate_bool;
   }
@@ -1349,7 +1335,7 @@ let solve (env:t) : unit =
             begin match final_check env with
               | FC_sat -> raise Sat
               | FC_conflict c ->
-                Log.debugf info (fun k -> k "Theory conflict clause: %a" (pp_clause env) c);
+                Log.debugf info (fun k -> k "Theory conflict clause: %a" Clause.pp c);
                 Stack.push c env.clauses_to_add
               | FC_propagate -> () (* need to propagate *)
             end;
@@ -1361,7 +1347,7 @@ let assume env ?tag (cnf:atom list list) =
   List.iter
     (fun l ->
        let c = Clause.make ?tag l Hyp in
-       Log.debugf debug (fun k->k "Assuming clause: @[<hov 2>%a@]" (pp_clause env) c);
+       Log.debugf debug (fun k->k "Assuming clause: @[<hov 2>%a@]" Clause.pp c);
        Stack.push c env.clauses_to_add)
     cnf
 
@@ -1371,14 +1357,14 @@ let push (env:t) : unit =
   cancel_until env (base_level env);
   Log.debugf debug
     (fun k -> k "@[<v>Status:@,@[<hov 2>trail: %d - %d@,%a@]"
-        env.elt_head env.th_head (Vec.print ~sep:"" (pp_term env)) env.trail);
+        env.elt_head env.th_head (Vec.print ~sep:"" Term.pp) env.trail);
   begin match propagate env with
     | Some confl ->
       report_unsat env confl
     | None ->
       Log.debugf debug
         (fun k -> k "@[<v>Current trail:@,@[<hov>%a@]@]"
-            (Vec.print ~sep:"" (pp_term env)) env.trail);
+            (Vec.print ~sep:"" Term.pp) env.trail);
       Log.debug info "Creating new user level";
       new_decision_level env;
       Vec.push env.user_levels (Vec.size env.clauses_temp);
@@ -1408,12 +1394,12 @@ let pop (env:t) : unit =
 (* Add local hyps to the current decision level *)
 let local (env:t) (l:atom list) : unit =
   let aux a =
-    Log.debugf info (fun k-> k "Local assumption: @[%a@]" (pp_atom env) a);
+    Log.debugf info (fun k-> k "Local assumption: @[%a@]" Atom.pp a);
     assert (decision_level env = base_level env);
     if Atom.is_true a then ()
     else (
       let c = Clause.make [a] Local in
-      Log.debugf debug (fun k -> k "Temp clause: @[%a@]" (pp_clause env) c);
+      Log.debugf debug (fun k -> k "Temp clause: @[%a@]" Clause.pp c);
       Vec.push env.clauses_temp c;
       if Atom.is_false a then (
         (* conflict between assumptions: UNSAT *)
@@ -1439,7 +1425,7 @@ let local (env:t) (l:atom list) : unit =
   end
 
 (* Check satisfiability *)
-let check_clause (env:t) (c:clause) : bool =
+let check_clause (c:clause) : bool =
   let res =
     CCArray.exists
       (fun a ->
@@ -1451,26 +1437,25 @@ let check_clause (env:t) (c:clause) : bool =
   if res then true
   else (
     Log.debugf debug
-      (fun k -> k "Clause not satisfied: @[<hov>%a@]" (pp_clause env) c);
+      (fun k -> k "Clause not satisfied: @[<hov>%a@]" Clause.pp c);
     false
   )
 
-let check_vec env v =
-  Vec.for_all (check_clause env) v
+let[@inline] check_vec v = Vec.for_all check_clause v
 
-let check_stack env s =
+let check_stack s =
   try
-    Stack.iter (fun c -> if not (check_clause env c) then raise Exit) s;
+    Stack.iter (fun c -> if not (check_clause c) then raise Exit) s;
     true
   with Exit ->
     false
 
 let check (env:t) : bool =
   Stack.is_empty env.clauses_to_add &&
-  check_stack env env.clauses_root &&
-  check_vec env env.clauses_hyps &&
-  check_vec env env.clauses_learnt &&
-  check_vec env env.clauses_temp
+  check_stack env.clauses_root &&
+  check_vec env.clauses_hyps &&
+  check_vec env.clauses_learnt &&
+  check_vec env.clauses_temp
 
 (* Unsafe access to internal data *)
 

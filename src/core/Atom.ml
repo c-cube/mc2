@@ -59,9 +59,7 @@ let pp_value fmt a =
   else
     Format.fprintf fmt ""
 
-let pp_simple out a: unit =
+let pp out a =
   let sign = if is_pos a then "+" else "-" in
-  Format.fprintf out "%s%d[%a]" sign (a.a_term.t_id+1) pp_value a
-
-let pp pp_term out a =
-  Format.fprintf out "%a[atom:@[<hov>%a@]]" pp_simple a pp_term a.a_term
+  Format.fprintf out "%s%d[%a][atom:@[<hov>%a@]]"
+    sign (a.a_term.t_id+1) pp_value a Term.pp a.a_term

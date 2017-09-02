@@ -4,9 +4,9 @@ Copyright 2014 Guillaume Bury
 Copyright 2014 Simon Cruanes
 *)
 
-open Minismt_core
+open Mc2_core
 
-module Ast = Minismt_smtlib.Ast
+module Ast = Mc2_smtlib.Ast
 
 exception Incorrect_model
 exception Out_of_time
@@ -28,18 +28,17 @@ module P =
 (* TODO: uniform typing interface for dimacs/smtlib *)
 (* TODO: tseitin theory *)
 
-module Dot = Minismt_backend.Dot.Make(Minismt_backend.Dot.Default)
+module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
 let hyps = ref []
 
 let check_model state =
-  let s = Solver.state_solver state in
   let check_clause c =
     let l =
       List.map
         (fun a ->
            Log.debugf 99
-             (fun k -> k "Checking value of %a" (Solver.pp_term s) (Atom.term a));
+             (fun k -> k "Checking value of %a" Term.pp (Atom.term a));
            Solver.Sat_state.eval state a)
         c
     in
@@ -76,11 +75,11 @@ let prove ~assumptions s =
   end
 
 (* dump CNF *)
-let pp_cnf (s:Solver.t) (cnf:Atom.t list list) =
+let pp_cnf (cnf:Atom.t list list) =
   if !p_cnf then (
     let pp_c =
       CCFormat.(within "[" "]" @@ hvbox ~i:2 @@ list
-          ~sep:(return " @<1>∨@ ") (Solver.pp_atom s))
+          ~sep:(return " @<1>∨@ ") Atom.pp)
     in
     Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
   )

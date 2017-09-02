@@ -13,6 +13,7 @@ let[@inline] view t = t.t_view
 let[@inline] equal t u = t.t_id = u.t_id
 let[@inline] compare t u = CCInt.compare t.t_id u.t_id
 let[@inline] hash t = CCHash.int t.t_id
+let[@inline] pp out (t:t): unit = t.t_tc.tct_pp out t
 let[@inline] field_get f t = Fields.get f t.t_fields
 let[@inline] field_set f t = t.t_fields <- Fields.set f true t.t_fields
 let[@inline] field_clear f t = t.t_fields <- Fields.set f false t.t_fields
@@ -115,7 +116,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
      would even replace the flag itself *)
 
   (* build a fresh term *)
-  let[@inline never] make_real_ t_view t_ty : t =
+  let[@inline never] make_real_ t_view t_ty t_tc : t =
     let p_specific_id = get_fresh_id () in
     let t_id = Ops.p_id lor (p_specific_id lsl plugin_id_width) in
     let t_fields = Fields.empty in
@@ -124,12 +125,12 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     let t_weight = 0. in
     let t_idx = ~-1 in
     { t_id; t_view; t_ty; t_fields; t_level; t_reason; t_weight; t_idx;
-      t_var=V_none; }
+      t_var=V_none; t_tc; }
 
   (* inline make function *)
-  let[@inline] make (view:view) (ty:Type.t) : t =
+  let[@inline] make (view:view) (ty:Type.t) (tc:tc_term) : t =
     try H.find tbl view
-    with Not_found -> make_real_ view ty
+    with Not_found -> make_real_ view ty tc
 end
 
 (* make a fresh variable for this term *)

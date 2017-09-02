@@ -13,6 +13,7 @@ val view : t -> view
 val equal : t -> t -> bool
 val compare : t -> t -> int
 val hash : t -> int
+val pp : t CCFormat.printer
 
 (** {2 ID Management} *)
 
@@ -80,7 +81,7 @@ module type TERM_ALLOC_OPS = sig
 end
 
 module Term_allocator(T : TERM_ALLOC_OPS) : sig
-  val make : view -> Type.t -> t
+  val make : view -> Type.t -> tc_term -> t
   (** Make a term of the theory *)
 
   val delete : t -> unit

@@ -9,7 +9,7 @@ Copyright 2015 Guillaume Bury
     corresponding to the resolution proofs output by the
     sat solver. *)
 
-open Minismt_core
+open Mc2_core
 
 module type S = Backend_intf.S
 (** Interface for exporting proofs. *)

@@ -4,7 +4,7 @@ Copyright 2014 Guillaume Bury
 Copyright 2014 Simon Cruanes
 *)
 
-open Minismt_core
+open Mc2_core
 
 type 'c clause_sets = 'c Solver_intf.clause_sets
 

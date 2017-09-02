@@ -13,3 +13,8 @@
                     -unbox-closures -unbox-closures-factor 20))
   ))
 
+(menhir
+  ((modules (Parser))))
+
+(ocamllex
+  (Lexer))

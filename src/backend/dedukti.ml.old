@@ -2,7 +2,7 @@
 MSAT is free software, using the Apache license, see file LICENSE
 Copyright 2015 Guillaume Bury
 *)
-open Minismt_core
+open Mc2_core
 
 module type S = Backend_intf.S
 

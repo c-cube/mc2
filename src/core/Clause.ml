@@ -44,31 +44,29 @@ let[@inline] premise c = c.c_premise
 let[@inline] activity c = c.c_activity
 let[@inline] atoms c = c.c_atoms
 
-let pp_atoms pp_t out v =
+let pp_atoms out v =
   if Array.length v = 0 then
     Format.fprintf out "∅"
   else (
-    Atom.pp pp_t out v.(0);
+    Atom.pp out v.(0);
     if (Array.length v) > 1 then (
       for i = 1 to (Array.length v) - 1 do
-        Format.fprintf out " ∨ %a" (Atom.pp pp_t) v.(i)
+        Format.fprintf out " ∨ %a" Atom.pp v.(i)
       done
     )
   )
 
-let debug pp_t out c =
-  Format.fprintf out "%s%d : %a" (Premise.prefix c.c_premise)
-    c.c_name (pp_atoms pp_t) c.c_atoms
+let[@inline] pp_name out c =
+  Format.fprintf out "%s%d" (Premise.prefix c.c_premise) c.c_name
+
+let debug out c =
+  Format.fprintf out "%a : %a" pp_name c pp_atoms c.c_atoms
 
 let pp_atoms_vec pp_a out vec = Util.pp_array ~sep:" " pp_a out vec
 
-let pp pp_t out {c_name; c_atoms; c_premise=cp; _} =
-  Format.fprintf out "%s%d@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
-    (Premise.prefix cp) c_name (pp_atoms_vec (Atom.pp pp_t)) c_atoms Premise.pp cp
-
-let pp_simple out {c_name; c_atoms; c_premise=cp; _} =
-  Format.fprintf out "%s%d@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
-    (Premise.prefix cp) c_name (pp_atoms_vec Atom.pp_simple) c_atoms Premise.pp cp
+let pp out ({c_atoms; c_premise=cp; _} as c) =
+  Format.fprintf out "%a@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
+    pp_name c (pp_atoms_vec Atom.pp) c_atoms Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =
   let aux fmt a =

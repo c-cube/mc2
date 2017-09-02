@@ -113,8 +113,8 @@ and clause = {
     by the current problem (for more information, see the cpremise field). *)
 
 and value = {
-  val_plugin_id: plugin_id; (** Plugin this value belongs to *)
   val_view: value_view; (** Actual shape of the value *)
+  val_tc: tc_value; (** typeclass for values *)
 }
 (** A semantic value, part of the model's domain. For arithmetic, it would
     be a number; for arrays, a finite map + default value; etc.
@@ -122,6 +122,14 @@ and value = {
     not necessarily normal "terms" (i.e. generalized variables in
     the MCSat sense).
 *)
+
+and tc_value = {
+  tcv_plugin_id: plugin_id; (** Plugin this value belongs to *)
+  tcv_pp : value CCFormat.printer; (** printer *)
+  tcv_equal : value -> value -> bool; (** equality *)
+  tcv_hash: value -> int; (** hash function *)
+}
+(** Methods for values *)
 
 and reason =
   | Decision
