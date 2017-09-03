@@ -20,9 +20,6 @@ module type Arg = sig
   val neg : t -> t
   (** Negation of atomic formulas. *)
 
-  val fresh : unit -> t
-  (** Generate fresh formulas (that must be different from any other). *)
-
   val pp : t CCFormat.printer
   (** Print the given formula. *)
 end
@@ -68,10 +65,11 @@ module type S = sig
   val equiv : t -> t -> t
   (** [equiv p q] creates the boolena formula "[p] is equivalent to [q]". *)
 
-  val cnf : ?simplify:bool -> t -> atom list list
+  val cnf : ?simplify:bool -> fresh:(unit -> atom) -> t -> atom list list
   (** [cnf f] returns a conjunctive normal form of [f] under the form: a
       list (which is a conjunction) of lists (which are disjunctions) of
       atomic formulas.
+      @param fresh used to generate fresh atoms to name formulas
       @param simplify if true (default) simplifiy formula *)
 
   val pp : t CCFormat.printer

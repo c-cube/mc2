@@ -126,9 +126,9 @@ module Make (F : Tseitin_intf.Arg) = struct
       sform (not_ f) (fun f' -> sform_list_not (f'::acc) tail k)
 
   let[@inline] ( @@ ) l1 l2 = List.rev_append l1 l2
-  let mk_proxy = F.fresh
 
   type state = {
+    fresh: unit -> atom;
     mutable acc_or : (atom * atom list) list;
     mutable acc_and : (atom * atom list) list;
     mutable proxies : atom list;
@@ -153,7 +153,7 @@ module Make (F : Tseitin_intf.Arg) = struct
                (* acc_and := (proxy, l) :: !acc_and; *)
                (* proxy :: acc *)
                | Some Or, l ->
-                 let proxy = mk_proxy () in
+                 let proxy = st.fresh() in
                  st.acc_or <- (proxy, l) :: st.acc_or;
                  Some And, proxy :: acc
                | None, l -> Some And, l @@ acc
@@ -171,7 +171,7 @@ module Make (F : Tseitin_intf.Arg) = struct
                (* acc_or := (proxy, l) :: !acc_or; *)
                (* proxy :: acc *)
                | Some And, l ->
-                 let proxy = mk_proxy () in
+                 let proxy = st.fresh() in
                  st.acc_and <- (proxy, l) :: st.acc_and;
                  Some Or, proxy :: acc
                | None, l -> Some Or, l @@ acc
@@ -181,8 +181,9 @@ module Make (F : Tseitin_intf.Arg) = struct
     in
     aux f
 
-  let cnf ?(simplify=true) (f:t) : atom list list =
+  let cnf ?(simplify=true) ~fresh (f:t) : atom list list =
     let st = {
+      fresh;
       acc_or=[];
       acc_and=[];
       proxies=[];
