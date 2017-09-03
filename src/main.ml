@@ -8,11 +8,16 @@ open Mc2_core
 open CCResult.Infix
 
 module E = CCResult
+module Fmt = CCFormat
 module Ast = Mc2_smtlib.Ast
+
+module Form = Tseitin.Make(Mc2_propositional.Literal)
 
 exception Incorrect_model
 exception Out_of_time
 exception Out_of_space
+
+type 'a or_error = ('a, string) E.t
 
 let file = ref ""
 let p_cnf = ref false
@@ -21,10 +26,6 @@ let p_dot_proof = ref ""
 let p_proof_print = ref false
 let time_limit = ref 300.
 let size_limit = ref 1000_000_000.
-
-module P =
-  Dolmen.Logic.Make(Dolmen.ParseLocation)
-    (Dolmen.Id)(Dolmen.Term)(Dolmen.Statement)
 
 (* TODO: remove the functor, there will be only one input *)
 (* TODO: uniform typing interface for dimacs/smtlib *)
@@ -49,7 +50,7 @@ let check_model state =
   let l = List.map check_clause !hyps in
   List.for_all (fun x -> x) l
 
-let prove ~assumptions s =
+let prove ~assumptions s : unit or_error =
   let res = Solver.solve s ~assumptions in
   let t = Sys.time () in
   begin match res with
@@ -58,7 +59,8 @@ let prove ~assumptions s =
         if not (check_model state) then
           raise Incorrect_model;
       let t' = Sys.time () -. t in
-      Format.printf "Sat (%f/%f)@." t t'
+      Format.printf "Sat (%f/%f)@." t t';
+      E.return()
     | Solver.Unsat state ->
       if !p_check then (
         let p = Solver.Unsat_state.get_proof state in
@@ -73,7 +75,8 @@ let prove ~assumptions s =
         )
       );
       let t' = Sys.time () -. t in
-      Format.printf "Unsat (%f/%f)@." t t'
+      Format.printf "Unsat (%f/%f)@." t t';
+      E.return ()
   end
 
 (* dump CNF *)
@@ -86,8 +89,36 @@ let pp_cnf (cnf:Atom.t list list) =
     Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
   )
 
-let do_task (solver:Solver.t) (s:Ast.statement) : (unit,string) E.t =
+let do_task (solver:Solver.t) (s:Ast.statement) : unit or_error =
   begin match s with
+    | Ast.SetLogic "QF_UF" -> E.return ()
+    | Ast.SetLogic s ->
+      Log.debugf 0 (fun k->k "warning: unknown logic `%s`" s);
+      E.return ()
+    | Ast.SetOption l ->
+      Log.debugf 0 (fun k->k "warning: unknown option `%a`" (Util.pp_list Fmt.string) l);
+      E.return ()
+    | Ast.CheckSat ->
+      prove solver ~assumptions:[]
+    | Ast.TyDecl _ ->
+      (* TODO: notify plugins *)
+      E.return ()
+    | Ast.Decl _ ->
+      (* TODO: notify plugins *)
+      E.return ()
+    | Ast.Assert _t ->
+      assert false
+      (* FIXME: convert term, turn into CNF
+      let mk_cnf = Solver.get_service_exn solver Mc2_propositional.Literal.k_cnf in
+      let cnf = cnf t in
+      pp_cnf cnf;
+      hyps := cnf @ !hyps;
+      S.assume cnf
+        *)
+    | Ast.Goal (_, _) ->
+      Util.errorf "cannot deal with goals yet"
+
+      (*
     | Dolmen.Statement.Def (id, t) -> T.def id t
     | Dolmen.Statement.Decl (id, t) -> T.decl id t
     | Dolmen.Statement.Consequent t ->
@@ -116,6 +147,7 @@ let do_task (solver:Solver.t) (s:Ast.statement) : (unit,string) E.t =
     | _ ->
       Format.printf "Command not supported:@\n%a@."
         Dolmen.Statement.print s
+         *)
   end
 
 let error_msg opt arg l =
@@ -187,7 +219,6 @@ let check () =
   else if s > !size_limit then
     raise Out_of_space
 
-
 let main () =
   CCFormat.set_color_default true;
   (* Administrative duties *)
@@ -201,32 +232,37 @@ let main () =
   (* Interesting stuff happening *)
   Mc2_smtlib.Ast.parse !file >>= fun input ->
   (* TODO: parse list of plugins on CLI *)
-  let solver = Solver.create() in
-  List.iter (do_task solver) input;
-  (* Small hack for dimacs, which do not output a "Prove" statement *)
-  begin match lang with
-    | P.Dimacs -> do_task solver @@ Dolmen.Statement.check_sat ()
-    | _ -> ()
-  end;
+  let solver =
+    Solver.create
+      ~plugins:[
+        Mc2_propositional.Literal.plugin;
+      ] ()
+  in
+  let r =
+    E.fold_l
+      (fun () -> do_task solver)
+      () input
+  in
   Gc.delete_alarm al;
-  ()
+  r
 
-let () =
-  try
-    main ()
-  with
-    | Out_of_time ->
-      Format.printf "Timeout@.";
-      exit 2
-    | Out_of_space ->
-      Format.printf "Spaceout@.";
-      exit 3
-    | Incorrect_model ->
-      Format.printf "Internal error : incorrect *sat* model@.";
-      exit 4
-    | Ast.Ill_typed msg ->
-      let b = Printexc.get_backtrace () in
-      Format.fprintf Format.std_formatter "typing error\n%s@." msg;
-      if Printexc.backtrace_status () then
-        Format.fprintf Format.std_formatter "%s@." b
+let () = match main() with
+  | E.Ok () -> ()
+  | E.Error msg ->
+    print_endline msg;
+    exit 1
+  | exception Out_of_time ->
+    Format.printf "Timeout@.";
+    exit 2
+  | exception Out_of_space ->
+    Format.printf "Spaceout@.";
+    exit 3
+  | exception Incorrect_model ->
+    Format.printf "Internal error : incorrect *sat* model@.";
+    exit 4
+  | exception Ast.Ill_typed msg ->
+    let b = Printexc.get_backtrace () in
+    Format.fprintf Format.std_formatter "typing error\n%s@." msg;
+    if Printexc.backtrace_status () then
+      Format.fprintf Format.std_formatter "%s@." b
 

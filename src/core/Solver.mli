@@ -30,6 +30,9 @@ val plugins : t -> Plugin.t Sequence.t
 val get_service : t -> 'a Service.Key.t -> 'a option
 (** Obtain a service by its key *)
 
+val get_service_exn : t -> 'a Service.Key.t -> 'a
+(** Obtain a service by its key, or fail *)
+
 val assume : t -> ?tag:int -> atom list list -> unit
 (** Add the list of clauses to the current set of assumptions.
     Modifies the sat solver state in place. *)

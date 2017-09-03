@@ -33,6 +33,7 @@ let[@inline] state_solver (type a) (st: a state) : t = match st with
 
 let[@inline] plugins t = S.plugins t
 let[@inline] get_service t k = S.get_service t k
+let[@inline] get_service_exn t k = S.get_service_exn t k
 
 let pp_all t lvl status =
   Log.debugf lvl
@@ -50,9 +51,9 @@ let assume = S.assume
 
 let unsat_core _ p = Res.unsat_core p
 
-let true_at_level0 s a =
+let true_at_level0 _s a =
   try
-    let b, lev = S.eval_level s a in
+    let b, lev = S.eval_level a in
     b && lev = 0
   with S.UndecidedLit -> false
 
@@ -69,8 +70,8 @@ module Sat_state = struct
 
   let iter_trail (St_sat s) f = Vec.iter f (S.trail s)
 
-  let eval (St_sat s) t = S.eval s t
-  let eval_level (St_sat s) t = S.eval_level s t
+  let eval (St_sat _s) t = S.eval t
+  let eval_level (St_sat _s) t = S.eval_level t
   let model (St_sat s) = S.model s
 end
 

@@ -177,6 +177,10 @@ let[@inline] plugins env = CCVector.to_seq env.plugins
 let[@inline] get_service env (k:_ Service.Key.t) =
   Service.Registry.find env.services k
 
+let[@inline] get_service_exn env (k:_ Service.Key.t) = match get_service env k with
+  | Some v -> v
+  | None -> Util.errorf "could not find service `%s`" (Service.Key.name k)
+
 (* how to add a plugin *)
 let add_plugin (env:t) (fcty:Plugin.Factory.t) : Plugin.t =
   let id = CCVector.length env.plugins |> Term.Unsafe.mk_plugin_id in
@@ -198,6 +202,10 @@ let add_plugin (env:t) (fcty:Plugin.Factory.t) : Plugin.t =
   let p = build id serv_list in
   CCVector.push env.plugins p;
   Log.debugf info (fun k->k "add plugin %s with ID %d" (Plugin.name p) id);
+  let (module P) = p in
+  List.iter
+    (fun (Service.Any (k,s)) -> Service.Registry.register env.services k s)
+    P.provided_services;
   p
 
 (* Are the assumptions currently unsat ? *)
@@ -209,18 +217,6 @@ let[@inline] is_unsat t = match t.unsat_conflict with
    SAT will just not iterate at all.
    NOTE: might not even be useful, or maybe should be done when the
    term is activated *)
-
-(* Iteration over subterms.
-   When incrementing activity, we want to be able to iterate over
-   all subterms of a formula. However, the function provided by the theory
-   may be costly (if it walks a tree-like structure, and does some processing
-   to ignore some subterms for instance), so we want to 'cache' the list
-   of subterms of each formula, so we have a field [v_assignable]
-   directly in variables to do so.  *)
-let[@inline] iter_sub (env:t) (t:term): term Sequence.t =
-  CCVector.to_seq env.plugins
-  |> Sequence.flat_map
-    (fun (module P : Plugin.S) -> P.iter_sub t)
 
 (* iterate on all active terms *)
 let[@inline] iter_terms (env:t) : term Sequence.t =
@@ -235,12 +231,12 @@ let add_term (env:t) (t:term): unit =
     if Term.is_deleted t then (
       Util.errorf "(@[trying to add deleted term@ `%a`@])" Term.pp t
     ) else if Term.has_var t then (
-      assert (t.t_var <> V_none);
+      assert (t.t_var <> Var_none);
       assert (t.t_idx >= 0);
     ) else (
       Term.setup_var t;
       (* add subterms *)
-      iter_sub env t aux;
+      Term.iter_subterms t aux;
       (* add to priority queue for decision *)
       H.insert env.order t;
     )
@@ -281,7 +277,7 @@ let bump_term_activity_aux (env:t) (t:term): unit =
 (* increase activity of var [t] *)
 let[@inline] bump_term_activity env (t:term): unit =
   bump_term_activity_aux env t;
-  iter_sub env t (bump_term_activity_aux env)
+  Term.iter_subterms t (bump_term_activity_aux env)
 
 let decay_all_learnt_clauses env : unit =
   Vec.iter
@@ -295,6 +291,15 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
   if c.c_activity > 1e20 then (
     decay_all_learnt_clauses env;
   )
+
+let[@inline] update_watches (env:t) (t:term): unit =
+  t.t_tc.tct_update_watches (actions env) t
+
+let[@inline] decide_term (env:t) (t:term): value =
+  t.t_tc.tct_decide (actions env) t
+
+let[@inline] check_assign (env:t) (t:term): check_res =
+  t.t_tc.tct_assign (actions env) t
 
 (* main building function *)
 let create_real (actions:actions lazy_t) : t = {
@@ -417,7 +422,7 @@ let partition atoms : atom list * clause list =
       ) else if Atom.is_false a then (
         let l = Atom.level a in
         if l = 0 then (
-          begin match a.a_term.t_reason with
+          begin match Term.reason a.a_term with
             | Some (Bcp cl) ->
               partition_aux trues unassigned falses (cl :: history) (i + 1)
             (* A var false at level 0 can be eliminated from the clause,
@@ -498,11 +503,9 @@ let cancel_until (env:t) (lvl:int) : unit =
         t.t_level <- -1;
         schedule_decision_term env t;
         begin match t.t_var with
-          | V_none -> assert false
-          | V_semantic v -> v.v_value <- None;
-          | V_bool {pa; na} ->
-            pa.a_is_true <- false;
-            na.a_is_true <- false;
+          | Var_none -> assert false
+          | Var_semantic v -> v.v_value <- V_none;
+          | Var_bool v -> v.b_value <- B_none
         end
       )
     done;
@@ -580,9 +583,14 @@ let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
     if lvl > 0 then reason
     else simpl_reason reason
   in
-  a.a_is_true <- true;
+  begin match a.a_term.t_var with
+    | Var_bool ({pa;_} as v) ->
+      if pa==a
+      then v.b_value <- B_true reason
+      else v.b_value <- B_false reason
+    | _ -> assert false
+  end;
   a.a_term.t_level <- lvl;
-  a.a_term.t_reason <- Some reason;
   Vec.push env.trail a.a_term;
   Log.debugf debug
     (fun k->k "Enqueue (%d): %a" (Vec.size env.trail) Atom.pp a);
@@ -604,26 +612,22 @@ let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
   )
 
 (* MCsat semantic assignment *)
-let enqueue_assign (env:t) (t:term) (value:value) (lvl:int) : unit =
+let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) (lvl:int) : unit =
   begin match t.t_var with
-    | V_none | V_bool _ ->  assert false
-    | V_semantic {v_value=Some _; _} ->
+    | Var_none | Var_bool _ ->  assert false
+    | Var_semantic {v_value=V_assign _; _} ->
       Log.debugf error
         (fun k -> k "Trying to assign an already assigned literal: %a" Term.pp t);
       assert false
-    | V_semantic ({v_value=None; _} as v) ->
+    | Var_semantic ({v_value=V_none; _} as v) ->
       assert (t.t_level < 0);
-      v.v_value <- Some value;
+      v.v_value <- V_assign {value; reason};
       t.t_level <- lvl;
       Vec.push env.trail t;
       Log.debugf debug
         (fun k->k "Enqueue (%d): %a" (Vec.size env.trail) Term.pp t);
       (* update watching terms *)
-      Vec.iter
-        (fun u ->
-           let (module P) = plugin_of_term env u in
-           P.update_watches u)
-        v.v_watched
+      Vec.iter (update_watches env) v.v_watched
   end
 
 (* evaluate an atom for MCsat, if it's not assigned
@@ -631,11 +635,9 @@ let enqueue_assign (env:t) (t:term) (value:value) (lvl:int) : unit =
 let th_eval (env:t) (a:atom) : bool option =
   if Atom.is_true a || Atom.is_false a then None
   else (
-    let p_id = Term.plugin_id a.a_term in
-    let (module P : Plugin.S) = get_plugin env p_id in
-    begin match P.eval_bool a.a_term with
-      | Plugin.Unknown -> None
-      | Plugin.Valued (b, l) ->
+    begin match Term.eval_bool a.a_term with
+      | Eval_unknown -> None
+      | Eval_bool (b, l) ->
         let atom = if b then a else Atom.neg a in
         enqueue_semantic_bool_eval env atom l;
         Some b
@@ -760,9 +762,9 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
       let t = Vec.get env.trail !tr_ind in
       Log.debugf debug (fun k -> k "looking at: %a" Term.pp t);
       begin match t.t_var with
-        | V_none -> assert false
-        | V_semantic _ -> true (* skip semantic assignments *)
-        | V_bool _ ->
+        | Var_none -> assert false
+        | Var_semantic _ -> true (* skip semantic assignments *)
+        | Var_bool _ ->
           (not (Term.marked t)) ||
           (Term.level t < conflict_level)
       end
@@ -1095,13 +1097,10 @@ let rec theory_propagate (env:t) : clause option =
     (* consider one element *)
     let t = Vec.get env.trail env.th_head in
     env.th_head <- env.th_head + 1;
-    (* inform corresponding plugin *)
-    let p_id = Term.plugin_id t in
-    let (module P) = get_plugin env p_id in
-    begin match P.cb_assign (actions env) t with
-      | Plugin.Sat ->
+    begin match check_assign env t with
+      | Sat ->
         theory_propagate env (* next *)
-      | Plugin.Unsat (l, p) ->
+      | Unsat (l, p) ->
         (* conflict *)
         List.iter (add_atom env) l;
         let c = Clause.make l (Lemma p) in
@@ -1124,9 +1123,9 @@ and propagate (env:t) : clause option =
       let t = Vec.get env.trail env.elt_head in
       (* propagate [t], if boolean *)
       begin match t.t_var with
-        | V_none -> assert false
-        | V_semantic _ -> ()
-        | V_bool {pa;na} ->
+        | Var_none -> assert false
+        | Var_semantic _ -> ()
+        | Var_bool {pa;na;_} ->
           env.propagations <- env.propagations + 1;
           env.simpDB_props <- env.simpDB_props - 1;
           (* propagate the atom that has been assigned to [true] *)
@@ -1162,15 +1161,14 @@ let rec pick_branch_aux (env:t) (atom:atom) : unit =
     (* does this boolean term eval to [true]? *)
     (* TODO: should the plugin already have propagated this?
        or is it an optim? *)
-    let (module P) = plugin_of_term env t in
-    begin match P.eval_bool t with
-      | Plugin.Unknown ->
+    begin match Term.eval_bool t with
+      | Eval_unknown ->
         (* do a decision *)
         env.decisions <- env.decisions + 1;
         new_decision_level env;
         let current_level = decision_level env in
         enqueue_bool env atom ~level:current_level Decision
-      | Plugin.Valued (b, l) ->
+      | Eval_bool (b, l) ->
         (* already evaluates in the trail *)
         let a = if b then atom else Atom.neg atom in
         enqueue_semantic_bool_eval env a l
@@ -1190,22 +1188,21 @@ and pick_branch_lit (env:t) : unit =
         (* pick some term *)
         let t = H.remove_min env.order in
         begin match t.t_var with
-          | V_none ->  assert false
-          | V_bool {pa; _} ->
+          | Var_none ->  assert false
+          | Var_bool {pa; _} ->
             (* TODO: phase saving *)
             pick_branch_aux env pa
-          | V_semantic _ ->
+          | Var_semantic _ ->
             (* semantic decision, delegate to plugin *)
             if t.t_level >= 0 then (
               pick_branch_lit env (* assigned already *)
-            ) else begin
-              let (module P) = plugin_of_term env t in
-              let value = P.decide (actions env) t in
+            ) else (
+              let value = decide_term env t in
               env.decisions <- env.decisions + 1;
               new_decision_level env;
               let current_level = decision_level env in
-              enqueue_assign env t value current_level
-            end
+              enqueue_assign env t value Decision current_level
+            )
         end
       )
   end
@@ -1256,22 +1253,21 @@ let search (env:t) n_of_conflicts n_of_learnts : unit =
   done
 
 (* evaluate [a] and also return its level *)
-let eval_level (env:t) (a:atom) =
+let eval_level (a:atom) =
   let lvl = Atom.level a in
   if Atom.is_true a then true, lvl
   else if Atom.is_false a then false, lvl
   else (
-    let (module P) = plugin_of_term env a.a_term in
-    begin match P.eval_bool a.a_term with
-      | Plugin.Unknown -> raise UndecidedLit
-      | Plugin.Valued (b, l) ->
+    begin match Term.eval_bool a.a_term with
+      | Eval_unknown -> raise UndecidedLit
+      | Eval_bool (b, l) ->
         (* level is highest level of terms used to eval into [b] *)
         let lvl = List.fold_left (fun l t -> max l (Term.level t)) 0 l in
         if Atom.is_pos a then b, lvl else not b, lvl
     end
   )
 
-let[@inline] eval env a = fst (eval_level env a)
+let[@inline] eval a = fst (eval_level a)
 
 let[@inline] unsat_conflict (env:t) = env.unsat_conflict
 
@@ -1279,15 +1275,15 @@ let[@inline] unsat_conflict (env:t) = env.unsat_conflict
 let model (env:t) : assignment_view list =
   Vec.fold
     (fun acc t -> match t.t_var with
-       | V_none -> assert false
-       | V_semantic {v_value=Some v; _} ->
-         A_semantic (t, v) :: acc
-       | V_semantic _ -> assert false
-       | V_bool {pa;na} ->
-         let b =
-           if Atom.is_true pa then true
-           else if Atom.is_true na then false
-           else assert false
+       | Var_none -> assert false
+       | Var_semantic {v_value=V_assign {value; _}; _} ->
+         A_semantic (t, value) :: acc
+       | Var_semantic _ -> assert false
+       | Var_bool {b_value=b; _} ->
+         let b = match b with
+           | B_true _ -> true
+           | B_false _ -> false
+           | B_none -> assert false
          in
          A_bool (t,b) :: acc)
     [] env.trail
@@ -1303,9 +1299,9 @@ let final_check (env:t) : final_check_res =
   try
     CCVector.iter
       (fun (module P : Plugin.S) ->
-         begin match P.cb_if_sat (actions env) with
-           | Plugin.Sat -> ()
-           | Plugin.Unsat (l,p) ->
+         begin match P.check_if_sat (actions env) with
+           | Sat -> ()
+           | Unsat (l,p) ->
              (* conflict *)
              List.iter (add_atom env) l;
              let c = Clause.make l (Lemma p) in

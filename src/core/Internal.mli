@@ -40,6 +40,9 @@ val get_plugin : t -> plugin_id -> Plugin.t
 val get_service : t -> 'a Service.Key.t -> 'a option
 (** Obtain a service by its key *)
 
+val get_service_exn : t -> 'a Service.Key.t -> 'a
+(** Obtain a service by its key *)
+
 val actions : t -> actions
 (** Actions available to plugins *)
 
@@ -86,12 +89,12 @@ val local : t -> atom list -> unit
 
 (** {2 Propositional models} *)
 
-val eval : t -> atom -> bool
+val eval : atom -> bool
 (** Returns the valuation of a term in the current state
     of the sat solver.
     @raise UndecidedLit if the literal is not decided *)
 
-val eval_level : t -> atom -> bool * int
+val eval_level : atom -> bool * int
 (** Return the current assignement/evaluation of the boolean term,
     as well as its decision level. If the level is 0, then it is necessary for
     the atom to have this value; otherwise it is due to choices

@@ -30,10 +30,22 @@ val marked : t -> bool (** Was {!mark} called on this var? *)
 
 val is_deleted : t -> bool
 val level : t -> int
+val var : t -> var
 val reason : t -> reason option
+val eval_bool : t -> eval_bool_res
+
+val iter_subterms : t -> t Sequence.t
+(** Iteration over subterms.
+    When incrementing activity, adding new terms, etc.
+    we want to be able to iterate over all subterms of a formula.  *)
 
 val weight : t -> float (** Heuristic weight *)
 val set_weight : t -> float -> unit
+
+val gc_mark : t -> unit
+val gc_unmark : t -> unit
+val gc_marked : t -> bool
+val gc_mark_rec : t -> unit (** Mark term and its subterms, recursively *)
 
 val field_get : Term_fields.field -> t -> bool
 val field_set : Term_fields.field -> t -> unit
@@ -76,15 +88,15 @@ end
 
 module type TERM_ALLOC_OPS = sig
   val p_id : plugin_id (** ID of the theory *)
+  val initial_size: int (** initial size of table *)
   val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
   val hash : view -> int (** Shallow hash of a view of the plugin *)
 end
 
 module Term_allocator(T : TERM_ALLOC_OPS) : sig
-  val make : view -> Type.t -> tc_term -> t
-  (** Make a term of the theory *)
-
-  val delete : t -> unit
-  (** Delete a term of the theory *)
+  val make : view -> Type.t -> tc_term -> t (** Make a term of the theory *)
+  val delete : t -> unit (** Delete a term of the theory *)
+  val iter_terms : term Sequence.t (** All terms *)
+  val gc_all : unit -> unit (** GC all unmarked tems; unmark alive terms *)
 end
 

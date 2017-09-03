@@ -114,7 +114,16 @@ let rec set_atom_proof a =
         assert (Atom.is_false a);
         let r = History (c :: (Array.fold_left aux [] c.c_atoms)) in
         let c' = Clause.make [Atom.neg a] r in
-        a.a_term.t_reason <- Some (Bcp c');
+        (* update reason *)
+        begin match a.a_term.t_var with
+          | Var_bool v ->
+            begin match v.b_value with
+              | B_true _ -> v.b_value <- B_true (Bcp c')
+              | B_false _ -> v.b_value <- B_false (Bcp c')
+              | B_none -> assert false
+            end
+          | _ -> assert false
+        end;
         Log.debugf debug
           (fun k -> k "New reason: @[%a@ %a@]" Atom.pp a Clause.pp c');
         c'

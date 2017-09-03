@@ -10,6 +10,7 @@ val compare : t -> t -> int
 val is_pos : t -> bool (** Positive atom? *)
 val neg : t -> t (** Negation *)
 val abs : t -> t (** Positive version *)
+val value : t -> bool_assignment
 
 val mark : t -> unit (** Mark the atom as seen, using fields in the variable. *)
 val marked : t -> bool (** Returns wether the atom has been marked as seen. *)

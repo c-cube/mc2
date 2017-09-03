@@ -38,12 +38,13 @@ module Registry = struct
     lst=[];
   }
 
-  let register (r:t) (k:'a Key.t) (v:'a) : unit =
-    if M.Tbl.mem r.tbl k.Key.key then (
-      Util.errorf "service `%s` already registered" k.Key.key_name;
+  let register (r:t) (key:'a Key.t) (v:'a) : unit =
+    if M.Tbl.mem r.tbl key.Key.key then (
+      Util.errorf "service `%s` already registered" key.Key.key_name;
     );
-    M.Tbl.add r.tbl k.Key.key v;
-    r.lst <- Any (k,v) :: r.lst
+    Log.debugf 5 (fun k->k "register service `%s`" key.Key.key_name);
+    M.Tbl.add r.tbl key.Key.key v;
+    r.lst <- Any (key,v) :: r.lst
 
   let[@inline] find (r:t) k = M.Tbl.find r.tbl k.Key.key
   let[@inline] to_seq (r:t) = Sequence.of_list r.lst
