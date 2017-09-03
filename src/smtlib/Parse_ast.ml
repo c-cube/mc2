@@ -3,6 +3,8 @@
 
 (** {1 Trivial AST for parsing} *)
 
+open Mc2_core
+
 module Loc = Locations
 
 let pp_str = Format.pp_print_string
@@ -87,6 +89,8 @@ and stmt =
   | Stmt_assert of term
   | Stmt_lemma of term
   | Stmt_assert_not of ty_var list * term
+  | Stmt_set_logic of string
+  | Stmt_set_option of string list
   | Stmt_check_sat
 
 let ty_bool = Ty_bool
@@ -139,6 +143,8 @@ let data ?loc tyvars l = _mk ?loc (Stmt_data (tyvars,l))
 let assert_ ?loc t = _mk ?loc (Stmt_assert t)
 let lemma ?loc t = _mk ?loc (Stmt_lemma t)
 let assert_not ?loc ~ty_vars t = _mk ?loc (Stmt_assert_not (ty_vars, t))
+let set_logic ?loc s = _mk ?loc (Stmt_set_logic s)
+let set_option ?loc l = _mk ?loc (Stmt_set_option l)
 let check_sat ?loc () = _mk ?loc Stmt_check_sat
 
 let loc t = t.loc
@@ -218,6 +224,8 @@ let pp_fr out fr =
   fpf out "@[<2>%a@ %a@]" (pp_fun_decl pp_typed_var) fr.fr_decl pp_term fr.fr_body
 
 let pp_stmt out (st:statement) = match view st with
+  | Stmt_set_logic s -> fpf out "(@[declare-logic@ %s@])" s
+  | Stmt_set_option l -> fpf out "(@[set-option@ %a@])" (Util.pp_list CCFormat.string) l
   | Stmt_decl_sort (s,n) -> fpf out "(@[declare-sort@ %s %d@])" s n
   | Stmt_assert t -> fpf out "(@[assert@ %a@])" pp_term t
   | Stmt_lemma t -> fpf out "(@[lemma@ %a@])" pp_term t

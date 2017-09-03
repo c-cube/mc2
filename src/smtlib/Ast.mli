@@ -101,12 +101,13 @@ and select = {
   select_i: int;
 }
 
-(* TODO: records? *)
-
 type definition = ID.t * Ty.t * term
+
+(* TODO: push/pop *)
 
 type statement =
   | SetLogic of string
+  | SetOption of string list
   | TyDecl of ID.t * int (* new atomic cstor *)
   | Decl of ID.t * Ty.t
   | Assert of term

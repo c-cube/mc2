@@ -152,6 +152,7 @@ type definition = ID.t * Ty.t * term
 
 type statement =
   | SetLogic of string
+  | SetOption of string list
   | TyDecl of ID.t * int (* new atomic cstor *)
   | Decl of ID.t * Ty.t
   | Assert of term
@@ -369,6 +370,7 @@ let not_ t =
 
 let pp_statement out = function
   | SetLogic s -> Fmt.fprintf out "(set-logic %s)" s
+  | SetOption l -> Fmt.fprintf out "(@[set-logic@ %a@])" (Util.pp_list Fmt.string) l
   | CheckSat -> Fmt.string out "(check-sat)"
   | TyDecl (s,n) -> Fmt.fprintf out "(@[declare-sort@ %a %d@])" ID.pp s n
   | Decl (id,ty) ->
@@ -724,6 +726,8 @@ let rec conv_statement ctx (s:A.statement): statement list =
   conv_statement_aux ctx s
 
 and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view stmt with
+  | A.Stmt_set_logic s -> [SetLogic s]
+  | A.Stmt_set_option l -> [SetOption l]
   | A.Stmt_decl_sort (s,n) ->
     let id = Ctx.add_id ctx s (Ctx.K_ty Ctx.K_uninterpreted) in
     [TyDecl (id,n)]

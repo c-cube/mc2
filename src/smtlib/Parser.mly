@@ -38,6 +38,8 @@
 %token AS
 %token AT
 
+%token SET_LOGIC
+%token SET_OPTION
 %token DATA
 %token ASSERT
 %token LEMMA
@@ -54,6 +56,7 @@
 
 %token <string>IDENT
 %token <string>QUOTED
+%token <string>ESCAPED
 
 %start <Parse_ast.term> parse_term
 %start <Parse_ast.ty> parse_ty
@@ -139,7 +142,22 @@ assert_not:
   | t=term
   { [], t }
 
+option_arg:
+  | s=IDENT { s }
+  | s=QUOTED { s }
+  | s=ESCAPED { s }
+
 stmt:
+  | LEFT_PAREN SET_LOGIC s=IDENT RIGHT_PAREN
+    {
+      let loc = Loc.mk_pos $startpos $endpos in
+      A.set_logic ~loc s
+    }
+  | LEFT_PAREN SET_OPTION l=option_arg+ RIGHT_PAREN
+    {
+      let loc = Loc.mk_pos $startpos $endpos in
+      A.set_option ~loc l
+    }
   | LEFT_PAREN ASSERT t=term RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in

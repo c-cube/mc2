@@ -18,6 +18,7 @@ let sym = [^ '"' '(' ')' '\\' ' ' '\t' '\r' '\n']
 let ident = sym+
 
 let quoted = '"' ([^ '"'] | '\\' '"')* '"'
+let escaped = '|' [^ '|']* '|'
 
 rule token = parse
   | eof { EOI }
@@ -57,12 +58,18 @@ rule token = parse
   | "forall" { FORALL }
   | "exists" { EXISTS }
   | "check-sat" { CHECK_SAT }
+  | "set-logic" { SET_LOGIC }
+  | "set-option" { SET_OPTION }
   | ident { IDENT(Lexing.lexeme lexbuf) }
   | quoted {
       (* TODO: unescape *)
       let s = Lexing.lexeme lexbuf in
       let s = String.sub s 1 (String.length s -2) in (* remove " " *)
       QUOTED s }
+  | escaped {
+      let s = Lexing.lexeme lexbuf in
+      let s = String.sub s 1 (String.length s -2) in (* remove "|" *)
+      ESCAPED s }
   | _ as c
     {
       let loc = Loc.of_lexbuf lexbuf in
