@@ -1144,13 +1144,6 @@ and propagate (env:t) : clause option =
     end
   )
 
-(* TODO: do it from time to time, removing lower half of learnt clauses,
-   doing GC *)
-(* remove some learnt clauses
-   NOTE: so far we do not forget learnt clauses. We could, as long as
-   lemmas from the theory itself are kept. *)
-let reduce_db (_:t) = ()
-
 (* Decide on a new literal, and enqueue it into the trail *)
 let rec pick_branch_aux (env:t) (atom:atom) : unit =
   let t = atom.a_term in
@@ -1206,6 +1199,27 @@ and pick_branch_lit (env:t) : unit =
         end
       )
   end
+
+(* TODO: do it from time to time, removing lower half of learnt clauses,
+   doing GC *)
+(* remove some learnt clauses
+   NOTE: so far we do not forget learnt clauses. We could, as long as
+   lemmas from the theory itself are kept. *)
+let reduce_db (env:t) =
+  Log.debug 3 "reduce_db";
+  assert (Stack.is_empty env.clauses_to_add);
+  (* mark, from clauses *)
+  Stack.iter Clause.gc_mark env.clauses_root;
+  Vec.iter Clause.gc_mark env.clauses_hyps;
+  Vec.iter Clause.gc_mark env.clauses_learnt;
+  Vec.iter Clause.gc_mark env.clauses_temp;
+  Vec.iter Term.gc_mark env.trail;
+  (* now collect *)
+  CCVector.iter
+    (fun (module P : Plugin.S) ->
+       P.gc_all ())
+    env.plugins;
+  ()
 
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)

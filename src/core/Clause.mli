@@ -26,7 +26,9 @@ val atoms : t -> atom array
 val activity : t -> float
 val name : t -> int
 val premise : t -> premise
-val get_tag : clause -> int option (** Recover tag from a clause, if any *)
+val get_tag : t -> int option (** Recover tag from a clause, if any *)
+
+val gc_mark : t -> unit
 
 val pp : t CCFormat.printer
 val pp_name : t CCFormat.printer

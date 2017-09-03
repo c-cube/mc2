@@ -43,6 +43,7 @@ let[@inline] name c = c.c_name
 let[@inline] premise c = c.c_premise
 let[@inline] activity c = c.c_activity
 let[@inline] atoms c = c.c_atoms
+let[@inline] gc_mark c = Array.iter (fun a -> Term.gc_mark a.a_term) c.c_atoms
 
 let pp_atoms out v =
   if Array.length v = 0 then
