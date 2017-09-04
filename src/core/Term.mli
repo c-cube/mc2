@@ -31,8 +31,10 @@ val marked : t -> bool (** Was {!mark} called on this var? *)
 val is_deleted : t -> bool
 val level : t -> int
 val var : t -> var
+val ty : t -> Type.t
 val reason : t -> reason option
 val eval_bool : t -> eval_bool_res
+val is_bool : t -> bool
 
 val iter_subterms : t -> t Sequence.t
 (** Iteration over subterms.
@@ -56,7 +58,6 @@ val setup_var : t -> unit (** create a variable for the term *)
 
 (** {2 Bool terms} *)
 
-(* TODO: how to do negation, exactly? *)
 module Bool : sig
   type t = bool_term
 
@@ -66,6 +67,16 @@ module Bool : sig
 
   val pa : t -> atom
   val na : t -> atom
+
+  val is_true : t -> bool
+  val is_false : t -> bool
+end
+
+(** {2 Semantic Terms} *)
+
+module Semantic : sig
+  val has_value : t -> bool
+  val value : t -> semantic_assignment
 end
 
 (** {2 Assignment view} *)
@@ -81,6 +92,9 @@ module Unsafe : sig
   val mk_plugin_id : int -> plugin_id
   (** Convert an int into a plugin ID.
       Should only be used in {!Plugin_db}. *)
+
+  val make_term : int -> term_view -> Type.t -> tc_term -> term
+  (** Build a term. Careful with IDs! *)
 end
 (**/**)
 

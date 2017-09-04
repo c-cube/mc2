@@ -32,6 +32,10 @@ module Registry : sig
   val find : t -> 'a Key.t -> 'a option
   (** Find a service by its key *)
 
+  val find_exn : t -> 'a Key.t -> 'a
+  (** Find a service by its key
+      @raise Util.Error if the key is not found *)
+
   val to_seq : t -> any Sequence.t
   (** all registered services *)
 end

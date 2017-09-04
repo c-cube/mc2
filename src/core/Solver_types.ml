@@ -28,17 +28,44 @@ type term_view = ..
 type value_view = ..
 (** Extensible view on values. *)
 
+type decide_state = ..
+(** State carried by a given term, depending on its type, and used
+    for decisions and propagations related to the term.
+    Typically it contains a set of constraints on the values this
+    term can have (lower/upper bounds, etc.)
+*)
+
 type lemma_view = ..
 (** Extensible proof object *)
 
-type term = {
+type ty_view = ..
+(** Extensible view on types *)
+
+(** Types *)
+type ty =
+  | Bool (** Builtin type of booleans *)
+  | Ty of {
+      mutable id: int; (** unique ID of the type *)
+      view: ty_view;
+      tc: tc_ty; (** operations *)
+    }
+  (** An atomic type, with some attached data *)
+
+and tc_ty = {
+  tcty_decide: actions -> term -> value;
+  (** How to make semantic decisions for terms of this type? *)
+  tcty_pp: ty_view CCFormat.printer; (** print types *)
+  tcty_mk_state: unit -> decide_state; (** decide state for a new term *)
+}
+
+and term = {
   t_tc: tc_term; (** typeclass for the term *)
   mutable t_id: int;
   (** unique ID, made of:
       - [k] bits plugin_id (with k small)
       - the rest is for plugin-specific id *)
   t_view: term_view; (** view *)
-  t_ty: Type.t; (** type of the term *)
+  t_ty: ty; (** type of the term *)
   mutable t_idx: int; (** position in heap *)
   mutable t_weight : float; (** Weight (for the heap), tracking activity *)
   mutable t_fields: Term_fields.t;
@@ -63,14 +90,10 @@ type term = {
 and tc_term = {
   tct_pp : term_view CCFormat.printer; (** print views of this plugin *)
   tct_update_watches: actions -> term -> unit; (** one of the watches was updated *)
-  tct_subterms: term -> (term->unit) -> unit; (** iterate on subterms *)
-  tct_decide: actions -> term -> value; (** decide on a value *)
+  tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
   tct_assign: actions -> term -> check_res; (** notify that the term is assigned *)
   tct_simplify : term -> term; (** Simplify the term into some canonical form, if possible *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
-  tct_is_absurd : term -> bool
-  (** Check if the (bool) term is clearly absurd, i.e can never be satisfied.
-      Simplest implementation is [fun _ -> false] *)
 }
 (** type class for terms, packing all operations on terms *)
 
@@ -104,7 +127,8 @@ and var =
   (** Semantic variable *)
   | Var_semantic of {
       mutable v_value : semantic_assignment; (** Assignment *)
-      mutable v_watched : term Vec.t; (* watched terms *)
+      mutable v_watched : term Vec.t; (** watched terms *)
+      mutable v_decide_state: decide_state; (** used for decisions/assignments *)
     }
 
   (** Bool variable *)
@@ -165,10 +189,9 @@ and value = {
 *)
 
 and tc_value = {
-  tcv_plugin_id: plugin_id; (** Plugin this value belongs to *)
-  tcv_pp : value CCFormat.printer; (** printer *)
-  tcv_equal : value -> value -> bool; (** equality *)
-  tcv_hash: value -> int; (** hash function *)
+  tcv_pp : value_view CCFormat.printer; (** printer *)
+  tcv_equal : value_view -> value_view -> bool; (** equality *)
+  tcv_hash : value_view -> int; (** hash function *)
 }
 (** Methods for values *)
 
@@ -208,7 +231,6 @@ and premise =
     satisfied by the solver. *)
 
 and lemma = {
-  lemma_plugin_id: plugin_id; (** Plugin the lemma belongs to *)
   lemma_view: lemma_view; (** The lemma content *)
   lemma_tc: tc_lemma; (** Methods on the lemma *)
 }
@@ -250,11 +272,9 @@ let dummy_tct : tc_term = {
   tct_pp=(fun _ _ -> assert false);
   tct_update_watches=(fun _ _ -> assert false);
   tct_subterms=(fun _ _ -> assert false); (** iterate on subterms *)
-  tct_decide=(fun _ _ -> assert false); (** decide on a value *)
   tct_assign=(fun _ _ -> assert false); (** notify that the term is assigned *)
   tct_simplify=(fun t -> t);
   tct_eval_bool=(fun _ -> Eval_unknown);
-  tct_is_absurd=(fun _ -> false);
 }
 
 let dummy_term : term = {
@@ -262,7 +282,7 @@ let dummy_term : term = {
   t_tc=dummy_tct;
   t_idx= ~-1;
   t_view=Dummy;
-  t_ty=Type.prop;
+  t_ty=Bool;
   t_fields= Term_fields.empty;
   t_weight= -1.;
   t_level= -1;

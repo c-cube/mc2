@@ -31,10 +31,9 @@ let[@inline] set_weight t f = t.t_weight <- f
 let[@inline] level t = t.t_level
 let[@inline] is_deleted t = field_get field_t_is_deleted t
 let[@inline] var t = t.t_var
-let[@inline] iter_subterms (t:term): term Sequence.t = t.t_tc.tct_subterms t
-let[@inline] eval_bool (t:term) : eval_bool_res =
-  assert (t.t_ty == Type.prop);
-  t.t_tc.tct_eval_bool t
+let[@inline] ty t = t.t_ty
+let[@inline] iter_subterms (t:term): term Sequence.t = t.t_tc.tct_subterms t.t_view
+let[@inline] is_bool t = Type.is_bool t.t_ty
 
 let[@inline] gc_marked (t:t) : bool = field_get field_t_gc_marked t
 let[@inline] gc_unmark (t:t) : unit = field_clear field_t_gc_marked t
@@ -79,11 +78,20 @@ module Unsafe = struct
       failwith "add_plugin: too many plugins";
     );
     id
+
+  (* build a fresh term *)
+  let[@inline never] make_term t_id t_view t_ty t_tc : t =
+    let t_fields = Fields.empty in
+    let t_level = -1 in
+    let t_weight = 0. in
+    let t_idx = ~-1 in
+    { t_id; t_view; t_ty; t_fields; t_level; t_weight; t_idx;
+      t_var=Var_none; t_tc; }
 end
 
 (* make a fresh variable for this term *)
 let mk_var_ (t:t): var =
-  if Type.equal Type.prop t.t_ty then (
+  if Type.is_bool t.t_ty then (
     let t_id_double = t.t_id lsl 1 in
     let pa = {
       a_term=t;
@@ -99,6 +107,7 @@ let mk_var_ (t:t): var =
     Var_semantic {
       v_value=V_none;
       v_watched=Vec.make_empty dummy_term;
+      v_decide_state=Type.mk_decide_state t.t_ty;
     }
   )
 
@@ -136,14 +145,37 @@ module Bool = struct
     | Var_bool {na; b_value=B_false _; _} -> na
     | _ -> assert false
 
-  let pa (t:t) : atom = match t.t_var with
+  let[@inline] is_true t = match t.t_var with
+    | Var_bool {b_value=B_true _; _} -> true
+    | _ -> false
+
+  let[@inline] is_false t = match t.t_var with
+    | Var_bool {b_value=B_false _; _} -> true
+    | _ -> false
+
+  let[@inline] pa (t:t) : atom = match t.t_var with
     | Var_bool {pa; _} -> pa
     | _ -> assert false
 
-  let na (t:t) : atom = match t.t_var with
+  let[@inline] na (t:t) : atom = match t.t_var with
     | Var_bool {na; _} -> na
     | _ -> assert false
 end
+
+module Semantic = struct
+  let[@inline] has_value t = match t.t_var with
+    | Var_semantic {v_value=V_assign _; _} -> true
+    | Var_semantic {v_value=V_none; _} -> false
+    | _ -> assert false
+
+  let[@inline] value t = match t.t_var with
+    | Var_semantic {v_value=v; _} -> v
+    | _ -> assert false
+end
+
+let[@inline] eval_bool (t:term) : eval_bool_res =
+  assert (Type.is_bool t.t_ty);
+  t.t_tc.tct_eval_bool t
 
 (** {2 Hashconsing of a Theory Terms} *)
 
@@ -191,20 +223,15 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
       )
 
   (* build a fresh term *)
-  let[@inline never] make_real_ t_view t_ty t_tc : t =
+  let make_term_ t_view t_ty t_tc : t =
     let p_specific_id = get_fresh_id () in
     let t_id = Ops.p_id lor (p_specific_id lsl plugin_id_width) in
-    let t_fields = Fields.empty in
-    let t_level = -1 in
-    let t_weight = 0. in
-    let t_idx = ~-1 in
-    { t_id; t_view; t_ty; t_fields; t_level; t_weight; t_idx;
-      t_var=Var_none; t_tc; }
+    Unsafe.make_term t_id t_view t_ty t_tc
 
   (* inline make function *)
   let[@inline] make (view:view) (ty:Type.t) (tc:tc_term) : t =
     try H.find tbl view
-    with Not_found -> make_real_ view ty tc
+    with Not_found -> make_term_ view ty tc
 
   let[@inline] iter_terms k = H.values tbl k
 

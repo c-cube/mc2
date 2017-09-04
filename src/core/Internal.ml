@@ -177,9 +177,8 @@ let[@inline] plugins env = CCVector.to_seq env.plugins
 let[@inline] get_service env (k:_ Service.Key.t) =
   Service.Registry.find env.services k
 
-let[@inline] get_service_exn env (k:_ Service.Key.t) = match get_service env k with
-  | Some v -> v
-  | None -> Util.errorf "could not find service `%s`" (Service.Key.name k)
+let[@inline] get_service_exn env (k:_ Service.Key.t) =
+  Service.Registry.find_exn env.services k
 
 (* how to add a plugin *)
 let add_plugin (env:t) (fcty:Plugin.Factory.t) : Plugin.t =
@@ -296,7 +295,7 @@ let[@inline] update_watches (env:t) (t:term): unit =
   t.t_tc.tct_update_watches (actions env) t
 
 let[@inline] decide_term (env:t) (t:term): value =
-  t.t_tc.tct_decide (actions env) t
+  Type.decide (Term.ty t) (actions env) t
 
 let[@inline] check_assign (env:t) (t:term): check_res =
   t.t_tc.tct_assign (actions env) t
@@ -1056,7 +1055,10 @@ let mk_actions (env:t) : actions =
 let create () : t =
   let rec env = lazy (create_real actions)
   and actions = lazy (mk_actions (Lazy.force env)) in
-  Lazy.force env
+  let env = Lazy.force env in
+  (* add builtins *)
+  ignore (add_plugin env Builtins.plugin);
+  env
 
 (* FIXME: update? the second case
 let slice_propagate f = function

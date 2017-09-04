@@ -48,5 +48,8 @@ module Registry = struct
 
   let[@inline] find (r:t) k = M.Tbl.find r.tbl k.Key.key
   let[@inline] to_seq (r:t) = Sequence.of_list r.lst
+  let[@inline] find_exn r k = match find r k with
+    | Some v -> v
+    | None -> Util.errorf "could not find service `%s`" (Key.name k)
 end
 

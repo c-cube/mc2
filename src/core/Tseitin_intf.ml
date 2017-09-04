@@ -33,7 +33,12 @@ module type S = sig
   type atom
   (** The type of atomic formulas. *)
 
-  type t
+  type combinator = And | Or | Imply | Not
+
+  type t = private
+    | True
+    | Lit of atom
+    | Comb of combinator * t list
   (** The type of arbitrary boolean formulas. Arbitrary boolean formulas
       can be built using functions in this module, and then converted
       to a CNF, which is a list of clauses that only use atomic formulas. *)

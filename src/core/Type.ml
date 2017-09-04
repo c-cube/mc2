@@ -1,70 +1,85 @@
 
-type t = {
-  mutable id: int;
-  view: view;
-}
-and view =
-  | Atomic of ID.t * t array
-  | Fun of t * t
+(** {1 Simple Types} *)
 
-let[@inline] view {view; _} = view
+open Solver_types
 
-let[@inline] equal a b = a.id = b.id
-let[@inline] compare a b = CCInt.compare a.id b.id
-let[@inline] hash a = a.id
+type t = ty
+type view = ty_view
 
-module H = Weak.Make(struct
-    type nonrec t = t
-    let equal a b = match a.view, b.view with
-      | Atomic (i1,a1), Atomic (i2,a2) ->
-        ID.equal i1 i2 && CCArray.equal equal a1 a2
-      | Fun (a1,b1), Fun (a2,b2) ->
-        equal a1 a2 && equal b1 b2
-      | Atomic _, _
-      | Fun _, _ -> false
+let[@inline] view = function
+  | Bool -> assert false
+  | Ty {view; _} -> view
 
-    let hash t = match t.view with
-      | Atomic (i,_) -> CCHash.combine2 2 (ID.hash i)
-      | Fun (a,b) -> CCHash.combine3 3 (hash a) (hash b)
-end)
+let[@inline] id = function
+  | Bool -> assert false
+  | Ty {id;_} -> id
 
-let mk_ =
-  let n = ref 0 in
-  let tbl = H.create 128 in
-  fun view : t ->
-    let t = { view; id= -1; } in
-    let u = H.merge tbl t in
-    if t == u then (
-      t.id <- !n;
-      incr n;
-    );
+let[@inline] equal a b = match a, b with
+  | Bool, Bool -> true
+  | Ty _, Ty _ -> a==b
+  | Bool, _
+  | Ty _, _ -> false
+
+let[@inline] compare a b = match a, b with
+  | Bool, Bool -> 0
+  | Bool, Ty _ -> -1
+  | Ty _, Bool -> 1
+  | Ty {id=i1;_}, Ty {id=i2; _} -> CCInt.compare i1 i2
+
+let[@inline] hash t = match t with
+  | Bool -> 1
+  | Ty {id;_} -> CCHash.int id
+
+let bool = Bool
+
+let[@inline] is_bool = function
+  | Bool -> true
+  | Ty _ -> false
+
+let[@inline] pp out t = match t with
+  | Bool -> CCFormat.string out "Bool"
+  | Ty {tc; view; _} -> tc.tcty_pp out view
+
+let[@inline] decide (ty:t) (a:actions) (t:term) : value = match ty with
+  | Bool -> assert false
+  | Ty {tc; _} -> tc.tcty_decide a t
+
+let[@inline] mk_decide_state (ty:t) : decide_state = match ty with
+  | Bool -> assert false
+  | Ty {tc; _} -> tc.tcty_mk_state()
+
+module type TY_ALLOC_OPS = sig
+  val initial_size: int (** initial size of table *)
+  val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
+  val hash : view -> int (** Shallow hash of a view of the plugin *)
+  val tc : tc_ty
+end
+
+(* global ID allocator *)
+let n_ = ref 0
+
+module Alloc(Arg : TY_ALLOC_OPS) = struct
+  module H = Weak.Make(struct
+      type nonrec t = t
+      let equal a b = match a, b with
+        | Bool, _
+        | _, Bool -> assert false
+        | Ty {view=v1; _}, Ty {view=v2; _} -> Arg.equal v1 v2
+
+      let hash t = match t with
+        | Bool -> assert false
+        | Ty {view; _} -> Arg.hash view
+    end)
+
+  let tbl = H.create Arg.initial_size
+
+  let make view =
+    let ty = Ty {id= ~-1; view; tc=Arg.tc } in
+    let u = H.merge tbl ty in
+    if ty == u then begin[@warning "-8"]
+      let Ty v = ty in
+      v.id <- !n_;
+      incr n_;
+    end;
     u
-
-let const id : t = mk_ (Atomic (id, [| |]))
-let app id a : t = mk_ (Atomic (id, a))
-
-let prop_id = ID.make "Bool"
-let prop = const prop_id
-
-let fun_ a b : t = mk_ (Fun (a,b))
-let fun_l args ret : t = List.fold_right fun_ args ret
-
-let unfold_fun t : t list * t =
-  let rec aux acc t = match view t with
-    | Atomic _ -> List.rev acc, t
-    | Fun (a, b) -> aux (a::acc) b
-  in
-  aux [] t
-
-let rec arity t : int = match view t with
-  | Atomic _ -> 0
-  | Fun (_, t) -> 1 + arity t
-
-let rec pp out t = match view t with
-  | Atomic (id, [| |]) -> ID.pp out id
-  | Atomic (id, args) ->
-    Format.fprintf out "(@[<hv2>%a@ %a@])" ID.pp id (Util.pp_array pp) args
-  | Fun _ ->
-    let args, ret = unfold_fun t in
-    Format.fprintf out "(@[<hv2>-> %a@ %a@])" (Util.pp_list pp) args pp ret
-
+end
