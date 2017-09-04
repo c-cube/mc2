@@ -89,8 +89,10 @@ let pp_cnf (cnf:Atom.t list list) =
     Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
   )
 
-let do_task (solver:Solver.t) (s:Ast.statement) : unit or_error =
-  begin match s with
+let do_task (solver:Solver.t) (stmt:Ast.statement) : unit or_error =
+  Log.debugf 5 
+    (fun k->k "(@[<2>process statement@ %a@])" Ast.pp_statement stmt);
+  begin match stmt with
     | Ast.SetLogic "QF_UF" -> E.return ()
     | Ast.SetLogic s ->
       Log.debugf 0 (fun k->k "warning: unknown logic `%s`" s);
@@ -98,6 +100,8 @@ let do_task (solver:Solver.t) (s:Ast.statement) : unit or_error =
     | Ast.SetOption l ->
       Log.debugf 0 (fun k->k "warning: unknown option `%a`" (Util.pp_list Fmt.string) l);
       E.return ()
+    | Ast.SetInfo _ -> E.return ()
+    | Ast.Exit -> raise Exit
     | Ast.CheckSat ->
       prove solver ~assumptions:[]
     | Ast.TyDecl _ ->
@@ -149,17 +153,6 @@ let do_task (solver:Solver.t) (s:Ast.statement) : unit or_error =
         Dolmen.Statement.print s
          *)
   end
-
-let error_msg opt arg l =
-  Format.fprintf Format.str_formatter "'%s' is not a valid argument for '%s', valid arguments are : %a"
-    arg opt (fun fmt -> List.iter (fun (s, _) -> Format.fprintf fmt "%s, " s)) l;
-  Format.flush_str_formatter ()
-
-let set_flag opt arg flag l =
-  try
-    flag := List.assoc arg l
-  with Not_found ->
-    invalid_arg (error_msg opt arg l)
 
 (* Arguments parsing *)
 let int_arg r arg =
@@ -239,9 +232,12 @@ let main () =
       ] ()
   in
   let r =
+    try
     E.fold_l
       (fun () -> do_task solver)
       () input
+    with Exit ->
+      E.return()
   in
   Gc.delete_alarm al;
   r

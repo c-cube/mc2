@@ -108,11 +108,13 @@ type definition = ID.t * Ty.t * term
 type statement =
   | SetLogic of string
   | SetOption of string list
+  | SetInfo of string list
   | TyDecl of ID.t * int (* new atomic cstor *)
   | Decl of ID.t * Ty.t
   | Assert of term
   | CheckSat
   | Goal of var list * term
+  | Exit
         (*
   | Data of Ty.data list
   | Define of definition list

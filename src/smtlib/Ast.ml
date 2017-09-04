@@ -153,11 +153,13 @@ type definition = ID.t * Ty.t * term
 type statement =
   | SetLogic of string
   | SetOption of string list
+  | SetInfo of string list
   | TyDecl of ID.t * int (* new atomic cstor *)
   | Decl of ID.t * Ty.t
   | Assert of term
   | CheckSat
   | Goal of var list * term
+  | Exit
         (*
   | Data of Ty.data list
   | Define of definition list
@@ -334,7 +336,7 @@ let mu_l = List.fold_right mu
 let eq_neq_ op l = match l with
   | [] -> Ty.ill_typed "empty `distinct` is forbidden"
   | a :: tail ->
-    begin match CCList.find_opt (fun b -> not @@ Ty.equal a.ty b.ty) tail with
+    begin match CCList.find_pred (fun b -> not @@ Ty.equal a.ty b.ty) tail with
       | Some b ->
         Ty.ill_typed "%a: `@[%a@]` and `@[%a@]` do not have the same type"
           pp_op op pp_term a pp_term b;
@@ -371,6 +373,7 @@ let not_ t =
 let pp_statement out = function
   | SetLogic s -> Fmt.fprintf out "(set-logic %s)" s
   | SetOption l -> Fmt.fprintf out "(@[set-logic@ %a@])" (Util.pp_list Fmt.string) l
+  | SetInfo l -> Fmt.fprintf out "(@[set-info@ %a@])" (Util.pp_list Fmt.string) l
   | CheckSat -> Fmt.string out "(check-sat)"
   | TyDecl (s,n) -> Fmt.fprintf out "(@[declare-sort@ %a %d@])" ID.pp s n
   | Decl (id,ty) ->
@@ -380,6 +383,7 @@ let pp_statement out = function
   | Assert t -> Fmt.fprintf out "(@[assert@ %a@])" pp_term t
   | Goal (vars,g) ->
     Fmt.fprintf out "(@[assert-not@ %a@])" pp_term (forall_l vars (not_ g))
+  | Exit -> Fmt.string out "(exit)"
     (*
   | Data _
   | TyDecl _
@@ -721,13 +725,15 @@ let conv_fun_def ctx f body =
        f.A.fun_name, ty, fun_l args (conv_term ctx body))
 
 let rec conv_statement ctx (s:A.statement): statement list =
-  Log.debugf 2 (fun k->k "(@[<1>statement_of_ast@ `@[%a@]`@])" A.pp_stmt s);
+  Log.debugf 2 (fun k->k "(@[<1>statement_of_ast@ %a@])" A.pp_stmt s);
   Ctx.set_loc ctx ?loc:s.A.loc;
   conv_statement_aux ctx s
 
 and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view stmt with
   | A.Stmt_set_logic s -> [SetLogic s]
   | A.Stmt_set_option l -> [SetOption l]
+  | A.Stmt_set_info l -> [SetInfo l]
+  | A.Stmt_exit -> [Exit]
   | A.Stmt_decl_sort (s,n) ->
     let id = Ctx.add_id ctx s (Ctx.K_ty Ctx.K_uninterpreted) in
     [TyDecl (id,n)]

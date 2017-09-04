@@ -40,6 +40,7 @@
 
 %token SET_LOGIC
 %token SET_OPTION
+%token SET_INFO
 %token DATA
 %token ASSERT
 %token LEMMA
@@ -53,6 +54,7 @@
 %token DEFINE_FUN_REC
 %token DEFINE_FUNS_REC
 %token CHECK_SAT
+%token EXIT
 
 %token <string>IDENT
 %token <string>QUOTED
@@ -158,6 +160,11 @@ stmt:
       let loc = Loc.mk_pos $startpos $endpos in
       A.set_option ~loc l
     }
+  | LEFT_PAREN SET_INFO l=option_arg+ RIGHT_PAREN
+    {
+      let loc = Loc.mk_pos $startpos $endpos in
+      A.set_info ~loc l
+    }
   | LEFT_PAREN ASSERT t=term RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in
@@ -231,6 +238,11 @@ stmt:
     {
       let loc = Loc.mk_pos $startpos $endpos in
       A.check_sat ~loc ()
+    }
+  | LEFT_PAREN EXIT RIGHT_PAREN
+    {
+      let loc = Loc.mk_pos $startpos $endpos in
+      A.exit ~loc ()
     }
   | error
     {

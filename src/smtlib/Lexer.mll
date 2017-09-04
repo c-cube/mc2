@@ -60,6 +60,8 @@ rule token = parse
   | "check-sat" { CHECK_SAT }
   | "set-logic" { SET_LOGIC }
   | "set-option" { SET_OPTION }
+  | "set-info" { SET_INFO }
+  | "exit" { EXIT }
   | ident { IDENT(Lexing.lexeme lexbuf) }
   | quoted {
       (* TODO: unescape *)
@@ -69,6 +71,7 @@ rule token = parse
   | escaped {
       let s = Lexing.lexeme lexbuf in
       let s = String.sub s 1 (String.length s -2) in (* remove "|" *)
+      CCString.iter (function '\n' -> Lexing.new_line lexbuf | _ -> ()) s;
       ESCAPED s }
   | _ as c
     {
