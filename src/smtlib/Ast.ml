@@ -234,7 +234,7 @@ let pp_data out d =
 
 (** {2 Constructors} *)
 
-let term_view t = t.term
+let[@inline] term_view t = t.term
 
 let rec app_ty_ ty l : Ty.t = match ty, l with
   | _, [] -> ty
@@ -248,8 +248,8 @@ let rec app_ty_ ty l : Ty.t = match ty, l with
   | (Ty.Prop | Ty.Atomic _), a::_ ->
     Ty.ill_typed "cannot apply ty `@[%a@]`@ to `@[%a@]`" Ty.pp ty pp_term a
 
-let mk_ term ty = {term; ty}
-let ty t = t.ty
+let[@inline] mk_ term ty = {term; ty}
+let[@inline] ty t = t.ty
 
 let true_ = mk_ (Bool true) Ty.prop
 let false_ = mk_ (Bool false) Ty.prop

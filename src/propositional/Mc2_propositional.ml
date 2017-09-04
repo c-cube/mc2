@@ -8,14 +8,11 @@ module Fmt = CCFormat
 
 type t = atom
 
+let name = "propositional"
 let neg = Atom.neg
 let pp = Atom.pp
 
-module F = Tseitin.Make(struct
-    type t = atom
-    let neg = Atom.neg
-    let pp = Atom.pp
-  end)
+module F = Tseitin.Make(Atom)
 
 (* add new case for terms *)
 type term_view += Fresh of int
@@ -27,16 +24,14 @@ let tct_pp out = function
 
 let tct_update_watches _ _ = assert false (* never called *)
 let tct_subterms _ _ = ()
-let tct_decide _ _ = assert false (* never called *)
 let tct_assign _ _ = assert false (* never called *)
 let tct_simplify t = t
-let tct_is_absurd _ = false
 let tct_eval_bool _ = Eval_unknown (* no subterms *)
 
 (* typeclass for terms *)
 let t_tc : tc_term = {
-  tct_pp; tct_update_watches; tct_subterms; tct_decide; tct_assign;
-  tct_simplify; tct_is_absurd; tct_eval_bool;
+  tct_pp; tct_update_watches; tct_subterms; tct_assign;
+  tct_simplify; tct_eval_bool;
 }
 
 let k_cnf = Service.Key.make "propositional.cnf"
@@ -46,7 +41,7 @@ let plugin =
   let build p_id Plugin.S_nil : Plugin.t =
     let module P : Plugin.S = struct
       let id = p_id
-      let name = "propositional"
+      let name = name
       (* term allocator *)
       module T_alloc = Term.Term_allocator(struct
           let p_id = p_id
@@ -67,7 +62,7 @@ let plugin =
         fun () ->
           let view = Fresh !n in
           incr n;
-          let t = T_alloc.make view Type.prop t_tc in
+          let t = T_alloc.make view Type.bool t_tc in
           Term.Bool.pa t
 
       let[@inline] cnf ?simplify (f:F.t) : t list list = F.cnf ~fresh ?simplify f
@@ -80,10 +75,5 @@ let plugin =
     in
     (module P : Plugin.S)
   in
-  Plugin.Factory.make
-    ~priority:5
-    ~name:"propositional"
-    ~requires:Plugin.K_nil
-    ~build
-    ()
+  Plugin.Factory.make ~priority:5 ~name ~requires:Plugin.K_nil ~build ()
 
