@@ -65,8 +65,11 @@ module Bool : sig
   val assigned_atom : t -> atom option (** if assigned and bool, return corresponding atom *)
   val assigned_atom_exn : t -> atom
 
-  val pa : t -> atom
-  val na : t -> atom
+  val pa_unsafe : t -> atom (** Positive atom (assumes [has_var t]) *)
+  val na_unsafe : t -> atom (** Negative atom (assumes [has_var t]) *)
+
+  val pa : t -> atom (** safe version of {!pa_unsafe}, call [setup_var] *)
+  val na : t -> atom (** safe version of {!na_unsafe}, call [setup_var] *)
 
   val is_true : t -> bool
   val is_false : t -> bool

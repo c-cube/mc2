@@ -153,13 +153,16 @@ module Bool = struct
     | Var_bool {b_value=B_false _; _} -> true
     | _ -> false
 
-  let[@inline] pa (t:t) : atom = match t.t_var with
+  let[@inline] pa_unsafe (t:t) : atom = match t.t_var with
     | Var_bool {pa; _} -> pa
     | _ -> assert false
 
-  let[@inline] na (t:t) : atom = match t.t_var with
+  let[@inline] na_unsafe (t:t) : atom = match t.t_var with
     | Var_bool {na; _} -> na
     | _ -> assert false
+
+  let[@inline] pa (t:t) : atom = setup_var t; pa_unsafe t
+  let[@inline] na (t:t) : atom = setup_var t; na_unsafe t
 end
 
 module Semantic = struct

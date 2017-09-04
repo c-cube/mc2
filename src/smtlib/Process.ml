@@ -211,7 +211,8 @@ let p_check = ref true
 
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
-let prove ?dot_proof ~assumptions s : unit =
+(* call the solver to check-sat *)
+let solve ?dot_proof ~assumptions s : unit =
   let res = Solver.solve s ~assumptions in
   let t = Sys.time () in
   begin match res with
@@ -242,6 +243,7 @@ let prove ?dot_proof ~assumptions s : unit =
       Format.printf "Unsat (%f/%f)@." t t';
   end
 
+(* process a single statement *)
 let process_stmt
     ?(pp_cnf=false)
     ?dot_proof
@@ -261,9 +263,11 @@ let process_stmt
       Log.debugf 0 (fun k->k "warning: unknown option `%a`" (Util.pp_list Fmt.string) l);
       E.return ()
     | A.SetInfo _ -> E.return ()
-    | A.Exit -> raise Exit
+    | A.Exit ->
+      Log.debug 0 "exit";
+      raise Exit
     | A.CheckSat ->
-      prove ?dot_proof solver ~assumptions:[];
+      solve ?dot_proof solver ~assumptions:[];
       E.return()
     | A.TyDecl (id,n) ->
       decl_sort id n;

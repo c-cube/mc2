@@ -25,4 +25,5 @@ val is_undef : t -> bool
 val term : t -> term
 val watched : t -> clause Vec.t
 
-val pp : t CCFormat.printer
+val pp : t CCFormat.printer (** nice printer *)
+val debug : t CCFormat.printer (** very verbose printer *)

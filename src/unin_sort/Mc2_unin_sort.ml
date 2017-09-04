@@ -203,7 +203,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       if Term.equal t u then true_ (* auto-simplify *)
       else (
         let view = if Term.id t < Term.id u then Eq (t,u) else Eq (u,t) in
-        Term_alloc.make view (Term.ty t) tc_term
+        Term_alloc.make view Type.bool tc_term
       )
 
     let provided_services =

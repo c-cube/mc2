@@ -19,7 +19,7 @@ type term_view += Fresh of int
 
 (* printer for terms *)
 let tct_pp out = function
-  | Fresh i -> Fmt.fprintf out "A%d" i
+  | Fresh i -> Fmt.fprintf out "_A%d" i
   | _ -> assert false
 
 let tct_update_watches _ _ = assert false (* never called *)

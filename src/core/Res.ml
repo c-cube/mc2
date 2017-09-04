@@ -106,9 +106,9 @@ let rec set_atom_proof a =
   begin match Atom.reason a with
     | Some Bcp c ->
       Log.debugf debug
-        (fun k -> k "Analysing: @[%a@ %a@]" Atom.pp a Clause.pp c);
+        (fun k -> k "Analysing: @[%a@ %a@]" Atom.debug a Clause.debug c);
       if Array.length c.c_atoms = 1 then (
-        Log.debugf debug (fun k -> k "Old reason: @[%a@]" Atom.pp a);
+        Log.debugf debug (fun k -> k "Old reason: @[%a@]" Atom.debug a);
         c
       ) else (
         assert (Atom.is_false a);
@@ -125,21 +125,21 @@ let rec set_atom_proof a =
           | _ -> assert false
         end;
         Log.debugf debug
-          (fun k -> k "New reason: @[%a@ %a@]" Atom.pp a Clause.pp c');
+          (fun k -> k "New reason: @[%a@ %a@]" Atom.debug a Clause.debug c');
         c'
       )
     | _ ->
-      Log.debugf error (fun k -> k "Error while proving atom %a" Atom.pp a);
+      Log.debugf error (fun k -> k "Error while proving atom %a" Atom.debug a);
       raise (Resolution_error "Cannot prove atom")
   end
 
 let prove_unsat (conflict:clause) : clause =
   if Array.length conflict.c_atoms = 0 then conflict
   else (
-    Log.debugf info (fun k -> k "Proving unsat from: @[%a@]" Clause.pp conflict);
+    Log.debugf info (fun k -> k "Proving unsat from: @[%a@]" Clause.debug conflict);
     let l = Array.fold_left (fun acc a -> set_atom_proof a :: acc) [] conflict.c_atoms in
     let res = Clause.make [] (History (conflict :: l)) in
-    Log.debugf info (fun k -> k "Proof found: @[%a@]" Clause.pp res);
+    Log.debugf info (fun k -> k "Proof found: @[%a@]" Clause.debug res);
     res
   )
 
@@ -166,7 +166,7 @@ let rec chain_res (c, cl) = function
   | d :: r ->
     Log.debugf debug
       (fun k -> k "Resolving clauses : @[%a@\n%a@]"
-          Clause.pp c Clause.pp d);
+          Clause.debug c Clause.debug d);
     let dl = to_list d in
     begin match resolve (merge cl dl) with
       | [a], l ->
@@ -179,14 +179,14 @@ let rec chain_res (c, cl) = function
       | _ ->
         Log.debugf error
           (fun k -> k "While resolving clauses:@[<hov>%a@\n%a@]"
-              Clause.pp c Clause.pp d);
+              Clause.debug c Clause.debug d);
         raise (Resolution_error "Clause mismatch")
     end
   | _ ->
     raise (Resolution_error "Bad history")
 
 let expand conclusion : proof_node =
-  Log.debugf debug (fun k -> k "Expanding : @[%a@]" Clause.pp conclusion);
+  Log.debugf debug (fun k -> k "Expanding : @[%a@]" Clause.debug conclusion);
   begin match conclusion.c_premise with
     | Lemma l ->
       {conclusion; step = Lemma l; }
@@ -196,7 +196,7 @@ let expand conclusion : proof_node =
       { conclusion; step = Assumption; }
     | History [] ->
       Log.debugf error
-        (fun k -> k "Empty history for clause: %a" Clause.pp conclusion);
+        (fun k -> k "Empty history for clause: %a" Clause.debug conclusion);
       raise (Resolution_error "Empty history")
     | History [ c ] ->
       let duplicates, res = analyze (find_doublons c) in

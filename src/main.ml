@@ -44,16 +44,6 @@ let check_model state =
   let l = List.map check_clause !hyps in
   List.for_all (fun x -> x) l
 
-(* dump CNF *)
-let pp_cnf (cnf:Atom.t list list) =
-  if !p_cnf then (
-    let pp_c =
-      CCFormat.(within "[" "]" @@ hvbox ~i:2 @@ list
-          ~sep:(return " @<1>∨@ ") Atom.pp)
-    in
-    Format.printf "CNF: @[<v>%a@]@." CCFormat.(list pp_c) cnf;
-  )
-
 (* Arguments parsing *)
 let int_arg r arg =
   let l = String.length arg in
@@ -130,7 +120,7 @@ let main () =
        try
          let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
          E.fold_l
-           (fun () -> Process.process_stmt ?dot_proof solver)
+           (fun () -> Process.process_stmt ~pp_cnf:!p_cnf ?dot_proof solver)
            () input
        with Exit ->
          E.return())
