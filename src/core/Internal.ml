@@ -172,8 +172,8 @@ let[@inline] nb_clauses env = Vec.size env.clauses_hyps
 let[@inline] decision_level env = Vec.size env.decision_levels
 let[@inline] base_level env = Vec.size env.user_levels
 
+let[@inline] services env = env.services
 let[@inline] plugins env = CCVector.to_seq env.plugins
-
 let[@inline] get_service env (k:_ Service.Key.t) =
   Service.Registry.find env.services k
 

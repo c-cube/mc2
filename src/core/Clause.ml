@@ -63,11 +63,12 @@ let[@inline] pp_name out c =
 let debug out c =
   Format.fprintf out "%a : %a" pp_name c pp_atoms c.c_atoms
 
-let pp_atoms_vec pp_a out vec = Util.pp_array ~sep:" " pp_a out vec
+let pp_atoms_vec out vec = Util.pp_array ~sep:" " Atom.pp out vec
+let pp_atoms out = Format.fprintf out "(@[%a@])" (Util.pp_list ~sep:" " Atom.pp)
 
 let pp out ({c_atoms; c_premise=cp; _} as c) =
   Format.fprintf out "%a@[<hov>{@[<hov>%a@]}@ cpremise={@[<hov>%a@]}@]"
-    pp_name c (pp_atoms_vec Atom.pp) c_atoms Premise.pp cp
+    pp_name c pp_atoms_vec c_atoms Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =
   let aux fmt a =

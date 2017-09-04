@@ -127,7 +127,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     (* declare a new (parametric) uninterpreted type *)
     let decl_sort id (arity:int) : unit =
       Log.debugf 3
-        (fun k->k "(@[declare-sort %a@ :arity %d@])" ID.pp id arity);
+        (fun k->k "(@[unin_sort.declare-sort %a@ :arity %d@])" ID.pp id arity);
       if ID.Tbl.mem tbl_ id then (
         Util.errorf "sort %a already declared" ID.pp id;
       );

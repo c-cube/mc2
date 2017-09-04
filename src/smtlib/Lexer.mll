@@ -70,7 +70,6 @@ rule token = parse
       QUOTED s }
   | escaped {
       let s = Lexing.lexeme lexbuf in
-      let s = String.sub s 1 (String.length s -2) in (* remove "|" *)
       CCString.iter (function '\n' -> Lexing.new_line lexbuf | _ -> ()) s;
       ESCAPED s }
   | _ as c

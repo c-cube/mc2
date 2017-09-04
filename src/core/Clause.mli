@@ -33,5 +33,6 @@ val gc_mark : t -> unit
 val pp : t CCFormat.printer
 val pp_name : t CCFormat.printer
 val debug : t CCFormat.printer
+val pp_atoms : atom list CCFormat.printer
 
 val pp_dimacs : t CCFormat.printer

@@ -27,6 +27,8 @@ val create : plugins:Plugin.Factory.t list -> unit -> t
 val plugins : t -> Plugin.t Sequence.t
 (** Obtain the current plugins *)
 
+val services : t -> Service.Registry.t
+
 val get_service : t -> 'a Service.Key.t -> 'a option
 (** Obtain a service by its key *)
 

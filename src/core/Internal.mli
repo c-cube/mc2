@@ -32,10 +32,14 @@ val add_plugin : t -> Plugin.Factory.t -> Plugin.t
     @raise Failure if all plugin IDs have been allocated
 *)
 
+
 val plugins : t -> Plugin.t Sequence.t
 
 val get_plugin : t -> plugin_id -> Plugin.t
 (** Get the plugin from its ID *)
+
+val services : t -> Service.Registry.t
+(** Service registry *)
 
 val get_service : t -> 'a Service.Key.t -> 'a option
 (** Obtain a service by its key *)

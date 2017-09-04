@@ -29,6 +29,7 @@ val with_limits :
 *)
 
 val process_stmt :
+  ?pp_cnf:bool ->
   ?dot_proof:string ->
   Solver.t ->
   Ast.statement ->

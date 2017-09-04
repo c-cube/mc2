@@ -34,6 +34,7 @@ let[@inline] state_solver (type a) (st: a state) : t = match st with
 let[@inline] plugins t = S.plugins t
 let[@inline] get_service t k = S.get_service t k
 let[@inline] get_service_exn t k = S.get_service_exn t k
+let[@inline] services t = S.services t
 
 let pp_all t lvl status =
   Log.debugf lvl

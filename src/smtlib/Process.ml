@@ -44,8 +44,19 @@ let[@inline] ret_t t = T t
 let[@inline] ret_f f = F f
 let[@inline] ret_any t = if Term.is_bool t then F (F.atom (Term.Bool.pa t)) else T t
 
-let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
+let conv_ty (reg:Reg.t) (ty:A.Ty.t) : Type.t =
   let mk_ty = Reg.find_exn reg Mc2_unin_sort.k_make in
+  (* convert a type *)
+  let rec aux_ty (ty:A.Ty.t) : Type.t = match ty with
+    | A.Ty.Prop -> Type.bool
+    | A.Ty.Atomic (id, args) -> mk_ty id (List.map aux_ty args)
+    | A.Ty.Arrow _ ->
+      Util.errorf "cannot convert arrow type `%a`" A.Ty.pp ty
+  in
+  aux_ty ty
+
+let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
+  let decl = Reg.find_exn reg Mc2_uf.k_decl in
   let mk_eq_ = Reg.find_exn reg Mc2_unin_sort.k_eq in
   let mk_app = Reg.find_exn reg Mc2_uf.k_app in
   let mk_const = Reg.find_exn reg Mc2_uf.k_const in
@@ -70,11 +81,11 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
           | None -> Util.errorf "variable %a not bound" A.Var.pp v
           | Some t -> t
         end
-      | A.Const id -> mk_const id (A.ty t |> aux_ty) |> ret_any
+      | A.Const id -> mk_const id |> ret_any
       | A.App (f, l) ->
         let l = List.map (aux_t subst) l in
         begin match A.term_view f with
-          | A.Const id -> mk_app id (A.ty f |> aux_ty) l |> ret_any
+          | A.Const id -> mk_app id l |> ret_any
           | _ -> Util.errorf "cannot process HO application %a" A.pp_term t
         end
       | A.If (a,b,c) ->
@@ -85,7 +96,9 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
           | F _ -> Type.bool
           | T t -> Term.ty t
         in
-        let placeholder = mk_const (mk_ite_id ()) ty_b in
+        let placeholder_id = mk_ite_id () in
+        decl placeholder_id [] ty_b;
+        let placeholder = mk_const placeholder_id in
         (* add [f_a => placeholder=b] and [¬f_a => placeholder=c] *)
         let form =
           F.and_
@@ -136,7 +149,9 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
     | F (F.Lit a) when Atom.is_pos a -> a.a_term
     | F f ->
       (* name the sub-formula and add CNF *)
-      let placeholder = mk_const (mk_sub_form ()) Type.bool in
+      let placeholder_id = mk_sub_form() in
+      decl placeholder_id [] Type.bool;
+      let placeholder = mk_const placeholder_id in
       (* add [f_a => placeholder=b] and [¬f_a => placeholder=c] *)
       let form = F.equiv (F.atom (Term.Bool.pa placeholder)) f in
       side_clauses := List.rev_append (mk_cnf form) !side_clauses;
@@ -147,12 +162,6 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
     | T t -> F.atom (Term.Bool.pa t)
     | F f -> f
 
-  (* convert a type *)
-  and aux_ty (ty:A.Ty.t) : Type.t = match ty with
-    | A.Ty.Prop -> Type.bool
-    | A.Ty.Atomic (id, args) -> mk_ty id (List.map aux_ty args)
-    | A.Ty.Arrow _ ->
-      Util.errorf "cannot convert arrow type `%a`" A.Ty.pp ty
   and mk_cnf (f:F.t) : atom list list =
     F.cnf ~fresh f
   in
@@ -234,12 +243,15 @@ let prove ?dot_proof ~assumptions s : unit =
   end
 
 let process_stmt
+    ?(pp_cnf=false)
     ?dot_proof
     (solver:Solver.t)
     (stmt:Ast.statement) : unit or_error =
   Log.debugf 5
     (fun k->k "(@[<2>process statement@ %a@])" A.pp_statement stmt);
   let decl_sort = Solver.get_service_exn solver Mc2_unin_sort.k_decl_sort in
+  let decl = Solver.get_service_exn solver Mc2_uf.k_decl in
+  let conv_ty = conv_ty (Solver.services solver) in
   begin match stmt with
     | A.SetLogic "QF_UF" -> E.return ()
     | A.SetLogic s ->
@@ -256,18 +268,23 @@ let process_stmt
     | A.TyDecl (id,n) ->
       decl_sort id n;
       E.return ()
-    | A.Decl _ ->
-      (* TODO: notify plugins *)
+    | A.Decl (f,ty) ->
+      let ty_args, ty_ret = A.Ty.unfold ty in
+      let ty_args = List.map conv_ty ty_args in
+      let ty_ret = conv_ty ty_ret in
+      decl f ty_args ty_ret;
       E.return ()
-    | A.Assert _t ->
-      assert false
-      (* FIXME: convert term, turn into CNF
-      let mk_cnf = Solver.get_service_exn solver Mc2_propositional.Literal.k_cnf in
-      let cnf = cnf t in
-      pp_cnf cnf;
-      hyps := cnf @ !hyps;
-      S.assume cnf
-        *)
+    | A.Assert t ->
+      let clauses =
+        conv_bool_term (Solver.services solver) t
+      in
+      if pp_cnf then (
+        Format.printf "(@[<hv2>assert@ %a@])"
+          (Util.pp_list Clause.pp_atoms) clauses;
+      );
+      hyps := clauses @ !hyps;
+      Solver.assume solver clauses;
+      E.return()
     | A.Goal (_, _) ->
       Util.errorf "cannot deal with goals yet"
 

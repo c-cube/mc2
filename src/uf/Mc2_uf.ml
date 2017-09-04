@@ -81,25 +81,53 @@ let build p_id Plugin.S_nil : Plugin.t =
     let ty_decls_ : (Type.t list * Type.t) ID.Tbl.t = ID.Tbl.create 64
 
     let decl id ty_args ty_ret =
+      Log.debugf 5
+        (fun k->k "(@[uf.decl %a@ (@[%a@])@ %a@])"
+            ID.pp id (Util.pp_list Type.pp) ty_args Type.pp ty_ret);
       if ID.Tbl.mem ty_decls_ id then (
         Util.errorf "%s: symbol `%a` already declared" name ID.pp id;
       );
       ID.Tbl.add ty_decls_ id (ty_args, ty_ret)
 
+    (* compute type of [f l] *)
+    let app_ty (f:ID.t) (l:term list) : Type.t =
+      begin match ID.Tbl.get ty_decls_ f with
+        | Some (args,_) when List.length args <> List.length l->
+          Util.errorf "uf: type mismatch:@ `%a` needs %d arguments@ :got (@[%a@])"
+            ID.pp f (List.length args) (Util.pp_list Term.pp) l
+        | Some (ty_args,ty_ret) ->
+          List.iter2
+            (fun ty_arg arg ->
+               if not (Type.equal ty_arg (Term.ty arg)) then (
+                 Util.errorf
+                   "uf: type mismatch:@ cannot apply `%a`@ :to (@[%a@])@ \
+                   expected %a,@ got %a"
+                   ID.pp f (Util.pp_list Term.pp) l Type.pp ty_arg Term.pp arg;
+               ))
+            ty_args l;
+          ty_ret
+        | None ->
+          Util.errorf "uf: unknown function symbol `%a`" ID.pp f
+      end
+
     (* constant builder *)
-    let[@inline] const id ty : term = T_alloc.make (Const {id;ty}) ty tc
+    let[@inline] const id : term =
+      let ty = app_ty id [] in
+      T_alloc.make (Const {id;ty}) ty tc
 
     (* application builder *)
-    let[@inline] app id ty l : term = match l with
-      | [] -> const id ty
+    let[@inline] app id l : term = match l with
+      | [] -> const id
       | _ ->
         (* proper application *)
+        let ty = app_ty id l in
         let args = Array.of_list l in
         T_alloc.make (App {id;ty;args}) ty tc
 
     let provided_services =
       [ Service.Any (k_app, app);
         Service.Any (k_const, const);
+        Service.Any (k_decl, decl);
       ]
   end
   in
