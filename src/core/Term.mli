@@ -41,6 +41,10 @@ val iter_subterms : t -> t Sequence.t
     When incrementing activity, adding new terms, etc.
     we want to be able to iterate over all subterms of a formula.  *)
 
+val recompute_state : level -> t -> unit
+(** Recompute internal {!decide_state}, assuming the set of unit
+    constraints changed (typically, after some backtracking) *)
+
 val weight : t -> float (** Heuristic weight *)
 val set_weight : t -> float -> unit
 
@@ -48,6 +52,10 @@ val gc_mark : t -> unit
 val gc_unmark : t -> unit
 val gc_marked : t -> bool
 val gc_mark_rec : t -> unit (** Mark term and its subterms, recursively *)
+
+val dirty : t -> bool
+val dirty_mark : t -> unit
+val dirty_unmark : t -> unit
 
 val field_get : Term_fields.field -> t -> bool
 val field_set : Term_fields.field -> t -> unit

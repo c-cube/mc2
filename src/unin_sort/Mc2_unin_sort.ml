@@ -173,6 +173,10 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         *)
       | _ -> assert false
 
+    (* FIXME: recompute best bounds here *)
+    let tct_refresh_state (lvl:level) (t:term) : unit =
+      assert false
+
     let tct_update_watches _ (t:term) = match Term.view t with
       | Eq (_a,_b) ->
         assert false (* TODO: see if we can watch another term, else use Singleton *)
@@ -181,6 +185,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let tc_term = {
       tct_pp;
       tct_update_watches;
+      tct_refresh_state;
       tct_subterms;
       tct_assign;
       tct_eval_bool;

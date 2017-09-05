@@ -64,10 +64,15 @@ let build p_id Plugin.S_nil : Plugin.t =
     (* TODO: check in big table if signature contradictory *)
     let tct_assign _ _ = ()
 
+    (* TODO: update signature table entries for this term, removing the
+       ones that are above level *)
+    let tct_refresh_state _ _ = ()
+
     let tc : tc_term = {
       tct_pp;
       tct_update_watches;
       tct_subterms;
+      tct_refresh_state;
       tct_assign;
       tct_eval_bool;
     }

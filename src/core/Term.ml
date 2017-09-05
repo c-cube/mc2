@@ -39,6 +39,10 @@ let[@inline] gc_marked (t:t) : bool = field_get field_t_gc_marked t
 let[@inline] gc_unmark (t:t) : unit = field_clear field_t_gc_marked t
 let[@inline] gc_mark (t:t) : unit = field_set field_t_gc_marked t
 
+let[@inline] dirty (t:t): bool = field_get field_t_dirty t
+let[@inline] dirty_unmark (t:t) : unit = field_clear field_t_dirty t
+let[@inline] dirty_mark (t:t) : unit = field_set field_t_dirty t
+
 let rec gc_mark_rec (t:t) : unit =
   if not (gc_marked t) then (
     gc_mark t;
@@ -50,6 +54,9 @@ let[@inline] reason t = match var t with
   | Var_bool {b_value=(B_true r|B_false r); _} -> Some r
   | Var_semantic {v_value=V_assign {reason=r; _}; _} -> Some r
   | Var_bool _ | Var_semantic _ -> None
+
+let[@inline] recompute_state (lvl:level) (t:t) : unit =
+  t.t_tc.tct_refresh_state lvl t
 
 (** {2 Assignment view} *)
 

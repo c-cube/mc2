@@ -48,14 +48,13 @@ let build p_id Plugin.S_nil : Plugin.t =
       assert (is_t_true t);
       Eval_bool (true, [])
 
-    let tct_subterms _ _ = ()
-
     let tc : tc_term = {
       tct_pp;
       tct_update_watches=(fun _ _ -> ());
+      tct_refresh_state=(fun _ _ -> ());
       tct_assign;
       tct_eval_bool;
-      tct_subterms;
+      tct_subterms=(fun _ _ -> ());
     }
 
     (* the main "true" term *)

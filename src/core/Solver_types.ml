@@ -20,6 +20,7 @@ module Clause_fields = BitField.Make(struct end)
 (** {2 Type definitions} *)
 
 type plugin_id = int
+type level = int
 
 type term_view = ..
 (** Extensible view on terms (generalized variables).
@@ -94,6 +95,7 @@ and tc_term = {
   tct_update_watches: actions -> term -> unit; (** one of the watches was updated *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
   tct_assign: actions -> term -> unit; (** notify that the term is assigned *)
+  tct_refresh_state: level -> term -> unit; (** recompute internal {!decide_state} in new level *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
 }
 (** type class for terms, packing all operations on terms *)
@@ -248,10 +250,14 @@ and actions = {
   (** [act_propagate_bool t b l] propagates the boolean literal [t]
       assigned to boolean value [b], explained by evaluation of
       (sub)terms [l] *)
+  act_mark_dirty : term -> unit;
+  (** Mark the term as dirty because its set of unit constraints has changed.
+      It potentially has to re-compute new information from that
+      (e.g. lower/upper bounds, set of forbidden values, etc.). *)
   act_raise_conflict: 'a. atom list -> lemma -> 'a;
   (** Raise a conflict with the given clause, which must be false
       in the current trail, and with a lemma to explain *)
-  act_on_backtrack : int -> (unit -> unit) -> unit;
+  act_on_backtrack : level -> (unit -> unit) -> unit;
   (** [act_on_backtrack level f] will call [f] when the given [level]
       is backtracked *)
 }
@@ -259,13 +265,14 @@ and actions = {
     including adding clauses, registering actions to do upon
     backtracking, etc. *)
 
-let field_t_is_deleted = Term_fields.mk_field () (* term deleted during GC? *)
-let field_t_is_added = Term_fields.mk_field() (* term added to core solver? *)
-let field_t_mark_pos = Term_fields.mk_field() (* positive atom marked? *)
-let field_t_mark_neg = Term_fields.mk_field() (* negative atom marked? *)
-let field_t_seen = Term_fields.mk_field() (* term seen during some traversal? *)
-let field_t_negated = Term_fields.mk_field() (* negated term? *)
-let field_t_gc_marked = Term_fields.mk_field() (* marked for GC? *)
+let field_t_is_deleted = Term_fields.mk_field () (** term deleted during GC? *)
+let field_t_is_added = Term_fields.mk_field() (** term added to core solver? *)
+let field_t_mark_pos = Term_fields.mk_field() (** positive atom marked? *)
+let field_t_mark_neg = Term_fields.mk_field() (** negative atom marked? *)
+let field_t_seen = Term_fields.mk_field() (** term seen during some traversal? *)
+let field_t_negated = Term_fields.mk_field() (** negated term? *)
+let field_t_gc_marked = Term_fields.mk_field() (** marked for GC? *)
+let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints? *) 
 
 let field_c_attached = Clause_fields.mk_field() (* clause added to state? *)
 let field_c_visited = Clause_fields.mk_field() (* visited during some traversal? *)
@@ -277,6 +284,7 @@ let dummy_tct : tc_term = {
   tct_update_watches=(fun _ _ -> assert false);
   tct_subterms=(fun _ _ -> assert false); (** iterate on subterms *)
   tct_assign=(fun _ _ -> assert false); (** notify that the term is assigned *)
+  tct_refresh_state=(fun _ _ -> ());
   tct_eval_bool=(fun _ -> Eval_unknown);
 }
 

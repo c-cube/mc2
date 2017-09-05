@@ -73,7 +73,7 @@ type t = {
   trail : term Vec.t;
   (* main stack containing assignments (either decisions or propagations) *)
 
-  decision_levels : int Vec.t;
+  decision_levels : level Vec.t;
   (* decision levels in [trail]  *)
 
   backtrack_stack : (unit -> unit) Vec.t Vec.t;
@@ -82,8 +82,12 @@ type t = {
      [(int,unit->unit)] + side vector for offsets, and do the same
      kind of moving trick during backtracking? *)
 
-  user_levels : int Vec.t;
+  user_levels : level Vec.t;
   (* user levels in [clauses_temp] *)
+
+  dirty_terms: term Vec.t;
+  (* set of terms made dirty by backtracking, whose [decide_state]
+     must potentially be updated *)
 
   mutable elt_head : int;
   (* Start offset in the queue {!trail} of
@@ -327,6 +331,7 @@ let create_real (actions:actions lazy_t) : t = {
   backtrack_stack = Vec.make 601 (Vec.make_empty (fun () -> assert false));
   decision_levels = Vec.make 601 (-1);
   user_levels = Vec.make 10 (-1);
+  dirty_terms = Vec.make 50 dummy_term;
 
   order = H.create();
 
@@ -524,6 +529,14 @@ let cancel_until (env:t) (lvl:int) : unit =
     (* Resize the vectors according to their new size. *)
     Vec.shrink env.trail ((Vec.size env.trail) - !head);
     Vec.shrink env.decision_levels ((Vec.size env.decision_levels) - lvl);
+    (* refresh dirty variables *)
+    let lvl = decision_level env in
+    Vec.iter
+      (fun t ->
+         Term.dirty_unmark t;
+         Term.recompute_state lvl t)
+      env.dirty_terms;
+    Vec.clear env.dirty_terms;
   );
   assert (Vec.size env.decision_levels = Vec.size env.backtrack_stack);
   ()
@@ -1058,9 +1071,16 @@ let mk_actions (env:t) : actions =
     Log.debugf debug (fun k->k "Semantic propagate %a@ :val %B" Term.pp t b);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval env a l
+  and act_mark_dirty (t:term): unit =
+    if not (Term.dirty t) then (
+      Log.debugf debug (fun k->k "Mark_dirty %a" Term.pp t);
+      Term.dirty_mark t;
+      Vec.push env.dirty_terms t;
+    )
   in
   { act_on_backtrack;
     act_push_clause;
+    act_mark_dirty;
     act_raise_conflict;
     act_propagate_bool;
   }
