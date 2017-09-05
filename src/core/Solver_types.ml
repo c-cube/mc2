@@ -54,6 +54,8 @@ type ty =
 and tc_ty = {
   tcty_decide: actions -> term -> value;
   (** How to make semantic decisions for terms of this type? *)
+  tcty_eq: term -> term -> term;
+  (* how to build equalities between terms of that type *)
   tcty_pp: ty_view CCFormat.printer; (** print types *)
   tcty_mk_state: unit -> decide_state; (** decide state for a new term *)
 }
@@ -91,8 +93,7 @@ and tc_term = {
   tct_pp : term_view CCFormat.printer; (** print views of this plugin *)
   tct_update_watches: actions -> term -> unit; (** one of the watches was updated *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
-  tct_assign: actions -> term -> check_res; (** notify that the term is assigned *)
-  tct_simplify : term -> term; (** Simplify the term into some canonical form, if possible *)
+  tct_assign: actions -> term -> unit; (** notify that the term is assigned *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
 }
 (** type class for terms, packing all operations on terms *)
@@ -247,6 +248,9 @@ and actions = {
   (** [act_propagate_bool t b l] propagates the boolean literal [t]
       assigned to boolean value [b], explained by evaluation of
       (sub)terms [l] *)
+  act_raise_conflict: 'a. atom list -> lemma -> 'a;
+  (** Raise a conflict with the given clause, which must be false
+      in the current trail, and with a lemma to explain *)
   act_on_backtrack : int -> (unit -> unit) -> unit;
   (** [act_on_backtrack level f] will call [f] when the given [level]
       is backtracked *)
@@ -273,7 +277,6 @@ let dummy_tct : tc_term = {
   tct_update_watches=(fun _ _ -> assert false);
   tct_subterms=(fun _ _ -> assert false); (** iterate on subterms *)
   tct_assign=(fun _ _ -> assert false); (** notify that the term is assigned *)
-  tct_simplify=(fun t -> t);
   tct_eval_bool=(fun _ -> Eval_unknown);
 }
 

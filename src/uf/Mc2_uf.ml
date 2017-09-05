@@ -51,7 +51,6 @@ let build p_id Plugin.S_nil : Plugin.t =
         Fmt.fprintf out "(@[%a@ %a@])" ID.pp id (Util.pp_array Term.pp) args
       | _ -> assert false
 
-    let tct_simplify t = t
     let tct_eval_bool _ = Eval_unknown
 
     let[@inline] tct_subterms v yield = match v with
@@ -63,14 +62,13 @@ let build p_id Plugin.S_nil : Plugin.t =
     let tct_update_watches _ _ = ()
 
     (* TODO: check in big table if signature contradictory *)
-    let tct_assign _ _ = Sat
+    let tct_assign _ _ = ()
 
     let tc : tc_term = {
       tct_pp;
       tct_update_watches;
       tct_subterms;
       tct_assign;
-      tct_simplify;
       tct_eval_bool;
     }
 

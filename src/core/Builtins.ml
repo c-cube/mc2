@@ -36,23 +36,19 @@ let build p_id Plugin.S_nil : Plugin.t =
       | _ -> assert false
 
     (* check that [t_true] is only ever assigned to [true] *)
-    let tct_assign (_:actions) (t:term) : check_res =
-      if is_t_true t then (
-        if Term.Bool.is_true t then Sat
-        else if Term.Bool.is_false t then (
-          (* conflict clause: [true] *)
-          Unsat ([Term.Bool.pa t], lemma_true_is_true)
-        ) else (
-          assert false
-        )
-      ) else assert false
+    let tct_assign (acts:actions) (t:term) =
+      assert (is_t_true t);
+      if Term.Bool.is_false t then (
+        assert (Term.Bool.is_false t);
+        (* conflict clause: [true] *)
+        acts.act_raise_conflict [Term.Bool.pa t] lemma_true_is_true
+      )
 
     let tct_eval_bool (t:term) : eval_bool_res =
       assert (is_t_true t);
       Eval_bool (true, [])
 
     let tct_subterms _ _ = ()
-    let tct_simplify t = t
 
     let tc : tc_term = {
       tct_pp;
@@ -60,7 +56,6 @@ let build p_id Plugin.S_nil : Plugin.t =
       tct_assign;
       tct_eval_bool;
       tct_subterms;
-      tct_simplify;
     }
 
     (* the main "true" term *)

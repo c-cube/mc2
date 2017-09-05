@@ -11,6 +11,8 @@ type t = value
 val equal : t -> t -> bool
 val hash : t -> int
 val pp : t CCFormat.printer
+val view : t -> value_view
+val tc : t -> tc_value
 
 val make : tc_value -> value_view -> t
 (** Main construction for values *)

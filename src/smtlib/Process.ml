@@ -283,7 +283,7 @@ let process_stmt
         conv_bool_term (Solver.services solver) t
       in
       if pp_cnf then (
-        Format.printf "(@[<hv2>assert@ %a@])"
+        Format.printf "(@[<hv1>assert@ %a@])@."
           (Util.pp_list Clause.pp_atoms) clauses;
       );
       hyps := clauses @ !hyps;

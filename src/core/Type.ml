@@ -5,6 +5,7 @@ open Solver_types
 
 type t = ty
 type view = ty_view
+type tc = tc_ty
 
 let[@inline] view = function
   | Bool -> assert false
@@ -52,7 +53,6 @@ module type TY_ALLOC_OPS = sig
   val initial_size: int (** initial size of table *)
   val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
   val hash : view -> int (** Shallow hash of a view of the plugin *)
-  val tc : tc_ty
 end
 
 (* global ID allocator *)
@@ -73,8 +73,8 @@ module Alloc(Arg : TY_ALLOC_OPS) = struct
 
   let tbl = H.create Arg.initial_size
 
-  let make view =
-    let ty = Ty {id= ~-1; view; tc=Arg.tc } in
+  let make view tc =
+    let ty = Ty {id= ~-1; view; tc; } in
     let u = H.merge tbl ty in
     if ty == u then begin[@warning "-8"]
       let Ty v = ty in

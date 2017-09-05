@@ -5,6 +5,7 @@ open Solver_types
 
 type t = ty
 type view = ty_view
+type tc = tc_ty
 
 val equal : t -> t -> bool
 val compare : t -> t -> int
@@ -24,11 +25,9 @@ module type TY_ALLOC_OPS = sig
   val initial_size: int (** initial size of table *)
   val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
   val hash : view -> int (** Shallow hash of a view of the plugin *)
-  val tc : tc_ty
 end
 
 module Alloc(T : TY_ALLOC_OPS) : sig
-  val make : view -> t
-  (** Main constructor *)
+  val make : view -> tc -> t (** Main constructor *)
 end
 

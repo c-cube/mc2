@@ -5,6 +5,8 @@ open Solver_types
 
 type t = value
 
+let[@inline] view v = v.val_view
+let[@inline] tc v = v.val_tc
 let[@inline] equal v1 v2 = v1.val_tc.tcv_equal v1.val_view v2.val_view
 let[@inline] hash v = v.val_tc.tcv_hash v.val_view
 let[@inline] pp out v = v.val_tc.tcv_pp out v.val_view

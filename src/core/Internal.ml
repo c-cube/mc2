@@ -78,6 +78,9 @@ type t = {
 
   backtrack_stack : (unit -> unit) Vec.t Vec.t;
   (* one set of undo actions for every decision level *)
+  (* TODO: do the same as {!trail} instead? i.e. unsorted vector of
+     [(int,unit->unit)] + side vector for offsets, and do the same
+     kind of moving trick during backtracking? *)
 
   user_levels : int Vec.t;
   (* user levels in [clauses_temp] *)
@@ -298,7 +301,7 @@ let[@inline] update_watches (env:t) (t:term): unit =
 let[@inline] decide_term (env:t) (t:term): value =
   Type.decide (Term.ty t) (actions env) t
 
-let[@inline] check_assign (env:t) (t:term): check_res =
+let[@inline] check_assign (env:t) (t:term): unit =
   t.t_tc.tct_assign (actions env) t
 
 (* main building function *)
@@ -488,9 +491,11 @@ let cancel_until (env:t) (lvl:int) : unit =
     (* We set the head of the solver and theory queue to what it was. *)
     let head = ref (Vec.get env.decision_levels lvl) in
     env.elt_head <- !head;
-    env.th_head <- !head;
     (* Now we need to cleanup the vars that are not valid anymore
-       (i.e to the right of elt_head in the queue. *)
+       (i.e to the right of elt_head in the queue).
+       We do it left-to-right because that makes it easier to move
+       elements whose level is actually lower than [lvl], by just
+       moving them to [!head]. *)
     for i = env.elt_head to Vec.size env.trail - 1 do
       (* A variable is unassigned, we nedd to add it back to
          the heap of potentially assignable variables, unless it has
@@ -515,6 +520,7 @@ let cancel_until (env:t) (lvl:int) : unit =
       Vec.iter (fun f -> f()) v;
       Vec.pop env.backtrack_stack;
     done;
+    env.th_head <- !head; (* also reset theory head *)
     (* Resize the vectors according to their new size. *)
     Vec.shrink env.trail ((Vec.size env.trail) - !head);
     Vec.shrink env.decision_levels ((Vec.size env.decision_levels) - lvl);
@@ -1042,6 +1048,12 @@ let mk_actions (env:t) : actions =
   and act_push_clause (c:clause) : unit =
     Log.debugf debug (fun k->k "Pushing clause %a" Clause.debug c);
     Stack.push c env.clauses_to_add
+  and act_raise_conflict (type a) (atoms:atom list) (l:lemma): a =
+    Log.debugf debug (fun k->k "Raise conflict with clause@ %a" Clause.pp_atoms atoms);
+    env.elt_head <- Vec.size env.trail;
+    List.iter (add_atom env) atoms;
+    let c = Clause.make atoms (Lemma l) in
+    raise (Conflict c)
   and act_propagate_bool t (b:bool) (l:term list) : unit =
     Log.debugf debug (fun k->k "Semantic propagate %a@ :val %B" Term.pp t b);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
@@ -1049,6 +1061,7 @@ let mk_actions (env:t) : actions =
   in
   { act_on_backtrack;
     act_push_clause;
+    act_raise_conflict;
     act_propagate_bool;
   }
 
@@ -1101,13 +1114,8 @@ let rec theory_propagate (env:t) : clause option =
     let t = Vec.get env.trail env.th_head in
     env.th_head <- env.th_head + 1;
     begin match check_assign env t with
-      | Sat ->
-        theory_propagate env (* next *)
-      | Unsat (l, p) ->
-        (* conflict *)
-        List.iter (add_atom env) l;
-        let c = Clause.make l (Lemma p) in
-        Some c
+      | () -> theory_propagate env (* next propagation *)
+      | exception (Conflict c) -> Some c (* conflict *)
     end
   )
 
