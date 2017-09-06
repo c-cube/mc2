@@ -38,4 +38,5 @@ val process_stmt :
     @raise Incorrect_model if model is not correct
 *)
 
-
+val setup_gc : unit -> unit
+(** Change parameters of the GC *)

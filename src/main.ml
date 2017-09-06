@@ -100,7 +100,7 @@ let main () =
     Arg.usage argspec usage;
     exit 2
   );
-
+  Process.setup_gc();
   Process.with_limits
     ~time:!time_limit
     ~memory:!size_limit
