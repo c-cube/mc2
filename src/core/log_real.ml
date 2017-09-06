@@ -10,7 +10,7 @@ let debug_level_ = ref 0
 let set_debug l = debug_level_ := l
 let get_debug () = !debug_level_
 
-let debug_fmt_ = ref Format.err_formatter
+let debug_fmt_ = ref Format.std_formatter
 
 let set_debug_out f = debug_fmt_ := f
 
