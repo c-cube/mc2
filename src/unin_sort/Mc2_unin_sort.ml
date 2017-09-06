@@ -56,28 +56,11 @@ type value_view +=
 
 (* TODO: remove these complicated lemmas? *)
 
-type lemma_view +=
-  | L_eq_eq of {
-      eq1: term; (* common=a *)
-      eq2: term; (* common=b *)
-      common: term; (* common term *)
-      neq: term; (* a!=b *)
-    }
-  | L_eq_neq of {
-      eq: term; (* common=a *)
-      neq: term; (* common!=b *)
-      common: term; (* common term *)
-      eq_side: term; (* a=b *)
-    }
+type lemma_view += Transitivity
 
 let tc_lemma =
   let tcl_pp out = function
-    | L_eq_eq {eq1;eq2;common;neq} ->
-      Fmt.fprintf out "(@[<hv>eq_eq@ :eq1 %a@ :eq2 %a@ :common %a@ :neq %a@])"
-        Term.debug eq1 Term.debug eq2 Term.debug common Term.debug neq
-    | L_eq_neq {eq;neq;common;eq_side} ->
-      Fmt.fprintf out "(@[<hv>eq_neq@ :eq %a@ :neq %a@ :common %a@ :eq_side %a@])"
-        Term.debug eq Term.debug neq Term.debug common Term.debug eq_side
+    | Transitivity -> Fmt.string out "transitivity_eq"
     | _ -> assert false
   in
   { tcl_pp }
@@ -87,11 +70,11 @@ let pp_c_list out =
   let rec aux out = function
     | C_nil -> ()
     | C_singleton {v;eqn;other;tail;lvl} ->
-      if !first then first:=false else Fmt.fprintf out " ::@ ";
+      if !first then first:=false else Fmt.fprintf out "@ ";
       Fmt.fprintf out "(@[singleton :v %a@ :lvl %d@ :other %a@ :eqn %a@])%a"
         Value.pp v lvl Term.debug other Term.debug eqn aux tail
     | C_diff {v;diseqn;lvl;other;tail} ->
-      if !first then first:=false else Fmt.fprintf out " ::@ ";
+      if !first then first:=false else Fmt.fprintf out "@ ";
       Fmt.fprintf out "(@[diff :v %a@ :lvl %d@ :other %a@ :diseqn %a@])%a"
         Value.pp v lvl Term.debug other Term.debug diseqn aux tail
   in
@@ -229,11 +212,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                   Term.Bool.na eqn;
                   Term.Bool.na eqn'
                 ]
-              and lemma =
-                Lemma.make
-                  (L_eq_eq {eq1=eqn; eq2=eqn'; common=t; neq})
-                  tc_lemma
-              in
+              and lemma = Lemma.make Transitivity tc_lemma in
               Actions.raise_conflict acts conflict lemma
             | Conflict_eq_neq {other=other';diseqn} ->
               (* conflict! one singleton, one diff, same value *)
@@ -243,11 +222,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                   Term.Bool.na eqn;
                   Term.Bool.na eq_side;
                 ]
-              and lemma =
-                Lemma.make
-                  (L_eq_neq {eq=eqn; neq=diseqn; common=t; eq_side})
-                  tc_lemma
-              in
+              and lemma = Lemma.make Transitivity tc_lemma in
               Actions.raise_conflict acts conflict lemma
             | Conflict_none -> ()
           end;
@@ -277,11 +252,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                   Term.Bool.na eqn;
                   Term.Bool.na eq_side;
                 ]
-              and lemma =
-                Lemma.make
-                  (L_eq_neq {eq=eqn; neq=diseqn; common=t; eq_side})
-                  tc_lemma
-              in
+              and lemma = Lemma.make Transitivity tc_lemma in
               Actions.raise_conflict acts conflict lemma
             | Conflict_none -> ()
           end;
