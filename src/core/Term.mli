@@ -5,6 +5,7 @@ open Solver_types
 
 type view = term_view = ..
 type t = term
+type tc = tc_term
 
 (** {2 Basics} *)
 
@@ -14,6 +15,7 @@ val equal : t -> t -> bool
 val compare : t -> t -> int
 val hash : t -> int
 val pp : t CCFormat.printer
+val debug : t CCFormat.printer
 
 (** {2 ID Management} *)
 
@@ -29,6 +31,7 @@ val unmark : t -> unit (** Clear the fields of the variable. *)
 val marked : t -> bool (** Was {!mark} called on this var? *)
 
 val is_deleted : t -> bool
+val is_added : t -> bool
 val level : t -> int
 val var : t -> var
 val ty : t -> Type.t
@@ -48,6 +51,13 @@ val recompute_state : level -> t -> unit
 val weight : t -> float (** Heuristic weight *)
 val set_weight : t -> float -> unit
 
+val has_value : t -> bool
+val value : t -> term_assignment
+val value_exn : t -> value
+
+val mk_eq : t -> t -> t
+(** Use the term's type to make two terms equal *)
+
 val gc_mark : t -> unit
 val gc_unmark : t -> unit
 val gc_marked : t -> bool
@@ -63,6 +73,23 @@ val field_clear : Term_fields.field -> t -> unit
 
 val has_var : t -> bool (** is there a variable for the term? *)
 val setup_var : t -> unit (** create a variable for the term *)
+
+val iter_watches : t -> (t -> unit) -> unit
+
+val add_watch : t -> t -> unit
+(** [add_watch t u] adds [u] to the list of watches of [t]. [u] will be
+    notified whenever [t] is assigned *)
+
+(** Make a new typeclass *)
+val tc_mk :
+  ?init_watches:(actions -> term -> unit) ->
+  ?update_watches:(actions -> term -> unit) ->
+  ?subterms:( term_view -> (term->unit) -> unit) ->
+  ?refresh_state:( level -> term -> unit) ->
+  ?eval_bool :( term -> eval_bool_res) ->
+  pp:term_view CCFormat.printer ->
+  unit ->
+  tc
 
 (** {2 Bool terms} *)
 
@@ -81,13 +108,6 @@ module Bool : sig
 
   val is_true : t -> bool
   val is_false : t -> bool
-end
-
-(** {2 Semantic Terms} *)
-
-module Semantic : sig
-  val has_value : t -> bool
-  val value : t -> semantic_assignment
 end
 
 (** {2 Assignment view} *)

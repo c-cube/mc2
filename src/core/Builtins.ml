@@ -27,35 +27,27 @@ let build p_id Plugin.S_nil : Plugin.t =
     let id = p_id
     let name = name
 
-    let tct_pp out = function
+    let pp out = function
       | True -> Fmt.string out "true"
       | _ -> assert false
 
-    let tct_is_absurd (a:atom) = match Term.view (Atom.term a) with
-      | True -> not (Atom.is_pos a)
-      | _ -> assert false
+    (* self-watch *)
+    let init_watches _ t = Term.add_watch t t
 
     (* check that [t_true] is only ever assigned to [true] *)
-    let tct_assign (acts:actions) (t:term) =
+    let update_watches acts t =
       assert (is_t_true t);
       if Term.Bool.is_false t then (
         assert (Term.Bool.is_false t);
         (* conflict clause: [true] *)
-        acts.act_raise_conflict [Term.Bool.pa t] lemma_true_is_true
+        Actions.raise_conflict acts [Term.Bool.pa t] lemma_true_is_true
       )
 
-    let tct_eval_bool (t:term) : eval_bool_res =
+    let eval_bool (t:term) : eval_bool_res =
       assert (is_t_true t);
       Eval_bool (true, [])
 
-    let tc : tc_term = {
-      tct_pp;
-      tct_update_watches=(fun _ _ -> ());
-      tct_refresh_state=(fun _ _ -> ());
-      tct_assign;
-      tct_eval_bool;
-      tct_subterms=(fun _ _ -> ());
-    }
+    let tc : tc_term = Term.tc_mk ~eval_bool ~init_watches ~update_watches ~pp ()
 
     (* the main "true" term *)
     let t_true : term = Term.Unsafe.make_term p_id True Type.bool tc

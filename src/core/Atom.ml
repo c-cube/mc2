@@ -20,26 +20,38 @@ let[@inline] abs (a:t) : t = match a.a_term.t_var with
   | Var_bool { pa; _ } -> pa
   | Var_none | Var_semantic _ -> assert false
 
-let[@inline] value (a:t) : bool_assignment = match a.a_term.t_var with
-  | Var_bool {b_value;_} -> b_value
+let[@inline] value (a:t) : term_assignment = a.a_term.t_value
+let[@inline] value_exn (a:t) : value = match value a with
+  | TA_none -> assert false
+  | TA_assign {value;_} -> value
+
+let[@inline] value_bool (a:t): bool option = match value a with
+  | TA_none -> None
+  | TA_assign{value=V_true;_} -> Some true
+  | TA_assign{value=V_false;_} -> Some false
   | _ -> assert false
 
-let[@inline] is_true (a:t): bool = match a.a_term.t_var with
-  | Var_bool {b_value=B_true _;pa;_} when a==pa -> true
-  | Var_bool {b_value=B_false _;na;_} when a==na -> true
+let[@inline] value_bool_exn (a:t): bool = match value a with
+  | TA_assign{value=V_true;_} -> true
+  | TA_assign{value=V_false;_} -> false
+  | _ -> assert false
+
+let[@inline] is_true (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
+  | TA_assign{value=V_true; _}, Var_bool{pa;_} when a==pa -> true
+  | TA_assign{value=V_false;_}, Var_bool{na;_} when a==na -> true
   | _ -> false
 
-let[@inline] is_false (a:t): bool = match a.a_term.t_var with
-  | Var_bool {b_value=B_true _;na;_} when a==na -> true
-  | Var_bool {b_value=B_false _;pa;_} when a==pa -> true
+let[@inline] is_false (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
+  | TA_assign{value=V_true; _}, Var_bool{na;_} when a==na -> true
+  | TA_assign{value=V_false;_}, Var_bool{pa;_} when a==pa -> true
   | _ -> false
 
 let[@inline] is_undef (a:t): bool = match value a with
-  | B_none -> true
+  | TA_none -> true
   | _ -> false
 
-let[@inline] reason (a:t) = match a.a_term.t_var with
-  | Var_bool {b_value=(B_true r|B_false r); _} -> Some r
+let[@inline] reason (a:t) = match a.a_term.t_value with
+  | TA_assign{reason;_} -> Some reason
   | _ -> None
 
 let[@inline] term (a:t) = a.a_term
@@ -74,13 +86,11 @@ let pp_value fmt a =
     Format.fprintf fmt "T%a" pp_level a
   else if is_true (neg a) then
     Format.fprintf fmt "F%a" pp_level a
-  else
-    Format.fprintf fmt ""
 
 let debug out a =
-  let sign = if is_pos a then "+" else "-" in
-  Format.fprintf out "%s%d[%a][atom:@[<hov>%a@]]"
-    sign (a.a_term.t_id+1) pp_value a Term.pp a.a_term
+  let sign = if is_pos a then "" else "¬" in
+  Format.fprintf out "%s%a[%d][%a]"
+    sign Term.pp a.a_term a.a_term.t_id pp_value a 
 
 let pp out a =
   let sign = if is_pos a then "" else "¬" in

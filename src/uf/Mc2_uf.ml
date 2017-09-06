@@ -45,37 +45,32 @@ let build p_id Plugin.S_nil : Plugin.t =
           | _ -> assert false
       end)
 
-    let tct_pp out = function
+    let pp out = function
       | Const {id;_} -> ID.pp out id
       | App {id;args;_} ->
         Fmt.fprintf out "(@[%a@ %a@])" ID.pp id (Util.pp_array Term.pp) args
       | _ -> assert false
 
-    let tct_eval_bool _ = Eval_unknown
+    let eval_bool _ = Eval_unknown
 
-    let[@inline] tct_subterms v yield = match v with
+    let[@inline] subterms v yield = match v with
       | Const _ -> ()
       | App {args; _} -> Array.iter yield args
       | _ -> assert false
 
     (* TODO: 1-watch on [arg_1,…,arg_n, f(args) *)
-    let tct_update_watches _ _ = ()
+    let update_watches _ _ = ()
 
-    (* TODO: check in big table if signature contradictory *)
-    let tct_assign _ _ = ()
+    (* TODO: 1-watch on [arg_1,…,arg_n, f(args) *)
+    let init_watches _ _ = ()
 
     (* TODO: update signature table entries for this term, removing the
        ones that are above level *)
-    let tct_refresh_state _ _ = ()
+    let refresh_state _ _ = ()
 
-    let tc : tc_term = {
-      tct_pp;
-      tct_update_watches;
-      tct_subterms;
-      tct_refresh_state;
-      tct_assign;
-      tct_eval_bool;
-    }
+    let tc : tc_term =
+      Term.tc_mk ~pp ~update_watches ~init_watches ~subterms
+        ~refresh_state ~eval_bool ()
 
     let check_if_sat _ = Sat
     let gc_all = T_alloc.gc_all

@@ -18,21 +18,12 @@ module F = Tseitin.Make(Atom)
 type term_view += Fresh of int
 
 (* printer for terms *)
-let tct_pp out = function
+let pp out = function
   | Fresh i -> Fmt.fprintf out "_A%d" i
   | _ -> assert false
 
-let tct_update_watches _ _ = assert false (* never called *)
-let tct_subterms _ _ = ()
-let tct_refresh_state _ _ = ()
-let tct_assign _ _ = assert false (* never called *)
-let tct_eval_bool _ = Eval_unknown (* no subterms *)
-
 (* typeclass for terms *)
-let t_tc : tc_term = {
-  tct_pp; tct_update_watches; tct_subterms; tct_assign;
-  tct_eval_bool; tct_refresh_state;
-}
+let t_tc : tc_term = Term.tc_mk ~pp ()
 
 let k_cnf = Service.Key.make "propositional.cnf"
 let k_fresh = Service.Key.make "propositional.fresh"

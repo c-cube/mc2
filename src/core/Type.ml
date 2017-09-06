@@ -49,6 +49,17 @@ let[@inline] mk_decide_state (ty:t) : decide_state = match ty with
   | Bool -> assert false
   | Ty {tc; _} -> tc.tcty_mk_state()
 
+let[@inline] mk_eq (ty:t) t u : term = match ty with
+  | Bool -> assert false
+  | Ty {tc; _} -> tc.tcty_eq t u
+
+let tc_mk ~decide ~eq ~mk_state ~pp () : tc =
+  { tcty_decide=decide;
+    tcty_eq=eq;
+    tcty_mk_state=mk_state;
+    tcty_pp=pp;
+  }
+
 module type TY_ALLOC_OPS = sig
   val initial_size: int (** initial size of table *)
   val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)

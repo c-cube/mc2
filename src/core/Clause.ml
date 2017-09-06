@@ -58,6 +58,7 @@ let pp out c =
   Format.fprintf out "(@[<hv>%a: %a@])" pp_name c pp_atoms c.c_atoms
 
 let pp_atoms out = Format.fprintf out "(@[%a@])" (Util.pp_list ~sep:" ∨ " Atom.pp)
+let debug_atoms out = Format.fprintf out "(@[%a@])" (Util.pp_list ~sep:" ∨ " Atom.debug)
 
 let debug out ({c_atoms; c_premise=cp; _} as c) =
   let pp_atoms_vec out = Util.pp_array ~sep:" ∨ " Atom.debug out in

@@ -40,6 +40,8 @@ val clear : 'a t -> unit
 (** Set size to 0, doesn't free elements *)
 
 val shrink : 'a t -> int -> unit
+(** [shrink vec sz] resets size of [vec] to [sz].
+    Assumes [sz >=0 && sz <= size vec] *)
 
 val pop : 'a t -> unit
 (** Pop last element

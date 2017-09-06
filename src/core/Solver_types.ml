@@ -76,6 +76,8 @@ and term = {
   mutable t_level : int; (** Decision level of the assignment *)
   mutable t_var: var;
   (** The "generalized variable" part, for assignments. *)
+  mutable t_watches : term Vec.t lazy_t; (** terms that watch this term *)
+  mutable t_value: term_assignment; (** current assignment *)
 }
 (** Main term representation. A {!term}, contains almost all information
     necessary to process it, including:
@@ -92,9 +94,9 @@ and term = {
 
 and tc_term = {
   tct_pp : term_view CCFormat.printer; (** print views of this plugin *)
+  tct_init_watches: actions -> term -> unit; (** called when term is added *)
   tct_update_watches: actions -> term -> unit; (** one of the watches was updated *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
-  tct_assign: actions -> term -> unit; (** notify that the term is assigned *)
   tct_refresh_state: level -> term -> unit; (** recompute internal {!decide_state} in new level *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
 }
@@ -124,13 +126,27 @@ and check_res =
       theory tautology (with its proof), for which every literal is false
       under the current assumptions. *)
 
+and value =
+  | V_true
+  | V_false
+  | V_value of {
+      view: value_view; (** Actual shape of the value *)
+      tc: tc_value; (** typeclass for values *)
+    }
+  (** A semantic value, part of the model's domain.
+      For arithmetic, it would
+      be a number; for arrays, a finite map + default value; etc.
+      Note that terms map to values in the model but that values are
+      not necessarily normal "terms" (i.e. generalized variables in
+      the MCSat sense).
+  *)
+(** A value, either boolean or semantic *)
+
 (** The "generalized variable" part of a term, containing the
     current assignment, watched literals/terms, etc. *)
 and var =
   (** Semantic variable *)
   | Var_semantic of {
-      mutable v_value : semantic_assignment; (** Assignment *)
-      mutable v_watched : term Vec.t; (** watched terms *)
       mutable v_decide_state: decide_state; (** used for decisions/assignments *)
     }
 
@@ -138,8 +154,6 @@ and var =
   | Var_bool of {
       pa : atom; (** Link for the positive atom *)
       na : atom; (** Link for the negative atom *)
-      mutable b_value : bool_assignment;
-      (** Is the atom true ? Conversely, the atom is false iff a.neg.is_true *)
     }
   | Var_none (** Not a variable yet (not added) *)
 
@@ -154,18 +168,12 @@ and atom = {
     [a.neg] wraps the theory negation of [f]. *)
 
 (** The value and reason for propagation/decision of the term *)
-and semantic_assignment =
-  | V_none
-  | V_assign of {
+and term_assignment =
+  | TA_none
+  | TA_assign of {
       value: value;
       reason: reason;
     }
-
-(** Boolean assignment *)
-and bool_assignment =
-  | B_none
-  | B_true of reason
-  | B_false of reason
 
 and clause = {
   c_name : int; (** Clause name, mainly for printing, unique. *)
@@ -179,17 +187,6 @@ and clause = {
 }
 (** The type of clauses. Each clause generated should be true, i.e. enforced
     by the current problem (for more information, see the cpremise field). *)
-
-and value = {
-  val_view: value_view; (** Actual shape of the value *)
-  val_tc: tc_value; (** typeclass for values *)
-}
-(** A semantic value, part of the model's domain. For arithmetic, it would
-    be a number; for arrays, a finite map + default value; etc.
-    Note that terms map to values in the model but that values are
-    not necessarily normal "terms" (i.e. generalized variables in
-    the MCSat sense).
-*)
 
 and tc_value = {
   tcv_pp : value_view CCFormat.printer; (** printer *)
@@ -246,10 +243,13 @@ and tc_lemma = {
 and actions = {
   act_push_clause : clause -> unit;
   (** push a new clause *)
-  act_propagate_bool : term -> bool -> term list -> unit;
+  act_level : unit -> level;
+  (** access current decision level *)
+  act_propagate_bool : term -> bool -> subs:term list -> unit;
   (** [act_propagate_bool t b l] propagates the boolean literal [t]
       assigned to boolean value [b], explained by evaluation of
-      (sub)terms [l] *)
+      (sub)terms [l]
+      @param subs subterms used for the propagation *)
   act_mark_dirty : term -> unit;
   (** Mark the term as dirty because its set of unit constraints has changed.
       It potentially has to re-compute new information from that
@@ -272,23 +272,25 @@ let field_t_mark_neg = Term_fields.mk_field() (** negative atom marked? *)
 let field_t_seen = Term_fields.mk_field() (** term seen during some traversal? *)
 let field_t_negated = Term_fields.mk_field() (** negated term? *)
 let field_t_gc_marked = Term_fields.mk_field() (** marked for GC? *)
-let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints? *) 
+let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints? *)
 
 let field_c_attached = Clause_fields.mk_field() (* clause added to state? *)
 let field_c_visited = Clause_fields.mk_field() (* visited during some traversal? *)
 
 type term_view += Dummy
 
-let dummy_tct : tc_term = {
+let tct_default : tc_term = {
   tct_pp=(fun _ _ -> assert false);
-  tct_update_watches=(fun _ _ -> assert false);
-  tct_subterms=(fun _ _ -> assert false); (** iterate on subterms *)
-  tct_assign=(fun _ _ -> assert false); (** notify that the term is assigned *)
+  tct_init_watches=(fun _ _ -> ());
+  tct_update_watches=(fun _ _ -> ());
+  tct_subterms=(fun _ _ -> ());
   tct_refresh_state=(fun _ _ -> ());
   tct_eval_bool=(fun _ -> Eval_unknown);
 }
 
-let dummy_term : term = {
+let dummy_tct : tc_term = tct_default
+
+let rec dummy_term : term = {
   t_id= ~-1;
   t_tc=dummy_tct;
   t_idx= ~-1;
@@ -298,6 +300,8 @@ let dummy_term : term = {
   t_weight= -1.;
   t_level= -1;
   t_var=Var_none;
+  t_watches=lazy (Vec.make_empty dummy_term);
+  t_value=TA_none;
 }
 
 let dummy_clause : clause = {

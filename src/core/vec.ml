@@ -47,7 +47,7 @@ let clear s = s.sz <- 0
 let shrink t i =
   assert (i >= 0);
   assert (i<=t.sz);
-  t.sz <- t.sz - i
+  t.sz <- i
 
 let[@inline] pop t =
   if t.sz = 0 then invalid_arg "vec.pop";

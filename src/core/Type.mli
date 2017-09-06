@@ -18,6 +18,16 @@ val id : t -> int (** on non-bool *)
 val view : t -> view (** on non-bool *)
 val decide : t -> actions -> term -> value (** on non-bool *)
 val mk_decide_state : t -> decide_state (** on non-bool *)
+val mk_eq : t -> term -> term -> term (** on non-bool *)
+
+(** Build a typeclass *)
+val tc_mk :
+  decide:(actions -> term -> value) ->
+  eq:(term -> term -> term) ->
+  mk_state:(unit -> decide_state) ->
+  pp:view CCFormat.printer ->
+  unit ->
+  tc
 
 val bool : t
 

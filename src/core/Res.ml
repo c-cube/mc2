@@ -13,7 +13,7 @@ exception Resolution_error of string
 let error = 1
 let warn = 3
 let info = 10
-let debug = 80
+let debug = 15
 
 let merge = List.merge Atom.compare
 
@@ -115,14 +115,10 @@ let rec set_atom_proof a =
         let r = History (c :: (Array.fold_left aux [] c.c_atoms)) in
         let c' = Clause.make [Atom.neg a] r in
         (* update reason *)
-        begin match a.a_term.t_var with
-          | Var_bool v ->
-            begin match v.b_value with
-              | B_true _ -> v.b_value <- B_true (Bcp c')
-              | B_false _ -> v.b_value <- B_false (Bcp c')
-              | B_none -> assert false
-            end
-          | _ -> assert false
+        begin match a.a_term.t_value with
+          | TA_none -> assert false
+          | TA_assign{value;_} ->
+            a.a_term.t_value <- TA_assign{value;reason=Bcp c'}
         end;
         Log.debugf debug
           (fun k -> k "New reason: @[%a@ %a@]" Atom.debug a Clause.debug c');
