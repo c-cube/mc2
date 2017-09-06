@@ -53,10 +53,18 @@ let[@inline] mk_eq (ty:t) t u : term = match ty with
   | Bool -> assert false
   | Ty {tc; _} -> tc.tcty_eq t u
 
-let tc_mk ~decide ~eq ~mk_state ~pp () : tc =
+let[@inline] refresh_state (ty:t) lvl t : unit = match ty with
+  | Bool -> assert false
+  | Ty {tc; _} -> tc.tcty_refresh_state lvl t
+
+let tc_mk
+    ?(refresh_state=fun _ _ -> ())
+    ~decide ~eq ~mk_state ~pp
+    () : tc =
   { tcty_decide=decide;
     tcty_eq=eq;
     tcty_mk_state=mk_state;
+    tcty_refresh_state=refresh_state;
     tcty_pp=pp;
   }
 

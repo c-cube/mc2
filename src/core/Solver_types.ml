@@ -55,6 +55,7 @@ type ty =
 and tc_ty = {
   tcty_decide: actions -> term -> value;
   (** How to make semantic decisions for terms of this type? *)
+  tcty_refresh_state: level -> term -> unit; (** recompute internal {!decide_state} in new level *)
   tcty_eq: term -> term -> term;
   (* how to build equalities between terms of that type *)
   tcty_pp: ty_view CCFormat.printer; (** print types *)
@@ -97,7 +98,6 @@ and tc_term = {
   tct_init_watches: actions -> term -> unit; (** called when term is added *)
   tct_update_watches: actions -> term -> unit; (** one of the watches was updated *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
-  tct_refresh_state: level -> term -> unit; (** recompute internal {!decide_state} in new level *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
 }
 (** type class for terms, packing all operations on terms *)
@@ -284,7 +284,6 @@ let tct_default : tc_term = {
   tct_init_watches=(fun _ _ -> ());
   tct_update_watches=(fun _ _ -> ());
   tct_subterms=(fun _ _ -> ());
-  tct_refresh_state=(fun _ _ -> ());
   tct_eval_bool=(fun _ -> Eval_unknown);
 }
 

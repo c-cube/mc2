@@ -516,22 +516,20 @@ let cancel_until (env:t) (lvl:int) : unit =
         t.t_value <- TA_none; (* reset value *)
       )
     done;
+    env.th_head <- !head; (* also reset theory head *)
+    (* Resize the vectors according to their new size. *)
+    Vec.shrink env.trail !head;
+    Vec.shrink env.decision_levels lvl;
     (* call undo-actions registered by plugins *)
     while Vec.size env.backtrack_stack > lvl do
       let v = Vec.last env.backtrack_stack in
       Vec.iter (fun f -> f()) v;
       Vec.pop env.backtrack_stack;
     done;
-    env.th_head <- !head; (* also reset theory head *)
-    (* Resize the vectors according to their new size. *)
-    Vec.shrink env.trail !head;
-    Vec.shrink env.decision_levels lvl;
     (* refresh dirty variables *)
     let lvl = decision_level env in
     Vec.iter
-      (fun t ->
-         Term.dirty_unmark t;
-         Term.recompute_state lvl t)
+      (fun t -> Term.dirty_unmark t; Term.recompute_state lvl t)
       env.dirty_terms;
     Vec.clear env.dirty_terms;
   );
@@ -1091,7 +1089,7 @@ let mk_actions (env:t) : actions =
     let c = Clause.make atoms (Lemma lemma) in
     raise (Conflict c)
   and act_propagate_bool t (b:bool) ~(subs:term list) : unit =
-    Log.debugf debug (fun k->k "Semantic propagate %a@ :val %B@ :subs %a"
+    Log.debugf debug (fun k->k "(@[<hv>Semantic propagate %a@ :val %B@ :subs %a@])"
         Term.debug t b CCFormat.Dump.(list Term.debug) subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval env a subs

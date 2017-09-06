@@ -64,13 +64,9 @@ let build p_id Plugin.S_nil : Plugin.t =
     (* TODO: 1-watch on [arg_1,…,arg_n, f(args) *)
     let init_watches _ _ = ()
 
-    (* TODO: update signature table entries for this term, removing the
-       ones that are above level *)
-    let refresh_state _ _ = ()
-
     let tc : tc_term =
       Term.tc_mk ~pp ~update_watches ~init_watches ~subterms
-        ~refresh_state ~eval_bool ()
+        ~eval_bool ()
 
     let check_if_sat _ = Sat
     let gc_all = T_alloc.gc_all

@@ -85,7 +85,6 @@ val tc_mk :
   ?init_watches:(actions -> term -> unit) ->
   ?update_watches:(actions -> term -> unit) ->
   ?subterms:( term_view -> (term->unit) -> unit) ->
-  ?refresh_state:( level -> term -> unit) ->
   ?eval_bool :( term -> eval_bool_res) ->
   pp:term_view CCFormat.printer ->
   unit ->

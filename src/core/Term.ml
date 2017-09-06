@@ -66,7 +66,7 @@ let[@inline] reason t = match value t with
   | TA_assign{reason;_} -> Some reason
 
 let[@inline] recompute_state (lvl:level) (t:t) : unit =
-  t.t_tc.tct_refresh_state lvl t
+  Type.refresh_state (ty t) lvl t
 
 (** {2 Assignment view} *)
 
@@ -145,13 +145,11 @@ let tc_mk
     ?(init_watches=fun _ _ -> ())
     ?(update_watches=fun _ _ -> ())
     ?(subterms=fun _ _ -> ())
-    ?(refresh_state=fun _ _ -> ())
     ?(eval_bool=fun _ -> Eval_unknown)
     ~pp
     () : tc =
   { tct_init_watches=init_watches;
     tct_update_watches=update_watches;
-    tct_refresh_state=refresh_state;
     tct_subterms=subterms;
     tct_pp=pp;
     tct_eval_bool=eval_bool;
