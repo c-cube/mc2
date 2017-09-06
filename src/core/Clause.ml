@@ -55,14 +55,14 @@ let[@inline] pp_name out c =
   Format.fprintf out "%s%d" (Premise.prefix c.c_premise) c.c_name
 
 let pp out c =
-  Format.fprintf out "(@[<hv>%a: %a@])" pp_name c pp_atoms c.c_atoms
+  Format.fprintf out "(@[<hv>%a:@ %a@])" pp_name c pp_atoms c.c_atoms
 
-let pp_atoms out = Format.fprintf out "(@[%a@])" (Util.pp_list ~sep:" ∨ " Atom.pp)
-let debug_atoms out = Format.fprintf out "(@[%a@])" (Util.pp_list ~sep:" ∨ " Atom.debug)
+let pp_atoms out = Format.fprintf out "(@[<hv>%a@])" (Util.pp_list ~sep:" ∨ " Atom.pp)
+let debug_atoms out = Format.fprintf out "(@[<hv>%a@])" (Util.pp_list ~sep:" ∨ " Atom.debug)
 
 let debug out ({c_atoms; c_premise=cp; _} as c) =
   let pp_atoms_vec out = Util.pp_array ~sep:" ∨ " Atom.debug out in
-  Format.fprintf out "%a@[<hov>{@[<hv>%a@]}@ cpremise={@[<hov>%a@]}@]"
+  Format.fprintf out "%a@[<hv>{@[<hv>%a@]}@ cpremise={@[<hov>%a@]}@]"
     pp_name c pp_atoms_vec c_atoms Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =

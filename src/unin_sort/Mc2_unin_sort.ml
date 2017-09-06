@@ -42,6 +42,8 @@ type term_view +=
 type value_view +=
   | V_unin of int
 
+(* TODO: remove these complicated lemmas? *)
+
 type lemma_view +=
   | L_eq_eq of {
       eq1: term; (* common=a *)
@@ -69,12 +71,15 @@ let tc_lemma =
   { tcl_pp }
 
 let pp_c_list out =
+  let first=ref true in
   let rec aux out = function
   | C_nil -> ()
   | C_singleton (v,eqn,tail) ->
-    Fmt.fprintf out "(@[singleton %a@ [%a]@]) ::@ %a" Value.pp v Term.debug eqn aux tail
+    if !first then first:=false else Fmt.fprintf out " ::@ ";
+    Fmt.fprintf out "(@[singleton %a@ [%a]@])%a" Value.pp v Term.debug eqn aux tail
   | C_diff (v,eqn,tail) ->
-    Fmt.fprintf out "(@[diff %a@ [%a]@]) ::@ %a" Value.pp v Term.debug eqn aux tail
+    if !first then first:=false else Fmt.fprintf out " ::@ ";
+    Fmt.fprintf out "(@[diff %a@ [%a]@])%a" Value.pp v Term.debug eqn aux tail
   in
   Fmt.fprintf out "{@[<hv>%a@]}" aux
 

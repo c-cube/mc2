@@ -24,6 +24,7 @@ val reason : t -> reason option
 val is_true : t -> bool (** True in current model? *)
 val is_false : t -> bool
 val is_undef : t -> bool
+val has_value : t -> bool
 
 val term : t -> term
 val watched : t -> clause Vec.t

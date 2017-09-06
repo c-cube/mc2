@@ -49,6 +49,9 @@ let[@inline] is_false (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
 let[@inline] is_undef (a:t): bool = match value a with
   | TA_none -> true
   | _ -> false
+let[@inline] has_value (a:t): bool = match value a with
+  | TA_assign _ -> true
+  | TA_none -> false
 
 let[@inline] reason (a:t) = match a.a_term.t_value with
   | TA_assign{reason;_} -> Some reason

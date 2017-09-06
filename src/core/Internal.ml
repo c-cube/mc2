@@ -5,6 +5,7 @@ Copyright 2014 Simon Cruanes
 *)
 
 open Solver_types
+module Fmt = CCFormat
 
 type proof = Res.proof
 
@@ -821,6 +822,7 @@ let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
       ) else (
         let uclause = Clause.make_arr cr.cr_learnt (History cr.cr_history) in
         Vec.push env.clauses_learnt uclause;
+        Log.debugf debug (fun k->k "(@[learn_clause_0:@ %a@])" Clause.debug uclause);
         (* no need to attach [uclause], it is true at level 0 *)
         enqueue_bool env fuip ~level:0 (Bcp uclause)
       )
@@ -828,6 +830,7 @@ let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
       let fuip = c_learnt.(0) in
       let lclause = Clause.make_arr c_learnt (History cr.cr_history) in
       Vec.push env.clauses_learnt lclause;
+      Log.debugf debug (fun k->k "(@[learn_clause:@ %a@])" Clause.debug lclause);
       attach_clause env lclause;
       bump_clause_activity env lclause;
       if cr.cr_is_uip then (
@@ -1041,26 +1044,25 @@ let propagate_atom (env:t) (a:atom) (res:clause option ref) : unit =
   end;
   ()
 
-(* [a] is part of a conflict clause, but might not be evaluated yet.
+let debug_eval_bool out = function
+  | Eval_unknown -> Fmt.string out "unknown"
+  | Eval_bool (b, subs) ->
+    Fmt.fprintf out "(@[<hv>%B@ :subs (@[%a@])@])" b (Util.pp_list Term.debug) subs
+
+(* [a] is part of a conflict/learnt clause, but might not be evaluated yet.
    Evaluate it, save its value, and ensure it is indeed false. *)
-let eval_atom_to_false (env:t) atoms (a:atom): unit =
-  if not (Term.has_value a.a_term) then (
-    Log.debugf debug (fun k->k "(@[atom_must_be_false@ %a@])" Atom.debug a);
-    begin match Term.eval_bool a.a_term, Atom.is_pos a with
-      | Eval_unknown, _ ->
-        Log.debugf 0 (fun k->k
-            "(@[raise_conflict: :in %a@ :atom-not-evaluated %a@])"
-            Clause.debug_atoms atoms Atom.debug a);
-        assert false
-      | Eval_bool (true, _), true
-      | Eval_bool (false, _), false ->
-        Log.debugf 0 (fun k->k
-            "(@[raise_conflict: :in %a@ :atom-is-true %a@])"
-            Clause.debug_atoms atoms Atom.debug a);
-        assert false
+let eval_atom_to_false (env:t) (a:atom): unit =
+  if Atom.has_value a then (
+    assert (Atom.is_false a);
+  ) else (
+    let v = Term.eval_bool a.a_term in
+    Log.debugf debug (fun k->k "(@[atom_must_be_false@ %a@ :eval_to %a@])"
+        Atom.debug a debug_eval_bool v);
+    begin match v, Atom.is_pos a with
       | Eval_bool (false, subs), true
       | Eval_bool (true, subs), false ->
         enqueue_semantic_bool_eval env (Atom.neg a) subs
+      | _ -> assert false
     end
   )
 
@@ -1084,7 +1086,7 @@ let mk_actions (env:t) : actions =
     List.iter
       (fun a ->
          add_atom env a;
-         eval_atom_to_false env atoms a)
+         eval_atom_to_false env a)
       atoms;
     let c = Clause.make atoms (Lemma lemma) in
     raise (Conflict c)
