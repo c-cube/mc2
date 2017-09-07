@@ -155,8 +155,7 @@ type t = {
   mutable decisions : int;
   mutable propagations : int;
   mutable conflicts : int;
-  mutable clauses_literals : int;
-  mutable learnts_literals : int;
+  mutable n_learnt : int;
   mutable nb_init_clauses : int;
 }
 
@@ -360,8 +359,7 @@ let create_real (actions:actions lazy_t) : t = {
   decisions = 0;
   propagations = 0;
   conflicts = 0;
-  clauses_literals = 0;
-  learnts_literals = 0;
+  n_learnt=0;
   nb_init_clauses = 0;
 }
 
@@ -608,6 +606,7 @@ let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   a.a_term.t_value <- TA_assign{value;reason};
   a.a_term.t_level <- lvl;
   Vec.push env.trail a.a_term;
+  env.propagations <- env.propagations + 1;
   Log.debugf debug
     (fun k->k "Enqueue (%d/%d): %a" (Vec.size env.trail)(decision_level env) Atom.debug a);
   ()
@@ -862,6 +861,7 @@ let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
     | [||] -> assert false
     | [|fuip|] ->
       assert (cr.cr_backtrack_lvl = 0);
+      env.n_learnt <- env.n_learnt + 1;
       if Atom.is_false fuip then (
         report_unsat env confl
       ) else (
@@ -1576,4 +1576,11 @@ let history env = env.clauses_learnt
 let temp env = env.clauses_temp
 
 let trail env = env.trail
+
+(* stats *)
+
+let pp_stats out (s:t): unit =
+  Fmt.fprintf out
+    ":n_conflicts %d@ :n_learnt %d@ :n_decisions %d@ :n_restarts %d"
+    s.conflicts s.n_learnt s.decisions s.starts
 

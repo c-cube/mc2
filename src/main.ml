@@ -20,6 +20,7 @@ let p_dot_proof = ref ""
 let p_proof_print = ref false
 let time_limit = ref 300.
 let size_limit = ref 1000_000_000.
+let p_stat = ref false
 
 (* TODO: remove the functor, there will be only one input *)
 (* TODO: uniform typing interface for dimacs/smtlib *)
@@ -84,6 +85,7 @@ let argspec = Arg.align [
     " If provided, print the dot proof in the given file";
     "-gc", Arg.Unit setup_gc_stat,
     " Outputs statistics about the GC";
+    "-stat", Arg.Set p_stat, " Print statistics";
     "-size", Arg.String (int_arg size_limit),
     "<s>[kMGT] Sets the size limit for the sat solver";
     "-time", Arg.String (int_arg time_limit),
@@ -101,21 +103,21 @@ let main () =
     exit 2
   );
   Process.setup_gc();
-  Process.with_limits
+  let solver =
+    Solver.create
+      ~plugins:[
+        Mc2_propositional.plugin;
+        Mc2_unin_sort.plugin;
+        Mc2_uf.plugin;
+      ] ()
+  in
+  let res = Process.with_limits
     ~time:!time_limit
     ~memory:!size_limit
     (fun () ->
        (* parse pb *)
        Mc2_smtlib.Ast.parse !file >>= fun input ->
        (* TODO: parse list of plugins on CLI *)
-       let solver =
-         Solver.create
-           ~plugins:[
-             Mc2_propositional.plugin;
-             Mc2_unin_sort.plugin;
-             Mc2_uf.plugin;
-           ] ()
-       in
        (* process statements *)
        try
          let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
@@ -124,6 +126,9 @@ let main () =
            () input
        with Exit ->
          E.return())
+  in
+  if !p_stat then Solver.pp_stats solver;
+  res
 
 let () = match main() with
   | E.Ok () -> ()

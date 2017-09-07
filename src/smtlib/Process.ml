@@ -213,8 +213,9 @@ module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
 (* call the solver to check-sat *)
 let solve ?dot_proof ~assumptions s : unit =
+  let t1 = Sys.time() in
   let res = Solver.solve s ~assumptions in
-  let t = Sys.time () in
+  let t2 = Sys.time () in
   begin match res with
     | Solver.Sat state ->
       if !p_check then (
@@ -222,8 +223,8 @@ let solve ?dot_proof ~assumptions s : unit =
           raise Incorrect_model;
         )
       );
-      let t' = Sys.time () -. t in
-      Format.printf "Sat (%f/%f)@." t t';
+      let t' = Sys.time () -. t2 in
+      Format.printf "Sat (%f/%f)@." t2 t';
     | Solver.Unsat state ->
       if !p_check then (
         let p = Solver.Unsat_state.get_proof state in
@@ -239,8 +240,8 @@ let solve ?dot_proof ~assumptions s : unit =
                  Format.pp_print_flush fmt (); flush oc)
         end
       );
-      let t' = Sys.time () -. t in
-      Format.printf "Unsat (%f/%f)@." t t';
+      let t3 = Sys.time () -. t2 in
+      Format.printf "Unsat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
   end
 
 (* process a single statement *)

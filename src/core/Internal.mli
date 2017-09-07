@@ -141,3 +141,5 @@ val temp : t -> clause Vec.t
 val history : t -> clause Vec.t
 (** Returns the history of learnt clauses, with no guarantees on order.
     {b DO NOT MUTATE} *)
+
+val pp_stats : t CCFormat.printer

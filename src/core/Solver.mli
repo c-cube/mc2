@@ -120,3 +120,6 @@ type res =
 
 val solve : ?assumptions:atom list -> t -> res
 (** Try and solves the current set of assumptions. *)
+
+val pp_stats : t -> unit
+(** Print stats on stdout *)
