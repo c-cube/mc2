@@ -11,8 +11,6 @@
 (*                                                                        *)
 (**************************************************************************)
 
-module V = Sparse_vec
-
 module type RANKED = Heap_intf.RANKED
 
 module type S = Heap_intf.S
