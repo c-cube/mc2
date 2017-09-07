@@ -220,11 +220,6 @@ let[@inline] is_unsat t = match t.unsat_conflict with
   | Some _ -> true
   | None -> false
 
-(* FIXME: remove this? just do it unconditionally, and simple cases like
-   SAT will just not iterate at all.
-   NOTE: might not even be useful, or maybe should be done when the
-   term is activated *)
-
 (* iterate on all active terms *)
 let[@inline] iter_terms (env:t) : term Sequence.t =
   CCVector.to_seq env.plugins
@@ -240,21 +235,19 @@ let[@inline] update_watches (env:t) (t:term): unit =
 
 (* provision term (and its sub-terms) for future assignments.
    This is the function exposed to users and therefore it performs some checks. *)
-let add_term (env:t) (t:term): unit =
-  let rec aux t =
-    if Term.is_deleted t then (
-      Util.errorf "(@[trying to add deleted term@ `%a`@])" Term.debug t
-    ) else if Term.is_added t then (
-      assert (Term.has_var t);
-    ) else (
-      Log.debugf 15 (fun k->k"(@[solver.add_term %a@])" Term.debug t);
-      Term.field_set field_t_is_added t;
-      Term.setup_var t;
-      Term.iter_subterms t aux; (* add subterms, recursively *)
-      H.insert env.order t; (* add to priority queue for decision *)
-      init_watches env t; (* setup watches, possibly propagating already *)
-    )
-  in aux t
+let rec add_term (env:t) (t:term): unit =
+  if Term.is_deleted t then (
+    Util.errorf "(@[trying to add deleted term@ `%a`@])" Term.debug t
+  ) else if Term.is_added t then (
+    assert (Term.has_var t);
+  ) else (
+    Log.debugf 15 (fun k->k"(@[solver.add_term %a@])" Term.debug t);
+    Term.field_set field_t_is_added t;
+    Term.setup_var t;
+    Term.iter_subterms t (add_term env); (* add subterms, recursively *)
+    H.insert env.order t; (* add to priority queue for decision *)
+    init_watches env t; (* setup watches, possibly propagating already *)
+  )
 
 let[@inline] add_atom (env:t) (a:atom) : unit = add_term env (Atom.term a)
 
@@ -306,6 +299,7 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
     decay_all_learnt_clauses env;
   )
 
+(* make a decision for [t] based on its type *)
 let[@inline] decide_term (env:t) (t:term): value =
   Type.decide (Term.ty t) (actions env) t
 
@@ -719,9 +713,8 @@ type conflict_res = {
 *)
 let analyze (env:t) (c_clause:clause) : conflict_res =
   let pathC = ref 0 in (* number of literals >= conflict level. *)
-  let learnt = ref [] in
+  let learnt = ref [] in (* the resulting clause to be learnt *)
   let continue = ref true in (* used for termination of loop *)
-  let blevel = ref 0 in
   let seen  = env.seen_tmp in (* terms marked during analysis, to be unmarked at cleanup *)
   let c = ref (Some c_clause) in (* current clause to do (hyper)resolution on *)
   let tr_ind = ref (Vec.size env.trail - 1) in (* pointer in trail. starts at top, only goes down. *)
@@ -789,7 +782,6 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
               ) else (
                 (* [q] will be part of the learnt clause *)
                 learnt := q :: !learnt;
-                blevel := max !blevel (Atom.level q)
               )
             )
           )
@@ -1460,6 +1452,7 @@ let pop (env:t) : unit =
     env.unsat_conflict <- None;
     let n = Vec.last env.user_levels in
     Vec.pop env.user_levels; (* before the [cancel_until]! *)
+    (* FIXME: shouldn't this be done only when the last level is [pop()]'d? *)
     (* Add the root clauses to the clauses to add *)
     Stack.iter (fun c -> Stack.push c env.clauses_to_add) env.clauses_root;
     Stack.clear env.clauses_root;
@@ -1508,9 +1501,7 @@ let check_clause (c:clause) : bool =
   let res =
     CCArray.exists
       (fun a ->
-         if Atom.is_true a then true
-         else if Atom.is_false a then false
-         else raise UndecidedLit)
+         Atom.value_bool a |> CCOpt.get_lazy (fun () -> raise UndecidedLit))
       c.c_atoms
   in
   if res then true
@@ -1522,12 +1513,9 @@ let check_clause (c:clause) : bool =
 
 let[@inline] check_vec v = Vec.for_all check_clause v
 
-let check_stack s =
-  try
-    Stack.iter (fun c -> if not (check_clause c) then raise Exit) s;
-    true
-  with Exit ->
-    false
+let[@inline] check_stack s =
+  Sequence.of_stack s
+  |> Sequence.for_all check_clause
 
 let check (env:t) : bool =
   Stack.is_empty env.clauses_to_add &&
@@ -1539,11 +1527,8 @@ let check (env:t) : bool =
 (* Unsafe access to internal data *)
 
 let hyps env = env.clauses_hyps
-
 let history env = env.clauses_learnt
-
 let temp env = env.clauses_temp
-
 let trail env = env.trail
 
 (* stats *)
