@@ -99,25 +99,22 @@ type t = {
   mutable th_head : int;
   (* Start offset in the queue {!trail} of
      unit facts not yet seen by the theory.
-     The slice between {!th_head} and {!elt_head} has not yet
+     The slice between {!th_head} and the end of {!trail} has not yet
      been seen by the plugins *)
 
   (* invariant:
-     - th_head <= elt_head <= length trail always
-     - during propagation, th_head <= elt_head
-     - then, once elt_head reaches length trail, each plugin's [cb_assign]
-       is called on assignments between the two, until
-       th_head can catch up with elt_head
+     - elt_head <= length trail
+     - th_eval <= length trail
+     - propagation does a block of BCP, then a block of theory,
+       alternatively. Full BCP/theory propagation occurs before yielding
+       control to the other.
+     - theory propagation is done by calling terms' [update_watches]
+       functions for every term on the trail after {!th_head},
+       until {!th_head} can catch up with length of {!trail}
      - this is repeated until a fixpoint is reached;
      - before a decision (and after the fixpoint),
        th_head = elt_head = length trail
   *)
-
-
-  mutable simpDB_props : int;
-  (* remaining number of propagations before the next call to [simplify ()] *)
-  mutable simpDB_assigns : int;
-  (* number of toplevel assignments since last call to [simplify ()] *)
 
   order : H.t;
   (* Heap ordered by variable activity *)
@@ -345,9 +342,6 @@ let create_real (actions:actions lazy_t) : t = {
   var_decay = 1. /. 0.95;
   clause_decay = 1. /. 0.999;
 
-  simpDB_assigns = -1;
-  simpDB_props = 0;
-
   remove_satisfied = false;
 
   restart_inc = 1.5;
@@ -499,28 +493,30 @@ let cancel_until (env:t) (lvl:int) : unit =
   ) else (
     Log.debugf info (fun k -> k "@{<Yellow>### Backtracking@} to lvl %d" lvl);
     (* We set the head of the solver and theory queue to what it was. *)
-    let head = ref (Vec.get env.decision_levels lvl) in
-    env.elt_head <- !head;
+    let top = Vec.get env.decision_levels lvl in
+    let head = ref top in
     (* Now we need to cleanup the vars that are not valid anymore
        (i.e to the right of elt_head in the queue).
        We do it left-to-right because that makes it easier to move
        elements whose level is actually lower than [lvl], by just
        moving them to [!head]. *)
-    for i = env.elt_head to Vec.size env.trail - 1 do
+    for i = top to Vec.size env.trail - 1 do
       (* A variable is unassigned, we nedd to add it back to
          the heap of potentially assignable variables, unless it has
          a level lower than [lvl], in which case we just move it back. *)
       let t = Vec.get env.trail i in
       if Term.level t <= lvl then (
         Vec.set env.trail !head t;
-        head := !head + 1
+        head := !head + 1;
       ) else (
         t.t_level <- -1;
+        t.t_value <- TA_none;
         schedule_decision_term env t;
-        t.t_value <- TA_none; (* reset value *)
       )
     done;
-    env.th_head <- !head; (* also reset theory head *)
+    (* elements we kept are already propagated, update pointers accordingly *)
+    env.elt_head <- !head;
+    env.th_head <- !head;
     (* Resize the vectors according to their new size. *)
     Vec.shrink env.trail !head;
     Vec.shrink env.decision_levels lvl;
@@ -587,8 +583,7 @@ let simpl_reason : reason -> reason = function
   | r -> r
 
 (* Boolean propagation.
-   Wrapper function for adding a new propagated formula.
-   NOTE: we don't notify watchers yet, they will be notified after BCP is done *)
+   Wrapper function for adding a new propagated formula. *)
 let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   if Atom.is_false a then (
     Log.debugf error
@@ -630,9 +625,9 @@ let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
 (* MCsat semantic assignment *)
 let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) (lvl:int) : unit =
   if Term.has_value t then (
-      Log.debugf error
-        (fun k -> k "Trying to assign an already assigned literal: %a" Term.debug t);
-      assert false
+    Log.debugf error
+      (fun k -> k "Trying to assign an already assigned literal: %a" Term.debug t);
+    assert false
   );
   assert (t.t_level < 0);
   t.t_value <- TA_assign {value;reason};
@@ -1008,6 +1003,7 @@ let flush_clauses (env:t) =
     done
   )
 
+(* TODO: move into Solver_types, to be also used in update_watches *)
 type watch_res =
   | Watch_kept
   | Watch_removed
@@ -1095,6 +1091,60 @@ let debug_eval_bool out = function
   | Eval_bool (b, subs) ->
     Fmt.fprintf out "(@[<hv>%B@ :subs (@[%a@])@])" b (Util.pp_list Term.debug) subs
 
+(* some terms were decided/propagated. Now we
+   need to inform the plugins about these assignments, so they can do their job.
+   @return the conflict clause, if a plugin detects unsatisfiability *)
+let rec theory_propagate (env:t) : clause option =
+  assert (env.elt_head <= Vec.size env.trail);
+  if env.th_head = Vec.size env.trail then (
+    if env.elt_head = Vec.size env.trail then (
+      None (* fixpoint reached for both theory propagation and BCP *)
+    ) else (
+      propagate env (* need to do BCP *)
+    )
+  ) else (
+    (* consider one element *)
+    let t = Vec.get env.trail env.th_head in
+    env.th_head <- env.th_head + 1;
+    (* notify all watches of [t] to perform semantic propagation *)
+    begin match Term.iter_watches t (update_watches env) with
+      | () -> theory_propagate env (* next propagation *)
+      | exception (Conflict c) -> Some c (* conflict *)
+    end
+  )
+
+(* Fixpoint between boolean propagation and theory propagation.
+   Does BCP first.
+   @return a conflict clause, if any *)
+and propagate (env:t) : clause option =
+  (* First, treat the stack of lemmas added by the theory, if any *)
+  flush_clauses env;
+  (* Now, check that the situation is sane *)
+  assert (env.elt_head <= Vec.size env.trail);
+  if env.elt_head = Vec.size env.trail then (
+    theory_propagate env (* BCP done, now notify plugins *)
+  ) else (
+    let res = ref None in
+    while env.elt_head < Vec.size env.trail do
+      let t = Vec.get env.trail env.elt_head in
+      (* propagate [t], if boolean *)
+      begin match t.t_var with
+        | Var_none -> assert false
+        | Var_semantic _ -> ()
+        | Var_bool _ ->
+          env.propagations <- env.propagations + 1;
+          (* propagate the atom that has been assigned to [true] *)
+          let a = Term.Bool.assigned_atom_exn t in
+          propagate_atom env a res
+      end;
+      env.elt_head <- env.elt_head + 1;
+    done;
+    begin match !res with
+      | None -> theory_propagate env
+      | _ -> !res
+    end
+  )
+
 (* [a] is part of a conflict/learnt clause, but might not be evaluated yet.
    Evaluate it, save its value, and ensure it is indeed false. *)
 let eval_atom_to_false (env:t) (a:atom): unit =
@@ -1164,88 +1214,6 @@ let create () : t =
   (* add builtins *)
   ignore (add_plugin env Builtins.plugin);
   env
-
-(* FIXME: update? the second case
-let slice_propagate f = function
-  | Plugin_intf.Eval l ->
-    let a = atom f in
-    enqueue_semantic_bool_eval a l
-  | Plugin_intf.Consequence (causes, proof) ->
-    let l = List.rev_map atom causes in
-    if List.for_all (fun a -> a.is_true) l then
-      let p = atom f in
-      let c = make_clause (fresh_tname ())
-          (p :: List.map (fun a -> a.neg) l) (Lemma proof) in
-      if p.is_true then ()
-      else if p.neg.is_true then
-        Stack.push c env.clauses_to_add
-      else begin
-        Iheap.grow_to_at_least env.order (St.nb_elt ());
-        insert_subterms_order p.var;
-        enqueue_bool p ~level:(decision_level ()) (Bcp c)
-      end
-    else
-      raise (Invalid_argument "Msat.Internal.slice_propagate")
-*)
-
-(* some boolean literals were decided/propagated within Msat. Now we
-   need to inform the plugins about these assumptions, so they can do their job.
-   @return the conflict clause, if a plugin detects unsatisfiability *)
-let rec theory_propagate (env:t) : clause option =
-  assert (env.elt_head <= Vec.size env.trail);
-  assert (env.th_head <= env.elt_head); (* global invariant: BCP before theory *)
-  if env.th_head = env.elt_head then (
-    if env.elt_head = Vec.size env.trail then (
-      None (* fixpoint/no propagation *)
-    ) else (
-      propagate env (* need to do BCP *)
-    )
-  ) else (
-    (* consider one element *)
-    let t = Vec.get env.trail env.th_head in
-    env.th_head <- env.th_head + 1;
-    (* notify all watches of [t] to perform semantic propagation *)
-    begin match Term.iter_watches t (update_watches env) with
-      | () -> theory_propagate env (* next propagation *)
-      | exception (Conflict c) -> Some c (* conflict *)
-    end
-  )
-
-(* fixpoint between boolean propagation and theory propagation
-   @return a conflict clause, if any *)
-and propagate (env:t) : clause option =
-  (* First, treat the stack of lemmas added by the theory, if any *)
-  flush_clauses env;
-  (* Now, check that the situation is sane *)
-  assert (env.elt_head <= Vec.size env.trail);
-  if env.elt_head = Vec.size env.trail then (
-    theory_propagate env (* BCP done, now notify plugins *)
-  ) else (
-    let res = ref None in
-    while env.elt_head < Vec.size env.trail do
-      let t = Vec.get env.trail env.elt_head in
-      (* propagate [t], if boolean *)
-      begin match t.t_var with
-        | Var_none -> assert false
-        | Var_semantic _ -> ()
-        | Var_bool {pa;na;_} ->
-          env.propagations <- env.propagations + 1;
-          env.simpDB_props <- env.simpDB_props - 1;
-          (* propagate the atom that has been assigned to [true] *)
-          let a =
-            if Atom.is_true pa then pa
-            else if Atom.is_true na then na
-            else assert false
-          in
-          propagate_atom env a res
-      end;
-      env.elt_head <- env.elt_head + 1;
-    done;
-    begin match !res with
-      | None -> theory_propagate env
-      | _ -> !res
-    end
-  )
 
 (* Decide on a new literal, and enqueue it into the trail *)
 let rec pick_branch_aux (env:t) (atom:atom) : unit =
