@@ -36,6 +36,7 @@ val level : t -> int
 val var : t -> var
 val ty : t -> Type.t
 val reason : t -> reason option
+val reason_exn : t -> reason
 val eval_bool : t -> eval_bool_res
 val is_bool : t -> bool
 
@@ -58,8 +59,7 @@ val value_exn : t -> value
 val mk_eq : t -> t -> t
 (** Use the term's type to make two terms equal *)
 
-val gc_mark : t -> unit
-val gc_unmark : t -> unit
+val gc_unmark : t -> unit (** Unmark just this term *)
 val gc_marked : t -> bool
 val gc_mark_rec : t -> unit (** Mark term and its subterms, recursively *)
 

@@ -61,6 +61,10 @@ let rec gc_mark_rec (t:t) : unit =
     iter_subterms t gc_mark_rec
   )
 
+let[@inline] reason_exn t = match value t with
+  | TA_assign{reason;_} -> reason
+  | TA_none -> assert false
+
 let[@inline] reason t = match value t with
   | TA_none -> None
   | TA_assign{reason;_} -> Some reason
@@ -232,7 +236,9 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   (* after GC, recycle identifiers into this vec *)
   let recycle_ids : int Vec.t = Vec.make_empty 0
 
-  (* delete a term: flag it for removal, then recycle its ID *)
+  (* delete a term: flag it for removal, then recycle its ID.
+     The flag is used so that anything that might still hold it can know
+     it has been deleted. *)
   let delete (t:t) : unit =
     Log.debugf 5 (fun k->k "(@[<1>Term_alloc.delete@ %a@])" debug t);
     t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
@@ -272,15 +278,22 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   let[@inline] iter_terms k = H.values tbl k
 
   let gc_all () : unit =
-    Log.debugf 3 (fun k->k "(gc-all@ :p_id %d)" Ops.p_id);
-    let v = Vec.make_empty dummy_term in
+    Log.debugf 5 (fun k->k "(@[Term_alloc.gc_all@ :p_id %d@])" Ops.p_id);
+    let to_gc = Vec.make_empty dummy_term in (* terms to be collected *)
+    let n_alive = ref 0 in
     (* collect *)
-    H.iter
-      (fun _ t ->
-         if gc_marked t
-         then gc_unmark t
-         else Vec.push v t)
-      tbl;
+    H.values tbl
+      (fun t ->
+         if gc_marked t then (
+           incr n_alive;
+           gc_unmark t;
+         ) else (
+           Vec.push to_gc t
+         ));
     (* delete *)
-    Vec.iter delete v
+    let n_collected = Vec.size to_gc in
+    Vec.iter delete to_gc;
+    Log.debugf 15
+      (fun k->k "(@[Term_alloc.gc.stats@ :collected %d@ :alive %d@])"
+          n_collected !n_alive);
 end

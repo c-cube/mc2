@@ -132,10 +132,10 @@ let rec set_atom_proof a =
 let prove_unsat (conflict:clause) : clause =
   if Array.length conflict.c_atoms = 0 then conflict
   else (
-    Log.debugf info (fun k -> k "Proving unsat from: @[%a@]" Clause.debug conflict);
+    Log.debugf info (fun k -> k "@{<Green>Proving unsat@} from: @[%a@]" Clause.debug conflict);
     let l = Array.fold_left (fun acc a -> set_atom_proof a :: acc) [] conflict.c_atoms in
     let res = Clause.make [] (History (conflict :: l)) in
-    Log.debugf info (fun k -> k "Proof found: @[%a@]" Clause.debug res);
+    Log.debugf info (fun k -> k "@{<Green>Proof found@}: @[%a@]" Clause.debug res);
     res
   )
 
@@ -161,7 +161,7 @@ and step =
 let rec chain_res (c, cl) = function
   | d :: r ->
     Log.debugf debug
-      (fun k -> k "Resolving clauses : @[%a@\n%a@]"
+      (fun k -> k "Res.resolving clauses : @[%a@\n%a@]"
           Clause.debug c Clause.debug d);
     let dl = to_list d in
     begin match resolve (merge cl dl) with
@@ -182,7 +182,7 @@ let rec chain_res (c, cl) = function
     raise (Resolution_error "Bad history")
 
 let expand conclusion : proof_node =
-  Log.debugf debug (fun k -> k "Expanding : @[%a@]" Clause.debug conclusion);
+  Log.debugf debug (fun k -> k "Res.expanding : @[%a@]" Clause.debug conclusion);
   begin match conclusion.c_premise with
     | Lemma l ->
       {conclusion; step = Lemma l; }

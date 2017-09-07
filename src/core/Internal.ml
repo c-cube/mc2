@@ -127,6 +127,10 @@ type t = {
   clause_decay : float;
   (* inverse of the activity factor for clauses. Default 1/0.95 *)
 
+  seen_tmp : term Vec.t;
+  (* temporary vector used during conflict analysis.
+     Contains terms marked during analysis, to be unmarked at cleanup *)
+
   mutable var_incr : float;
   (* increment for variables' activity *)
   mutable clause_incr : float;
@@ -141,11 +145,11 @@ type t = {
   (* intial restart limit, default 100 *)
 
 
-  learntsize_inc : float;
-  (* multiplicative factor for [learntsize_factor] at each restart, default 1.1 *)
   mutable learntsize_factor : float;
-  (* initial limit for the number of learnt clauses, 1/3 of initial
-      number of clauses by default *)
+  (* initial limit for the number of learnt clauses, as a factor of initial
+     number of clauses *)
+  learntsize_inc : float;
+  (* multiplicative factor for [learntsize_factor] at each restart *)
 
   mutable starts : int;
   mutable decisions : int;
@@ -332,6 +336,7 @@ let create_real (actions:actions lazy_t) : t = {
   decision_levels = Vec.make 601 (-1);
   user_levels = Vec.make 10 (-1);
   dirty_terms = Vec.make 50 dummy_term;
+  seen_tmp = Vec.make 10 dummy_term;
 
   order = H.create();
 
@@ -348,8 +353,8 @@ let create_real (actions:actions lazy_t) : t = {
   restart_inc = 1.5;
   restart_first = 100;
 
-  learntsize_factor = 1. /. 3. ;
-  learntsize_inc = 1.1;
+  learntsize_factor = 3. ; (* can learn 3× as many clauses as present initially *)
+  learntsize_inc = 1.3; (* 1.3× more learnt clauses after each restart *)
 
   starts = 0;
   decisions = 0;
@@ -653,21 +658,26 @@ let th_eval (env:t) (a:atom) : bool option =
 
 (* find which level to backtrack to, given a conflict clause
    and a boolean stating whether it is a UIP ("Unique Implication Point")
-   precond: the atom list is sorted by decreasing decision level *)
-let backtrack_lvl (env:t) : atom array -> int * bool = function
-  | [||] | [|_|] ->
-    0, true
-  | a ->
+   precondition: the atoms with highest decision level are first in the array *)
+let backtrack_lvl (env:t) (a:atom array) : int * bool =
+  if Array.length a <= 1 then (
+    0, true (* unit or empty clause *)
+  ) else (
     assert (Atom.level a.(0) > base_level env);
     if Atom.level a.(0) > Atom.level a.(1) then (
       (* backtrack below [a], so we can propagate [not a] *)
       Atom.level a.(1), true
+      (* NOTE: (to explore)
+         since we can propagate at level [a.(1).level] wherever we want
+         we might also want to backtrack at [a.(0).level-1] but still
+         propagate [¬a.(0)] at a lower level? That would save current decisions *)
     ) else (
       (* semantic split *)
       assert (Atom.level a.(0) = Atom.level a.(1));
       assert (Atom.level a.(0) >= base_level env);
       max (Atom.level a.(0) - 1) (base_level env), false
     )
+  )
 
 (* swap elements of array *)
 let[@inline] swap_arr a i j =
@@ -678,7 +688,7 @@ let[@inline] swap_arr a i j =
   )
 
 (* move atoms assigned at high levels first *)
-let put_high_level_atoms_first (arr:atom array) : unit =
+let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
   Array.iteri
     (fun i a ->
        if i>0 && Atom.level a > Atom.level arr.(0) then (
@@ -707,32 +717,53 @@ type conflict_res = {
   cr_is_uip: bool; (* conflict is UIP? *)
 }
 
-(* conflict analysis for SAT
-   Same idea as the mcsat analyze function (without semantic propagations),
-   except we look the the Last UIP (TODO: check ?), and do it in an imperative
-   and efficient manner. *)
+(* Conflict analysis for MCSat, looking for the last UIP
+   (Unique Implication Point) in an efficient imperative manner.
+   We do not really perform a series of resolution, but just keep enough
+   information for proof reconstruction.
+*)
 let analyze (env:t) (c_clause:clause) : conflict_res =
-  let pathC  = ref 0 in
+  let pathC = ref 0 in (* number of literals >= conflict level. *)
   let learnt = ref [] in
-  let cond   = ref true in
+  let continue = ref true in (* used for termination of loop *)
   let blevel = ref 0 in
-  let seen   = ref [] in
-  let c      = ref (Some c_clause) in
-  let tr_ind = ref (Vec.size env.trail - 1) in
-  let history = ref [] in
+  let seen  = env.seen_tmp in (* terms marked during analysis, to be unmarked at cleanup *)
+  let c = ref (Some c_clause) in (* current clause to do (hyper)resolution on *)
+  let tr_ind = ref (Vec.size env.trail - 1) in (* pointer in trail. starts at top, only goes down. *)
+  let history = ref [] in (* proof object *)
   assert (decision_level env > 0);
+  Vec.clear env.seen_tmp;
   let conflict_level =
-    Array.fold_left (fun acc p -> max acc (Atom.level p)) 0 c_clause.c_atoms
+    (Array.fold_left[@inlined])
+      (fun acc p -> max acc (Atom.level p)) 0 c_clause.c_atoms
   in
   Log.debugf debug
     (fun k -> k "Analyzing conflict (%d/%d): %a"
         conflict_level (decision_level env) Clause.debug c_clause);
-  while !cond do
+  assert (conflict_level >= 0);
+  (* now loop until there is either:
+     - the clause is empty (found unsat)
+     - one decision term with level strictly greater than the other
+       terms level (the UIP)
+     - all terms at maximal level are semantic propagations ("semantic split")
+
+     as long as this is not reached, we pick the highest (propagated)
+     literal of the clause and do resolution with the clause that
+     propagated it. Note that there cannot be two decision literals
+     above the conflict_level.
+
+     [pathC] is used to count how many literals are on top level and is
+     therefore central for termination.
+  *)
+  while !continue do
+    (* if we have a clause, do resolution on it by marking all its
+       literals that are not "seen" yet. *)
     begin match !c with
       | None ->
         Log.debug debug "skipping resolution for semantic propagation"
       | Some clause ->
         Log.debugf debug (fun k->k "Resolving clause: %a" Clause.debug clause);
+        (* increase activity since [c] participates in a conflict *)
         begin match clause.c_premise with
           | History _ -> bump_clause_activity env clause
           | Hyp | Local | Lemma _ -> ()
@@ -743,20 +774,25 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
           let q = clause.c_atoms.(j) in
           assert (Atom.is_true q || Atom.is_false q && Atom.level q >= 0); (* unsure? *)
           if Atom.level q <= 0 then (
-            (* FIXME: why? assert (Atom.is_true q); *)
+            (* must be a 0-level propagation *)
+            assert (Atom.level q=0);
             begin match Atom.reason q with
-              | Some Bcp cl -> history := cl :: !history
+              | Some (Bcp cl) -> history := cl :: !history
               | _ -> assert false
             end
           );
+          (* if we have not explored this atom yet, do it now.
+             It can either be part of the final clause, or it can lead
+             to resolution with another clause *)
           if not (Term.marked q.a_term) then (
             Term.mark q.a_term;
-            seen := q :: !seen;
+            Vec.push seen q.a_term;
             if Atom.level q > 0 then (
               bump_term_activity env q.a_term;
               if Atom.level q >= conflict_level then (
                 incr pathC;
               ) else (
+                (* [q] will be part of the learnt clause *)
                 learnt := q :: !learnt;
                 blevel := max !blevel (Atom.level q)
               )
@@ -765,40 +801,51 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
         done
     end;
 
-    (* look for the next node to expand *)
+    (* look for the next node to expand by going down the trail *)
     while
       let t = Vec.get env.trail !tr_ind in
-      Log.debugf debug (fun k -> k "looking at: %a" Term.debug t);
+      Log.debugf 30 (fun k -> k "conflict_analyze.looking at:@ %a" Term.debug t);
       begin match t.t_var with
         | Var_none -> assert false
         | Var_semantic _ -> true (* skip semantic assignments *)
         | Var_bool _ ->
-          (not (Term.marked t)) ||
-          (Term.level t < conflict_level)
+          (* skip a term if:
+             - it is not marked (not part of resolution), OR
+             - below conflict level
+          *)
+          not (Term.marked t) || Term.level t < conflict_level
       end
     do
       decr tr_ind;
     done;
+    (* now [t] is the term to analyze. *)
     let t = Vec.get env.trail !tr_ind in
     let p = Term.Bool.assigned_atom_exn t in
+    (* [t] will not be part of the learnt clause, let's decrease [pathC] *)
     decr pathC;
     decr tr_ind;
-    begin match !pathC, Term.reason t with
+    let reason = Term.reason_exn t in
+    Log.debugf 30
+      (fun k->k"(@[<hv>conflict_analyze.check:@ %a@ :pathC %d@ :reason %a@])"
+          Term.debug t !pathC Reason.pp (Term.level t,reason));
+    begin match !pathC, reason with
       | 0, _ ->
-        cond := false;
-        learnt := Atom.neg p :: (List.rev !learnt)
-      | n, Some (Semantic _) ->
+        (* [t] is the UIP, or we have a semantic split *)
+        continue := false;
+        learnt := Atom.neg p :: !learnt
+      | n, Semantic _ ->
         assert (n > 0);
         learnt := Atom.neg p :: !learnt;
         c := None
-      | n, Some Bcp cl ->
+      | n, Bcp cl ->
         assert (n > 0);
         assert (Atom.level p >= conflict_level);
         c := Some cl
       | _ -> assert false
     end
   done;
-  List.iter Atom.unmark !seen;
+  Vec.iter Term.unmark env.seen_tmp;
+  Vec.clear env.seen_tmp;
   (* put high level atoms first *)
   let learnt_a = Array.of_list !learnt in
   put_high_level_atoms_first learnt_a;
@@ -1258,9 +1305,8 @@ and pick_branch_lit (env:t) : unit =
 
 (* TODO: do it from time to time, removing lower half of learnt clauses,
    doing GC *)
-(* remove some learnt clauses
-   NOTE: so far we do not forget learnt clauses. We could, as long as
-   lemmas from the theory itself are kept. *)
+(* remove some learnt clauses, and the terms that are not reachable from
+   any clause *)
 let reduce_db (env:t) =
   Log.debug 3 "reduce_db";
   assert (Stack.is_empty env.clauses_to_add);
@@ -1269,7 +1315,7 @@ let reduce_db (env:t) =
   Vec.iter Clause.gc_mark env.clauses_hyps;
   Vec.iter Clause.gc_mark env.clauses_learnt;
   Vec.iter Clause.gc_mark env.clauses_temp;
-  Vec.iter Term.gc_mark env.trail;
+  Vec.iter Term.gc_mark_rec env.trail;
   (* now collect *)
   CCVector.iter
     (fun (module P : Plugin.S) ->
@@ -1280,6 +1326,8 @@ let reduce_db (env:t) =
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
 let search (env:t) n_of_conflicts n_of_learnts : unit =
+  Log.debugf 5
+    (fun k->k "(@[search@ :nconflicts %d@ :n_learnt %d@])" n_of_conflicts n_of_learnts);
   let conflictC = ref 0 in
   env.starts <- env.starts + 1;
   while true do

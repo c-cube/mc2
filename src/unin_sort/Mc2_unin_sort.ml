@@ -379,7 +379,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       begin match t.t_var with
         | Var_semantic {v_decide_state=DS ds; _} ->
           ds.c_list <- filter_lvl_ lvl ds.c_list;
-          Log.debugf 10 (fun k->k"(@[%s.refresh_state :lvl %d@ %a@ :clist %a@])"
+          Log.debugf 15 (fun k->k"(@[%s.refresh_state :lvl %d@ %a@ :clist %a@])"
               name lvl Term.debug t pp_c_list ds.c_list);
         | _ -> assert false
       end

@@ -82,7 +82,7 @@ let marked (a:t) : bool =
     Term_fields.get field_t_mark_neg a.a_term.t_fields
   )
 
-let pp_level fmt a = Reason.pp fmt (a.a_term.t_level, reason a)
+let pp_level fmt a = Reason.pp_opt fmt (a.a_term.t_level, reason a)
 
 let pp_value fmt a =
   if is_true a then
