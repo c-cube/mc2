@@ -282,7 +282,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             add_diff acts b value ~diseqn:eqn ~other:a
           | TA_assign{value=V_false;_}, TA_none, TA_assign{value;_} ->
             add_diff acts a value ~diseqn:eqn ~other:b
-          | TA_none, TA_assign _, TA_assign _ ->
+          | _, TA_assign _, TA_assign _ ->
             (* semantic propagation *)
             begin match eval_bool eqn with
               | Eval_unknown -> assert false
