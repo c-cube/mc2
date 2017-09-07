@@ -74,10 +74,6 @@ val add_term : t -> term -> unit
     be decided on at some point during solving, wether it appears
     in clauses or not. *)
 
-val add_term : t -> term -> unit
-(** Add term (and its subterms, recursively) to the solver.
-    It means the term will have a value in the model. *)
-
 val push : t -> unit
 (** Create a decision level for local assumptions.
     @raise Unsat if a conflict is detected in the current state. *)

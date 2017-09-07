@@ -241,7 +241,8 @@ let[@inline] init_watches (env:t) (t:term) : unit =
 let[@inline] update_watches (env:t) (t:term): unit =
   t.t_tc.tct_update_watches (actions env) t
 
-(* provision term (and its sub-terms) for future assignments *)
+(* provision term (and its sub-terms) for future assignments.
+   This is the function exposed to users and therefore it performs some checks. *)
 let add_term (env:t) (t:term): unit =
   let rec aux t =
     if Term.is_deleted t then (
@@ -615,7 +616,7 @@ let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
 let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
   if Atom.is_true a then ()
   else (
-    List.iter (add_term env) terms;
+    assert (List.for_all Term.is_added terms);
     (* level of propagations is [max_{t in terms} t.level] *)
     let lvl =
       List.fold_left
