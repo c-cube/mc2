@@ -264,7 +264,7 @@ let process_stmt
       E.return ()
     | A.SetInfo _ -> E.return ()
     | A.Exit ->
-      Log.debug 0 "exit";
+      Log.debug 1 "exit";
       raise Exit
     | A.CheckSat ->
       solve ?dot_proof solver ~assumptions:[];

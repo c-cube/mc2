@@ -55,7 +55,7 @@ module Make(A : Arg with type atom := atom
                      and type lemma := clause
                      and type assumption := clause) = struct
 
-  let[@inline] node_id n = string_of_int (Clause.name n.Res.conclusion)
+  let[@inline] node_id n = "n"^string_of_int (Clause.name n.Res.conclusion)
 
   let[@inline] res_node_id n = node_id n ^ "_res"
 

@@ -46,9 +46,9 @@ let build p_id Plugin.S_nil : Plugin.t =
       end)
 
     let pp out = function
-      | Const {id;_} -> ID.pp out id
+      | Const {id;_} -> ID.pp_name out id
       | App {id;args;_} ->
-        Fmt.fprintf out "(@[%a@ %a@])" ID.pp id (Util.pp_array Term.pp) args
+        Fmt.fprintf out "(@[%a@ %a@])" ID.pp_name id (Util.pp_array Term.pp) args
       | _ -> assert false
 
     let eval_bool _ = Eval_unknown
