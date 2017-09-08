@@ -224,7 +224,7 @@ let solve ?dot_proof ~assumptions s : unit =
         )
       );
       let t' = Sys.time () -. t2 in
-      Format.printf "Sat (%f/%f)@." t2 t';
+      Format.printf "Sat (%.3f/%.3f)@." t2 t';
     | Solver.Unsat state ->
       if !p_check then (
         let p = Solver.Unsat_state.get_proof state in

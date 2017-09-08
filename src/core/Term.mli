@@ -32,13 +32,19 @@ val marked : t -> bool (** Was {!mark} called on this var? *)
 
 val is_deleted : t -> bool
 val is_added : t -> bool
-val level : t -> int
+val level : t -> level (** decision/assignment level of the term *)
 val var : t -> var
 val ty : t -> Type.t
 val reason : t -> reason option
 val reason_exn : t -> reason
 val eval_bool : t -> eval_bool_res
 val is_bool : t -> bool
+
+val level_semantic : t -> level
+(** maximum level of subterms, or -1 if some subterm is not assigned *)
+
+val max_level : level -> level -> level
+(** maximum of the levels, or -1 if either is -1 *)
 
 val iter_subterms : t -> t Sequence.t
 (** Iteration over subterms.
@@ -102,6 +108,9 @@ module Bool : sig
 
   val pa : t -> atom (** safe version of {!pa_unsafe}, call [setup_var] *)
   val na : t -> atom (** safe version of {!na_unsafe}, call [setup_var] *)
+
+  val mk_eq : term -> term -> atom
+  val mk_neq : term -> term -> atom
 
   val is_true : t -> bool
   val is_false : t -> bool

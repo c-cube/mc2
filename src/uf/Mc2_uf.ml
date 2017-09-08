@@ -24,7 +24,8 @@ type term_view +=
     }
 
 type lemma_view +=
-  | Congruence
+  | Congruence_semantic
+  | Congruence_bool
 
 let build p_id Plugin.S_nil : Plugin.t =
   let module P : Plugin.S = struct
@@ -62,27 +63,51 @@ let build p_id Plugin.S_nil : Plugin.t =
       | App {args; _} -> Array.iter yield args
       | _ -> assert false
 
-    let lemma_congruence =
-      let tcl_pp out = function
-        | Congruence -> Fmt.string out "congruence"
-        | _ -> assert false
-      in
-      let tc = { tcl_pp; } in
-      Lemma.make Congruence tc
+    let tcl_pp out = function
+      | Congruence_semantic -> Fmt.string out "congruence_semantic"
+      | Congruence_bool -> Fmt.string out "congruence_bool"
+      | _ -> assert false
+
+    let lemma_congruence_semantic = Lemma.make Congruence_semantic {tcl_pp}
+    let lemma_congruence_bool = Lemma.make Congruence_bool {tcl_pp}
+
+    (* build [{ a1.(i)≠a2.(i) | i}], removing trivial ones *)
+    let mk_neq_ a1 a2 : atom list =
+      Sequence.(0 -- (Array.length a1-1))
+      |> Sequence.filter_map
+        (fun i ->
+           let t = a1.(i) and u = a2.(i) in
+           if Term.equal t u then None
+           else Some (Term.Bool.mk_neq t u))
+      |> Sequence.to_rev_list
 
     (* [t] and [u] are two terms with equal arguments but distinct values,
        build [t1=u1 ∧ … ∧ tn=un => t=u] *)
-    let mk_conflict_clause (t:term) (u:term) : atom list =
+    let mk_conflict_clause_semantic (t:term) (u:term) : atom list =
       begin match Term.view t, Term.view u with
         | App {id=f1; args=a1; _}, App {id=f2; args=a2; _} ->
           assert (ID.equal f1 f2);
           assert (Array.length a1 = Array.length a2);
-          let conclusion = Term.mk_eq t u |> Term.Bool.pa
-          and body =
-            CCList.init (Array.length a1)
-              (fun i -> Term.mk_eq a1.(i) a2.(i) |> Term.Bool.na)
-          in
+          let conclusion = Term.Bool.mk_eq t u
+          and body = mk_neq_ a1 a2 in
           conclusion :: body
+        | _ -> assert false
+      end
+
+    (* [t] and [u] are two boolean terms with equal arguments but
+       distinct values (assume [t=true] [u=false] w.l.o.g.)
+       build [t1=u1 ∧ … ∧ tn=u ∧ t => u] *)
+    let mk_conflict_clause_bool (t:term) (u:term) : atom list =
+      let t, u = if Term.Bool.is_true t then t, u else u, t in
+      assert (Term.Bool.is_false u);
+      begin match Term.view t, Term.view u with
+        | App {id=f1; args=a1; _}, App {id=f2; args=a2; _} ->
+          assert (ID.equal f1 f2);
+          assert (Array.length a1 = Array.length a2);
+          let conclusion = Term.Bool.pa u
+          and body1 = Term.Bool.na t
+          and body2 = mk_neq_ a1 a2 in
+          conclusion :: body1 :: body2
         | _ -> assert false
       end
 
@@ -91,6 +116,9 @@ let build p_id Plugin.S_nil : Plugin.t =
       sig_head: ID.t;
       sig_args: value array
     }
+
+    let pp_sig out {sig_head=id; sig_args=a} =
+      Fmt.fprintf out "(@[%a@ %a@])" ID.pp_name id (Util.pp_array Value.pp) a
 
     module Sig_tbl = CCHashtbl.Make(struct
         type t = signature
@@ -111,8 +139,23 @@ let build p_id Plugin.S_nil : Plugin.t =
       (* terms [f(t1…tn) --> v] with [t_i --> sig[i]] *)
     }
 
+    let pp_entry out (e:tbl_entry) =
+      Fmt.fprintf out "(@[<hv>entry@ :sig %a@ :val %a@ :reasons (@[%a@])@])"
+        pp_sig e.e_sig Value.pp e.e_value (Util.pp_list Term.debug) e.e_reasons
+
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512
+
+    (* remove from [l] terms of level >= [lvl] *)
+    let remove_higher_lvl lvl (l:term list) : term list =
+      let rec aux acc l = match l with
+        | [] -> acc
+        | t :: tail ->
+          let l_t = Term.level t in
+          let acc = if l_t >= lvl || l_t < 0 then acc else t :: acc in
+          aux acc tail
+      in
+      aux [] l
 
     (* check that [t], which should have fully assigned arguments,
        is consistent with the signature table *)
@@ -120,40 +163,56 @@ let build p_id Plugin.S_nil : Plugin.t =
       let v = Term.value_exn t in
       begin match Term.view t with
         | App {id;args;_} ->
-          assert (Array.for_all Term.has_value args);
-          let s = { sig_head=id; sig_args=Array.map Term.value_exn args } in
-          let entry = match Sig_tbl.get tbl_ s with
+          let sigtr = { sig_head=id; sig_args=Array.map Term.value_exn args } in
+          Log.debugf 15
+            (fun k->k "(@[uf.check_sig@ :sig %a@ :term %a@])" pp_sig sigtr Term.debug t);
+          let entry = match Sig_tbl.get tbl_ sigtr with
             | None ->
               (* add new entry *)
               let entry = {
-                e_sig=s;
+                e_sig=sigtr;
                 e_value=v;
                 e_reasons=[]
               } in
-              Sig_tbl.add tbl_ s entry;
+              Sig_tbl.add tbl_ sigtr entry;
               entry
             | Some entry ->
               if Value.equal v entry.e_value then (
                 entry
               ) else (
                 (* conflict *)
-                let u = match entry.e_reasons with
-                  | [] -> assert false
-                  | u :: _ -> u
-                in
-                let c = mk_conflict_clause t u in
-                Actions.raise_conflict acts c lemma_congruence
+                assert (entry.e_reasons <> []);
+                (*Format.printf "tbl: %a@ entry %a@."
+                    (Sig_tbl.print pp_sig pp_entry) tbl_ pp_entry entry;*)
+                let u = List.hd entry.e_reasons in
+                Log.debugf 5
+                  (fun k->k "(@[<hv>uf.congruence_conflict@ :sig %a@ :t %a@ :u %a@])"
+                      pp_sig sigtr Term.debug t Term.debug u);
+                if Type.is_bool (Term.ty t) then (
+                  let c = mk_conflict_clause_bool t u in
+                  Actions.raise_conflict acts c lemma_congruence_bool
+                ) else (
+                  let c = mk_conflict_clause_semantic t u in
+                  Actions.raise_conflict acts c lemma_congruence_semantic
+                )
               )
           in
           entry.e_reasons <- t :: entry.e_reasons;
           (* on backtracking, remove [t] from reasons, and possibly remove
              the whole entry *)
-          Actions.on_backtrack acts (Term.level t)
-            (fun () ->
-               entry.e_reasons <- CCList.remove ~eq:Term.equal ~x:t entry.e_reasons;
-               if entry.e_reasons = [] then (
-                 Sig_tbl.remove tbl_ s;
-               ));
+          let lev_t = Term.level t in
+          let lev_back = Term.max_level lev_t (Term.level_semantic t) in
+          assert (lev_back>=0);
+          let on_backtrack () =
+            entry.e_reasons <- remove_higher_lvl lev_t entry.e_reasons;
+            Log.debugf 15
+              (fun k->k "(@[<hv>uf.remove_entry@ :sig %a@ :lev %d@ :yields (@[%a@])@])"
+                  pp_sig sigtr lev_t (Util.pp_list Term.debug) entry.e_reasons);
+            if entry.e_reasons = [] then (
+              Sig_tbl.remove tbl_ sigtr;
+            )
+          in
+          Actions.on_backtrack acts lev_back on_backtrack
         | _ -> assert false
       end
 
@@ -241,11 +300,5 @@ let build p_id Plugin.S_nil : Plugin.t =
   in
   (module P : Plugin.S)
 
-let plugin =
-  Plugin.Factory.make
-    ~priority:10
-    ~name
-    ~requires:Plugin.K_nil
-    ~build
-    ()
+let plugin = Plugin.Factory.make ~priority:10 ~name ~requires:Plugin.K_nil ~build ()
 

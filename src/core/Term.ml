@@ -53,6 +53,19 @@ let[@inline] has_value (t:t): bool = match t.t_value with
   | TA_none -> false
   | TA_assign _ -> true
 
+let[@inline] max_level l1 l2 =
+  if l1<0 || l2<0 then -1
+  else max l1 l2
+
+(* max level of arguments *)
+let level_semantic (t:t) : level =
+  let res = ref 0 in
+  iter_subterms t
+    (fun u ->
+       let lev = level u in
+       res := max_level !res lev);
+  !res
+
 let[@inline] mk_eq (t:t) (u:t) : t = Type.mk_eq (ty t) t u
 
 let rec gc_mark_rec (t:t) : unit =
@@ -195,6 +208,8 @@ module Bool = struct
 
   let[@inline] pa (t:t) : atom = setup_var t; pa_unsafe t
   let[@inline] na (t:t) : atom = setup_var t; na_unsafe t
+  let[@inline] mk_neq t u = mk_eq t u |> na
+  let[@inline] mk_eq t u = mk_eq t u |> pa
 end
 
 let[@inline] eval_bool (t:term) : eval_bool_res =

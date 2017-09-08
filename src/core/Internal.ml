@@ -855,6 +855,7 @@ let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
       let fuip = c_learnt.(0) in
       let lclause = Clause.make_arr c_learnt (History cr.cr_history) in
       Vec.push env.clauses_learnt lclause;
+      env.n_learnt <- env.n_learnt + 1;
       Log.debugf debug (fun k->k "(@[learn_clause:@ %a@])" Clause.debug lclause);
       attach_clause env lclause;
       bump_clause_activity env lclause;
@@ -1157,7 +1158,8 @@ let eval_atom_to_false (env:t) (a:atom): unit =
 (* build the "actions" available to the plugins *)
 let mk_actions (env:t) : actions =
   let act_on_backtrack lev f : unit =
-    if lev > decision_level env then f()
+    if lev=0 then () (* never do it *)
+    else if lev > decision_level env then f()
     else (
       Vec.push (Vec.get env.backtrack_stack (lev-1)) f
     )
@@ -1179,8 +1181,9 @@ let mk_actions (env:t) : actions =
     let c = Clause.make atoms (Lemma lemma) in
     raise (Conflict c)
   and act_propagate_bool t (b:bool) ~(subs:term list) : unit =
-    Log.debugf debug (fun k->k "(@[<hv>Semantic propagate %a@ :val %B@ :subs %a@])"
-        Term.debug t b CCFormat.Dump.(list Term.debug) subs);
+    Log.debugf debug
+      (fun k->k "(@[<hv>Semantic propagate %a@ :val %B@ :subs (@[<hv>%a@])@])"
+        Term.debug t b (Util.pp_list Term.debug) subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval env a subs
   and act_mark_dirty (t:term): unit =
