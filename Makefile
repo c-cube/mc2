@@ -34,6 +34,14 @@ test:
 	# @/usr/bin/time -f "%e" ./tests/run smt
 	@/usr/bin/time -f "%e" ./src/tests/run mcsat
 
+TESTOPTS ?= -j 3
+TESTTOOL=logitest
+
+logitest: build
+	@mkdir -p snapshots
+	$(TESTTOOL) run -c src/tests/conf.toml $(TESTOPTS) \
+	  --meta `git rev-parse HEAD` --summary snapshots/`date -I`.txt
+
 reinstall: | uninstall install
 
 ocp-indent:

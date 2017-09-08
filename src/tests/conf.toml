@@ -1,5 +1,5 @@
 
-provers = [ "mc2", "verit" ]
+provers = [ "mc2", "verit", "read-status" ]
 
 [mc2]
 
@@ -15,6 +15,12 @@ cmd = "veriT $file"
 unsat = "UNSAT"
 sat = "SAT"
 
+[read-status]
+
+cmd = "grep :status $file"
+unsat = ":status unsat"
+sat = ":status sat"
+
 [test]
 
 timeout=30
@@ -22,7 +28,7 @@ problems = ".*.smt2"
 provers = [ "mc2" ]
 dir = [ "QF_UF" ]
 
-expect = "program:verit"
+expect = "program:read-status"
 
 
 
