@@ -194,18 +194,30 @@ let with_limits ~time ~memory f =
 
 let check_model state : bool =
   let check_clause c =
-    let l =
-      List.map
+    Log.debugf 15
+      (fun k -> k "(@[check.clause@ %a@])" Clause.debug_atoms c);
+    let ok =
+      List.exists
         (fun a ->
-           Log.debugf 99
-             (fun k -> k "Checking value of %a" Term.pp (Atom.term a));
-           Solver.Sat_state.eval state a)
+           Log.debugf 15
+             (fun k -> k "(@[check.atom@ %a@])" Term.debug (Atom.term a));
+         let b = Solver.Sat_state.eval state a in
+         (* check consistency with eval_bool *)
+         begin match Term.eval_bool (Atom.term a) with
+           | Eval_unknown -> ()
+           | Eval_bool (b', _) ->
+             assert (b = (if Atom.is_pos a then b' else not b'));
+         end;
+         b)
         c
     in
-    List.exists (fun x -> x) l
+    if not ok then (
+      Log.debugf 0
+        (fun k->k "(@[check.fail: clause %a@ not satisfied in model@])" Clause.debug_atoms c);
+    );
+    ok
   in
-  let l = List.map check_clause !hyps in
-  List.for_all (fun x -> x) l
+  List.for_all check_clause !hyps
 
 let p_check = ref true
 
@@ -223,8 +235,8 @@ let solve ?dot_proof ~assumptions s : unit =
           raise Incorrect_model;
         )
       );
-      let t' = Sys.time () -. t2 in
-      Format.printf "Sat (%.3f/%.3f)@." t2 t';
+      let t3 = Sys.time () -. t2 in
+      Format.printf "Sat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
     | Solver.Unsat state ->
       if !p_check then (
         let p = Solver.Unsat_state.get_proof state in

@@ -74,11 +74,17 @@ let build p_id Plugin.S_nil : Plugin.t =
     (* build [{ a1.(i)≠a2.(i) | i}], removing trivial ones *)
     let mk_neq_ a1 a2 : atom list =
       Sequence.(0 -- (Array.length a1-1))
-      |> Sequence.filter_map
+      |> Sequence.flat_map
         (fun i ->
            let t = a1.(i) and u = a2.(i) in
-           if Term.equal t u then None
-           else Some (Term.Bool.mk_neq t u))
+           if Term.equal t u then Sequence.empty
+           else if Type.is_bool (Term.ty t) then (
+             (* instead of a1.(i)≠a2.(i), assume w.l.o.g a1.(i)=true=a2.(i),
+                then output  ¬a1.(i), ¬a2.(i) *)
+             if Term.Bool.is_true a1.(i)
+             then Sequence.doubleton (Term.Bool.na a1.(i)) (Term.Bool.na a2.(i))
+             else Sequence.doubleton (Term.Bool.pa a1.(i)) (Term.Bool.pa a2.(i))
+           ) else Sequence.return (Term.Bool.mk_neq t u))
       |> Sequence.to_rev_list
 
     (* [t] and [u] are two terms with equal arguments but distinct values,
@@ -131,28 +137,34 @@ let build p_id Plugin.S_nil : Plugin.t =
             (CCHash.array Value.hash a.sig_args)
       end)
 
+    type e_reason = {
+      e_level: level;
+      e_term: term;
+    }
+
     (* maps a signature to a value *)
     type tbl_entry = {
       e_sig: signature;
       mutable e_value: value;
-      mutable e_reasons: term list;
+      mutable e_reasons: e_reason list;
       (* terms [f(t1…tn) --> v] with [t_i --> sig[i]] *)
     }
 
+    let pp_reason out {e_level=lvl;e_term=t} =
+      Fmt.fprintf out "%a[at %d]" Term.debug t lvl
     let pp_entry out (e:tbl_entry) =
       Fmt.fprintf out "(@[<hv>entry@ :sig %a@ :val %a@ :reasons (@[%a@])@])"
-        pp_sig e.e_sig Value.pp e.e_value (Util.pp_list Term.debug) e.e_reasons
+        pp_sig e.e_sig Value.pp e.e_value (Util.pp_list pp_reason) e.e_reasons
 
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512
 
     (* remove from [l] terms of level >= [lvl] *)
-    let remove_higher_lvl lvl (l:term list) : term list =
+    let remove_higher_lvl lvl (l:e_reason list) : e_reason list =
       let rec aux acc l = match l with
         | [] -> acc
-        | t :: tail ->
-          let l_t = Term.level t in
-          let acc = if l_t >= lvl || l_t < 0 then acc else t :: acc in
+        | r :: tail ->
+          let acc = if r.e_level >= lvl then acc else r :: acc in
           aux acc tail
       in
       aux [] l
@@ -184,10 +196,14 @@ let build p_id Plugin.S_nil : Plugin.t =
                 assert (entry.e_reasons <> []);
                 (*Format.printf "tbl: %a@ entry %a@."
                     (Sig_tbl.print pp_sig pp_entry) tbl_ pp_entry entry;*)
-                let u = List.hd entry.e_reasons in
+                let {e_term=u;_} = List.hd entry.e_reasons in
                 Log.debugf 5
-                  (fun k->k "(@[<hv>uf.congruence_conflict@ :sig %a@ :t %a@ :u %a@])"
-                      pp_sig sigtr Term.debug t Term.debug u);
+                  (fun k->k
+                      "(@[<hv>uf.congruence_conflict@ :sig %a@ :t %a@ :u %a@ \
+                       :t.args %a@ :u.args %a@])"
+                      pp_sig sigtr Term.debug t Term.debug u
+                      (Fmt.Dump.list Term.debug) (Term.subterms t)
+                      (Fmt.Dump.list Term.debug) (Term.subterms u));
                 if Type.is_bool (Term.ty t) then (
                   let c = mk_conflict_clause_bool t u in
                   Actions.raise_conflict acts c lemma_congruence_bool
@@ -197,17 +213,16 @@ let build p_id Plugin.S_nil : Plugin.t =
                 )
               )
           in
-          entry.e_reasons <- t :: entry.e_reasons;
+          let lev_back = Term.max_level (Term.level t) (Term.level_semantic t) in
+          assert (lev_back>=0);
+          entry.e_reasons <- {e_level=lev_back; e_term=t} :: entry.e_reasons;
           (* on backtracking, remove [t] from reasons, and possibly remove
              the whole entry *)
-          let lev_t = Term.level t in
-          let lev_back = Term.max_level lev_t (Term.level_semantic t) in
-          assert (lev_back>=0);
           let on_backtrack () =
-            entry.e_reasons <- remove_higher_lvl lev_t entry.e_reasons;
+            entry.e_reasons <- remove_higher_lvl lev_back entry.e_reasons;
             Log.debugf 15
               (fun k->k "(@[<hv>uf.remove_entry@ :sig %a@ :lev %d@ :yields (@[%a@])@])"
-                  pp_sig sigtr lev_t (Util.pp_list Term.debug) entry.e_reasons);
+                  pp_sig sigtr lev_back (Util.pp_list pp_reason) entry.e_reasons);
             if entry.e_reasons = [] then (
               Sig_tbl.remove tbl_ sigtr;
             )

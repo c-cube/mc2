@@ -51,6 +51,8 @@ val iter_subterms : t -> t Sequence.t
     When incrementing activity, adding new terms, etc.
     we want to be able to iterate over all subterms of a formula.  *)
 
+val subterms : t -> t list
+
 val recompute_state : level -> t -> unit
 (** Recompute internal {!decide_state}, assuming the set of unit
     constraints changed (typically, after some backtracking) *)

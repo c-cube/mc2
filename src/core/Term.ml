@@ -36,6 +36,7 @@ let[@inline] var t = t.t_var
 let[@inline] ty t = t.t_ty
 let[@inline] iter_subterms (t:term): term Sequence.t = t.t_tc.tct_subterms t.t_view
 let[@inline] is_bool t = Type.is_bool t.t_ty
+let[@inline] subterms t : t list = iter_subterms t |> Sequence.to_list
 
 let[@inline] gc_marked (t:t) : bool = field_get field_t_gc_marked t
 let[@inline] gc_unmark (t:t) : unit = field_clear field_t_gc_marked t
