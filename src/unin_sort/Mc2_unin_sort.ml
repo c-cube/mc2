@@ -304,9 +304,13 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         Term.add_watch t t;
       | _ -> assert false
 
+    let delete_watches t f = match Term.view t with
+      | Eq (a,b) -> f t; f a; f b
+      | _ -> assert false
+
     let tc_term : tc_term =
       Term.tc_mk ~pp ~subterms ~update_watches
-        ~init_watches ~eval_bool ()
+        ~init_watches ~delete_watches ~eval_bool ()
 
     (* make an equality literal *)
     let mk_eq (t:term) (u:term): term =

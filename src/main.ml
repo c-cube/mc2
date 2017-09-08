@@ -127,7 +127,9 @@ let main () =
        with Exit ->
          E.return())
   in
-  if !p_stat then Solver.pp_stats solver;
+  if !p_stat then (
+    Format.printf "%a@." Solver.pp_stats solver;
+  );
   res
 
 let () = match main() with

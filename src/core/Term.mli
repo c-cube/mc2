@@ -90,6 +90,7 @@ val add_watch : t -> t -> unit
 val tc_mk :
   ?init_watches:(actions -> term -> unit) ->
   ?update_watches:(actions -> term -> watch:term -> watch_res) ->
+  ?delete_watches:(term -> (term -> unit) -> unit) ->
   ?subterms:( term_view -> (term->unit) -> unit) ->
   ?eval_bool :( term -> eval_bool_res) ->
   pp:term_view CCFormat.printer ->
@@ -126,6 +127,7 @@ module Watch1 : sig
   val dummy : t
   val make : term list -> t
   val make_a : term array -> t (** owns the array *)
+  val iter : t -> term Sequence.t (** current watch(es) *)
 
   val init :
     t ->
@@ -159,6 +161,7 @@ module Watch2 : sig
   val dummy : t
   val make : term list -> t
   val make_a : term array -> t (** owns the array *)
+  val iter : t -> term Sequence.t (** current watch(es) *)
 
   val init :
     t ->
@@ -218,8 +221,8 @@ end
 
 module Term_allocator(T : TERM_ALLOC_OPS) : sig
   val make : view -> Type.t -> tc_term -> t (** Make a term of the theory *)
-  val delete : t -> unit (** Delete a term of the theory *)
+  val delete : mark_dirty:(term -> unit) -> t -> unit (** Delete a term of the theory *)
   val iter_terms : term Sequence.t (** All terms *)
-  val gc_all : unit -> unit (** GC all unmarked tems; unmark alive terms *)
+  val gc_all : mark_dirty:(term -> unit) -> unit -> unit (** GC all unmarked tems; unmark alive terms *)
 end
 

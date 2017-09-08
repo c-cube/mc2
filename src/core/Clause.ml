@@ -5,9 +5,6 @@ module Fields = Solver_types.Clause_fields
 
 type t = clause
 
-let field_attached = Fields.mk_field() (** Is the clause attached, i.e. does it watch literals. *)
-let field_visited = Fields.mk_field() (** Used during propagation and proof generation. *)
-
 let dummy : t = dummy_clause
 
 (* Name generation *)
@@ -31,12 +28,14 @@ let make ?tag ali c_premise : t=
 
 let empty : t = make [] (History [])
 
-let[@inline] visited c = Fields.get field_visited c.c_fields
-let[@inline] mark_visited c = c.c_fields <- Fields.set field_visited true c.c_fields
-let[@inline] clear_visited c = c.c_fields <- Fields.set field_visited false c.c_fields
+let[@inline] visited c = Fields.get field_c_visited c.c_fields
+let[@inline] mark_visited c = c.c_fields <- Fields.set field_c_visited true c.c_fields
+let[@inline] clear_visited c = c.c_fields <- Fields.set field_c_visited false c.c_fields
 
-let[@inline] attached c = Fields.get field_attached c.c_fields
-let[@inline] set_attached c = c.c_fields <- Fields.set field_attached true c.c_fields
+let[@inline] attached c = Fields.get field_c_attached c.c_fields
+let[@inline] set_attached c = c.c_fields <- Fields.set field_c_attached true c.c_fields
+let[@inline] deleted c = Fields.get field_c_deleted c.c_fields
+let[@inline] set_deleted c = c.c_fields <- Fields.set field_c_deleted true c.c_fields
 
 let[@inline] get_tag c = c.c_tag
 let[@inline] name c = c.c_name
@@ -62,8 +61,8 @@ let debug_atoms out = Format.fprintf out "(@[<hv>%a@])" (Util.pp_list ~sep:" ∨
 
 let debug out ({c_atoms; c_premise=cp; _} as c) =
   let pp_atoms_vec out = Util.pp_array ~sep:" ∨ " Atom.debug out in
-  Format.fprintf out "%a@[<hv>{@[<hv>%a@]}@ cpremise={@[<hov>%a@]}@]"
-    pp_name c pp_atoms_vec c_atoms Premise.pp cp
+  Format.fprintf out "%a@[<hv>{@[<hv>%a@]}[A:%s]@ cpremise={@[<hov>%a@]}@]"
+    pp_name c pp_atoms_vec c_atoms (if attached c then "1" else "0") Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =
   let aux fmt a =

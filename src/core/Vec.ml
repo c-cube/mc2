@@ -129,6 +129,12 @@ let fast_remove t i =
   t.data.(i) <- t.data.(t.sz - 1);
   t.sz <- t.sz - 1
 
+let filter_in_place f vec =
+  let i = ref 0 in
+  while !i < size vec do
+    if f (get vec !i) then incr i else fast_remove vec !i
+  done
+
 let sort t f =
   let sub_arr = Array.sub t.data 0 t.sz in
   Array.fast_sort f sub_arr;

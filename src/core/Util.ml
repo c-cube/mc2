@@ -26,6 +26,7 @@ let () = Printexc.register_printer
 let exn_ksprintf ~f fmt =
   let buf = Buffer.create 32 in
   let out = Format.formatter_of_buffer buf in
+  CCFormat.set_color_tag_handling out;
   Format.fprintf out "@[<2>@{<Red>error:@}@ ";
   Format.kfprintf
     (fun _ -> Format.fprintf out "@]@?"; raise (f (Buffer.contents buf)))

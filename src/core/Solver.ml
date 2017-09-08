@@ -114,4 +114,4 @@ let create ~plugins () =
   List.iter (fun p -> ignore (S.add_plugin solver p)) plugins;
   solver
 
-let pp_stats (s:t) : unit = Format.printf "(@[<hv>stats@ %a@])@." S.pp_stats s
+let pp_stats = S.pp_stats

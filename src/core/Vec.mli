@@ -94,6 +94,10 @@ val fast_remove : 'a t -> int -> unit
 (** Remove element at index [i] without preserving order
     (swap with last element) *)
 
+val filter_in_place : ('a -> bool) -> 'a t -> unit
+(** [filter_in_place f v] removes from [v] the elements that do
+    not satisfy [f] *)
+
 val sort : 'a t -> ('a -> 'a -> int) -> unit
 (** Sort in place the array *)
 

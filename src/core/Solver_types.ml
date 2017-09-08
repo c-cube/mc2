@@ -99,6 +99,9 @@ and tc_term = {
   tct_update_watches: actions -> term -> watch:term -> watch_res;
   (** [watch] was assign, update term [t], and return whether [t] should
       still watch [watch] *)
+  tct_delete_watches: term -> (term -> unit) -> unit;
+  (** iterate on current watches to mark them as dirty, when the term
+      is deleted *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
 }
@@ -280,8 +283,9 @@ let field_t_negated = Term_fields.mk_field() (** negated term? *)
 let field_t_gc_marked = Term_fields.mk_field() (** marked for GC? *)
 let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints? *)
 
-let field_c_attached = Clause_fields.mk_field() (* clause added to state? *)
-let field_c_visited = Clause_fields.mk_field() (* visited during some traversal? *)
+let field_c_attached = Clause_fields.mk_field() (** clause added to state? *)
+let field_c_visited = Clause_fields.mk_field() (** visited during some traversal? *)
+let field_c_deleted = Clause_fields.mk_field() (** deleted during GC *)
 
 type term_view += Dummy
 
@@ -289,6 +293,7 @@ let tct_default : tc_term = {
   tct_pp=(fun _ _ -> assert false);
   tct_init_watches=(fun _ _ -> ());
   tct_update_watches=(fun _ _ ~watch:_ -> Watch_keep);
+  tct_delete_watches=(fun _ _ -> ());
   tct_subterms=(fun _ _ -> ());
   tct_eval_bool=(fun _ -> Eval_unknown);
 }

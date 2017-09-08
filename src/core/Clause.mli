@@ -22,6 +22,9 @@ val clear_visited : t -> unit
 val attached : t -> bool
 val set_attached : t -> unit
 
+val deleted : t -> bool
+val set_deleted : t -> unit
+
 val atoms : t -> atom array
 val activity : t -> float
 val name : t -> int

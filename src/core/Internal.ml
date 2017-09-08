@@ -154,6 +154,7 @@ type t = {
   mutable conflicts : int; (* number of conflicts *)
   mutable n_learnt : int; (* total number of clauses learnt *)
   mutable n_gc: int; (* number of rounds of GC *)
+  mutable n_deleted: int; (* number of deleted clauses *)
   mutable nb_init_clauses : int;
 }
 
@@ -339,8 +340,8 @@ let create_real (actions:actions lazy_t) : t = {
   restart_inc = 1.5;
   restart_first = 100;
 
-  learntsize_factor = 3. ; (* can learn 3× as many clauses as present initially *)
-  learntsize_inc = 1.3; (* 1.3× more learnt clauses after each restart *)
+  learntsize_factor = 1.5 ; (* can learn 3× as many clauses as present initially *)
+  learntsize_inc = 1.2; (* 1.3× more learnt clauses after each restart *)
 
   starts = 0;
   decisions = 0;
@@ -348,6 +349,7 @@ let create_real (actions:actions lazy_t) : t = {
   conflicts = 0;
   n_learnt=0;
   n_gc=0;
+  n_deleted=0;
   nb_init_clauses = 0;
 }
 
@@ -1267,32 +1269,74 @@ and pick_branch_lit (env:t) : unit =
       )
   end
 
-(* TODO: do it from time to time, removing lower half of learnt clauses,
-   doing GC *)
 (* remove some learnt clauses, and the terms that are not reachable from
-   any clause *)
-let reduce_db (env:t) =
-  Log.debug 3 "reduce_db";
+   any clause.
+   The number of learnt clauses after reduction must be [downto] *)
+let reduce_db (env:t) ~down_to : unit =
+  Log.debugf 2 (fun k->k"@{<Yellow>## reduce_db@}");
   assert (Stack.is_empty env.clauses_to_add);
   env.n_gc <- env.n_gc + 1;
-  (* mark, from clauses *)
+  (* remove some clauses *)
+  let n_clauses = Vec.size env.clauses_learnt in
+  assert (down_to <= n_clauses);
+  Log.debugf 4
+    (fun k->k"(@[reduce_db.remove_learnt@ :n_total %d@ :downto %d@])" n_clauses down_to);
+  (* sort learnt clauses by decreasing activity *)
+  Vec.sort env.clauses_learnt
+    (fun c1 c2 -> CCFloat.compare (Clause.activity c2)(Clause.activity c1));
+  (* atoms for which watches should be updated *)
+  let dirty_atoms = Vec.make_empty dummy_atom in
+  let dirty_terms = env.dirty_terms in
+  let mk_dirty_atom a =
+    if not (Atom.marked a) then (
+      Atom.mark a;
+      Vec.push dirty_atoms a;
+    )
+  in
+  (* pop clauses *)
+  while Vec.size env.clauses_learnt > down_to do
+    let c = Vec.pop_last env.clauses_learnt in
+    Log.debugf 15 (fun k->k"(@[reduce_db.remove_clause@ %a@ :activity %f@])"
+        Clause.debug c (Clause.activity c));
+    Clause.set_deleted c;
+    env.n_deleted <- env.n_deleted + 1;
+    if Array.length c.c_atoms >= 1 then (
+      mk_dirty_atom c.c_atoms.(0);
+      if Array.length c.c_atoms >= 2 then mk_dirty_atom c.c_atoms.(1);
+    );
+  done;
+  (* now rebuild watches for the dirty atoms *)
+  Vec.iter
+    (fun a ->
+       Atom.unmark a;
+       Vec.filter_in_place (fun c -> not (Clause.deleted c)) a.a_watched)
+    dirty_atoms;
+  Vec.clear dirty_atoms;
+  (* mark alive terms, starting from alive clauses and from the trail *)
   Stack.iter Clause.gc_mark env.clauses_root;
   Vec.iter Clause.gc_mark env.clauses_hyps;
   Vec.iter Clause.gc_mark env.clauses_learnt;
   Vec.iter Clause.gc_mark env.clauses_temp;
   Vec.iter Term.gc_mark_rec env.trail;
-  (* now collect *)
+  (* now collect terms *)
+  let mark_dirty = Actions.mark_dirty (actions env) in
   CCVector.iter
-    (fun (module P : Plugin.S) ->
-       P.gc_all ())
+    (fun (module P : Plugin.S) -> P.gc_all ~mark_dirty ())
     env.plugins;
+  Vec.iter
+    (fun t ->
+       Term.dirty_unmark t;
+       let lazy watches = t.t_watches in
+       Vec.filter_in_place (fun c -> not (Term.is_deleted c)) watches)
+    dirty_terms;
+  Vec.clear dirty_terms;
   ()
 
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
 let search (env:t) n_of_conflicts n_of_learnts : unit =
   Log.debugf 5
-    (fun k->k "(@[search@ :nconflicts %d@ :n_learnt %d@])" n_of_conflicts n_of_learnts);
+    (fun k->k "(@[@{<yellow>search@}@ :nconflicts %d@ :n_learnt %d@])" n_of_conflicts n_of_learnts);
   let conflictC = ref 0 in
   env.starts <- env.starts + 1;
   while true do
@@ -1315,13 +1359,6 @@ let search (env:t) n_of_conflicts n_of_learnts : unit =
           raise Restart
         );
         (* if decision_level() = 0 then simplify (); *)
-
-        (* garbage collect? *)
-        if n_of_learnts >= 0 &&
-           Vec.size env.clauses_learnt - Vec.size env.trail >= n_of_learnts
-        then (
-          reduce_db env;
-        );
 
         (* next decision *)
         pick_branch_lit env
@@ -1393,8 +1430,11 @@ let solve (env:t) : unit =
   if is_unsat env then (
     raise Unsat;
   );
+  (* initial limits for conflicts and learnt clauses *)
   let n_of_conflicts = ref (to_float env.restart_first) in
-  let n_of_learnts = ref ((to_float (nb_clauses env)) *. env.learntsize_factor) in
+  let n_of_learnts =
+    ref (CCFloat.max 50. ((to_float (nb_clauses env)) *. env.learntsize_factor))
+  in
   try
     while true do
       begin
@@ -1402,8 +1442,17 @@ let solve (env:t) : unit =
           search env (to_int !n_of_conflicts) (to_int !n_of_learnts)
         with
           | Restart ->
+            (* garbage collect, if needed *)
+            if !n_of_learnts >= 0. &&
+               float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
+            then (
+              let n = (to_int !n_of_learnts) + 1 in
+              reduce_db env ~down_to:n
+            );
+
+            (* increment parameters to ensure termination *)
             n_of_conflicts := !n_of_conflicts *. env.restart_inc;
-            n_of_learnts   := !n_of_learnts *. env.learntsize_inc
+            n_of_learnts   := !n_of_learnts *. env.learntsize_inc;
           | Sat ->
             assert (fully_propagated env);
             begin match final_check env with
@@ -1539,6 +1588,8 @@ let trail env = env.trail
 
 let pp_stats out (s:t): unit =
   Fmt.fprintf out
-    ":n_conflicts %d@ :n_learnt %d@ :n_decisions %d@ :n_restarts %d@ :n_gc %d"
-    s.conflicts s.n_learnt s.decisions s.starts s.n_gc
+    "(@[stats@ :n_conflicts %d@ :n_learnt %d@ :n_decisions %d@ :n_restarts %d@ \
+     :n_initial %d@ :n_gc %d@ :n_deleted %d@]"
+    s.conflicts s.n_learnt s.decisions s.starts
+    (Vec.size s.clauses_hyps) s.n_gc s.n_deleted
 
