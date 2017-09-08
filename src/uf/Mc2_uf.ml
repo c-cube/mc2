@@ -59,7 +59,7 @@ let build p_id Plugin.S_nil : Plugin.t =
       | _ -> assert false
 
     (* TODO: 1-watch on [arg_1,…,arg_n, f(args) *)
-    let update_watches _ _ = ()
+    let update_watches _ _ = Watch_kept
 
     (* TODO: 1-watch on [arg_1,…,arg_n, f(args) *)
     let init_watches _ _ = ()

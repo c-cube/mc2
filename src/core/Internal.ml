@@ -230,8 +230,9 @@ let[@inline] iter_terms (env:t) : term Sequence.t =
 let[@inline] init_watches (env:t) (t:term) : unit =
   t.t_tc.tct_init_watches (actions env) t
 
+(* TODO: proper watch scheme *)
 let[@inline] update_watches (env:t) (t:term): unit =
-  t.t_tc.tct_update_watches (actions env) t
+  ignore (t.t_tc.tct_update_watches (actions env) t)
 
 (* provision term (and its sub-terms) for future assignments.
    This is the function exposed to users and therefore it performs some checks. *)
@@ -366,10 +367,11 @@ let create_real (actions:actions lazy_t) : t = {
 exception Trivial
 
 (* [arr_to_list a i] converts [a.(i), ... a.(length a-1)] into a list *)
-let arr_to_list arr i : _ list =
+let[@inline] arr_to_list arr i : _ list =
   if i >= Array.length arr then []
   else Array.to_list (Array.sub arr i (Array.length arr - i))
 
+(* TODO: merge with {!partition}? *)
 (* Eliminates atom doublons in clauses.
    returns [true] if something changed. *)
 let eliminate_doublons clause : clause * bool =
@@ -681,7 +683,7 @@ let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
   Array.iteri
     (fun i a ->
        if i>0 && Atom.level a > Atom.level arr.(0) then (
-         (* move first to second, [i]-th to first, second to wherever *)
+         (* move first to second, [i]-th to first, second to [i] *)
          let tmp = arr.(1) in
          arr.(1) <- arr.(0);
          arr.(0) <- arr.(i);
@@ -995,11 +997,6 @@ let flush_clauses (env:t) =
     done
   )
 
-(* TODO: move into Solver_types, to be also used in update_watches *)
-type watch_res =
-  | Watch_kept
-  | Watch_removed
-
 (* boolean propagation.
    [a] is the false atom, one of [c]'s two watch literals
    [i] is the index of [c] in [a.watched]
@@ -1012,7 +1009,9 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
     (* false lit must be at index 1 *)
     atoms.(0) <- atoms.(1);
     atoms.(1) <- first
-  ) else assert (Atom.neg a == atoms.(1));
+  ) else (
+    assert (Atom.neg a == atoms.(1));
+  );
   let first = atoms.(0) in
   if Atom.is_true first
   then Watch_kept (* true clause, keep it in watched *)
@@ -1055,28 +1054,17 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
    clause watching [a] to see if the clause is false, unit, or has
    other possible watches
    @param res the optional conflict clause that the propagation might trigger *)
-let propagate_atom (env:t) (a:atom) (res:clause option ref) : unit =
+let propagate_atom (env:t) (a:atom) : unit =
   let watched = a.a_watched in
-  begin
-    try
-      let rec aux i =
-        if i >= Vec.size watched then ()
-        else (
-          let c = Vec.get watched i in
-          assert (Clause.attached c);
-          let j = match propagate_in_clause env a c i with
-            | Watch_kept -> i+1
-            | Watch_removed -> i (* clause at this index changed *)
-          in
-          aux j
-        )
-      in
-      aux 0
-    with Conflict c ->
-      assert (!res = None);
-      res := Some c
-  end;
-  ()
+  let i = ref 0 in
+  while !i < Vec.size watched do
+    let c = Vec.get watched !i in
+    assert (Clause.attached c);
+    begin match propagate_in_clause env a c !i with
+      | Watch_kept -> incr i
+      | Watch_removed -> () (* clause at this index changed *)
+    end
+  done
 
 let debug_eval_bool out = function
   | Eval_unknown -> Fmt.string out "unknown"
@@ -1105,6 +1093,29 @@ let rec theory_propagate (env:t) : clause option =
     end
   )
 
+(* Boolean propagation.
+   @return a conflict clause, if any *)
+and bool_propagate (env:t) : clause option =
+  if env.elt_head = Vec.size env.trail then (
+    theory_propagate env (* BCP done, now notify plugins *)
+  ) else (
+    let t = Vec.get env.trail env.elt_head in
+    env.elt_head <- env.elt_head + 1;
+    (* propagate [t], if boolean *)
+    begin match t.t_var with
+      | Var_none -> assert false
+      | Var_semantic _ -> bool_propagate env
+      | Var_bool _ ->
+        env.propagations <- env.propagations + 1;
+        (* propagate the atom that has been assigned to [true] *)
+        let a = Term.Bool.assigned_atom_exn t in
+        begin match propagate_atom env a with
+          | () -> bool_propagate env (* next propagation *)
+          | exception Conflict c -> Some c (* conflict *)
+        end
+    end
+  )
+
 (* Fixpoint between boolean propagation and theory propagation.
    Does BCP first.
    @return a conflict clause, if any *)
@@ -1113,29 +1124,7 @@ and propagate (env:t) : clause option =
   flush_clauses env;
   (* Now, check that the situation is sane *)
   assert (env.elt_head <= Vec.size env.trail);
-  if env.elt_head = Vec.size env.trail then (
-    theory_propagate env (* BCP done, now notify plugins *)
-  ) else (
-    let res = ref None in
-    while env.elt_head < Vec.size env.trail do
-      let t = Vec.get env.trail env.elt_head in
-      (* propagate [t], if boolean *)
-      begin match t.t_var with
-        | Var_none -> assert false
-        | Var_semantic _ -> ()
-        | Var_bool _ ->
-          env.propagations <- env.propagations + 1;
-          (* propagate the atom that has been assigned to [true] *)
-          let a = Term.Bool.assigned_atom_exn t in
-          propagate_atom env a res
-      end;
-      env.elt_head <- env.elt_head + 1;
-    done;
-    begin match !res with
-      | None -> theory_propagate env
-      | _ -> !res
-    end
-  )
+  bool_propagate env
 
 (* [a] is part of a conflict/learnt clause, but might not be evaluated yet.
    Evaluate it, save its value, and ensure it is indeed false. *)

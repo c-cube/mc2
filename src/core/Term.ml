@@ -147,7 +147,7 @@ let[@inline] add_watch (t:t) (u:t) : unit =
 
 let tc_mk
     ?(init_watches=fun _ _ -> ())
-    ?(update_watches=fun _ _ -> ())
+    ?(update_watches=fun _ _ -> Watch_kept)
     ?(subterms=fun _ _ -> ())
     ?(eval_bool=fun _ -> Eval_unknown)
     ~pp

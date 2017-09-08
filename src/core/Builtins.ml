@@ -41,7 +41,8 @@ let build p_id Plugin.S_nil : Plugin.t =
         assert (Term.Bool.is_false t);
         (* conflict clause: [true] *)
         Actions.raise_conflict acts [Term.Bool.pa t] lemma_true_is_true
-      )
+      );
+      Watch_kept
 
     let eval_bool (t:term) : eval_bool_res =
       assert (is_t_true t);
