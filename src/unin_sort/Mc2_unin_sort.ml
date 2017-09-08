@@ -269,7 +269,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       end
 
     (* check if term now evaluates, or if it becomes a unit constraint *)
-    let update_watches acts (eqn:term) = match Term.view eqn with
+    let update_watches acts (eqn:term) ~watch:_ = match Term.view eqn with
       | Eq (a,b) ->
         begin match Term.value eqn, Term.value a, Term.value b with
           | TA_assign{value=V_true;_}, TA_assign{value;_}, TA_none ->
@@ -293,7 +293,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             end
           | _ -> ()
         end;
-        Watch_kept
+        Watch_keep
       | _ -> assert false
 
     (* [a=b] watches [a,b, a=b] *)

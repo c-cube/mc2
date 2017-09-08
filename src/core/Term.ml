@@ -137,17 +137,13 @@ let[@inline] setup_var t =
     assert (has_var t);
   )
 
-let[@inline] iter_watches (t:t) f : unit =
-  let lazy vec = t.t_watches in
-  Vec.iter f vec
-
 let[@inline] add_watch (t:t) (u:t) : unit =
   let lazy vec = t.t_watches in
   Vec.push vec u
 
 let tc_mk
     ?(init_watches=fun _ _ -> ())
-    ?(update_watches=fun _ _ -> Watch_kept)
+    ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
     ?(subterms=fun _ _ -> ())
     ?(eval_bool=fun _ -> Eval_unknown)
     ~pp

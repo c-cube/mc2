@@ -35,14 +35,14 @@ let build p_id Plugin.S_nil : Plugin.t =
     let init_watches _ t = Term.add_watch t t
 
     (* check that [t_true] is only ever assigned to [true] *)
-    let update_watches acts t =
+    let update_watches acts t ~watch:_ =
       assert (is_t_true t);
       if Term.Bool.is_false t then (
         assert (Term.Bool.is_false t);
         (* conflict clause: [true] *)
         Actions.raise_conflict acts [Term.Bool.pa t] lemma_true_is_true
       );
-      Watch_kept
+      Watch_keep
 
     let eval_bool (t:term) : eval_bool_res =
       assert (is_t_true t);

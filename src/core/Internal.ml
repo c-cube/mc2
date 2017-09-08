@@ -230,10 +230,6 @@ let[@inline] iter_terms (env:t) : term Sequence.t =
 let[@inline] init_watches (env:t) (t:term) : unit =
   t.t_tc.tct_init_watches (actions env) t
 
-(* TODO: proper watch scheme *)
-let[@inline] update_watches (env:t) (t:term): unit =
-  ignore (t.t_tc.tct_update_watches (actions env) t)
-
 (* provision term (and its sub-terms) for future assignments.
    This is the function exposed to users and therefore it performs some checks. *)
 let rec add_term (env:t) (t:term): unit =
@@ -1002,7 +998,7 @@ let flush_clauses (env:t) =
    [i] is the index of [c] in [a.watched]
    @return whether [c] was removed from [a.watched]
 *)
-let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
+let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
   let atoms = c.c_atoms in
   let first = atoms.(0) in
   if first == Atom.neg a then (
@@ -1014,7 +1010,7 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
   );
   let first = atoms.(0) in
   if Atom.is_true first
-  then Watch_kept (* true clause, keep it in watched *)
+  then Watch_keep (* true clause, keep it in watched *)
   else (
     try (* look for another watch lit *)
       for k = 2 to Array.length atoms - 1 do
@@ -1025,8 +1021,6 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
           atoms.(k) <- Atom.neg a;
           (* remove [c] from [a.watched], add it to [ak.neg.watched] *)
           Vec.push (Atom.neg ak).a_watched c;
-          assert (Vec.get a.a_watched i == c);
-          Vec.fast_remove a.a_watched i;
           raise Exit
         )
       done;
@@ -1045,9 +1039,9 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) (i:int): watch_res =
             raise (Conflict c)
         end
       );
-      Watch_kept
+      Watch_keep
     with Exit ->
-      Watch_removed
+      Watch_remove
   )
 
 (* propagate atom [a], which was just decided. This checks every
@@ -1060,9 +1054,32 @@ let propagate_atom (env:t) (a:atom) : unit =
   while !i < Vec.size watched do
     let c = Vec.get watched !i in
     assert (Clause.attached c);
-    begin match propagate_in_clause env a c !i with
-      | Watch_kept -> incr i
-      | Watch_removed -> () (* clause at this index changed *)
+    begin match propagate_in_clause env a c with
+      | Watch_keep -> incr i
+      | Watch_remove ->
+        Vec.fast_remove watched !i;
+        (* remove clause [c] from watches, then look again at [!i]
+           since it's now another clause *)
+    end
+  done
+
+(* [t] is watching [watch], which has been assigned *)
+let[@inline] propagate_in_watching_term (env:t) (t:term) ~watch =
+  t.t_tc.tct_update_watches (actions env) t ~watch
+
+(* propagate in every term that watches [t] *)
+let propagate_term (env:t) (t:term): unit =
+  let lazy watched = t.t_watches in
+  let i = ref 0 in
+  while !i < Vec.size watched do
+    let u = Vec.get watched !i in
+    assert (Term.is_added u);
+    begin match propagate_in_watching_term env u ~watch:t with
+      | Watch_keep -> incr i
+      | Watch_remove ->
+        Vec.fast_remove watched !i;
+        (* remove [u] from terms watching [t];
+           inspect [!i] again since it's now another term *)
     end
   done
 
@@ -1086,8 +1103,8 @@ let rec theory_propagate (env:t) : clause option =
     (* consider one element *)
     let t = Vec.get env.trail env.th_head in
     env.th_head <- env.th_head + 1;
-    (* notify all watches of [t] to perform semantic propagation *)
-    begin match Term.iter_watches t (update_watches env) with
+    (* notify all terms watching [t] to perform semantic propagation *)
+    begin match propagate_term env t with
       | () -> theory_propagate env (* next propagation *)
       | exception (Conflict c) -> Some c (* conflict *)
     end

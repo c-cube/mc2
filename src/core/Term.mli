@@ -74,8 +74,6 @@ val field_clear : Term_fields.field -> t -> unit
 val has_var : t -> bool (** is there a variable for the term? *)
 val setup_var : t -> unit (** create a variable for the term *)
 
-val iter_watches : t -> (t -> unit) -> unit
-
 val add_watch : t -> t -> unit
 (** [add_watch t u] adds [u] to the list of watches of [t]. [u] will be
     notified whenever [t] is assigned *)
@@ -83,7 +81,7 @@ val add_watch : t -> t -> unit
 (** Make a new typeclass *)
 val tc_mk :
   ?init_watches:(actions -> term -> unit) ->
-  ?update_watches:(actions -> term -> watch_res) ->
+  ?update_watches:(actions -> term -> watch:term -> watch_res) ->
   ?subterms:( term_view -> (term->unit) -> unit) ->
   ?eval_bool :( term -> eval_bool_res) ->
   pp:term_view CCFormat.printer ->
