@@ -107,6 +107,76 @@ module Bool : sig
   val is_false : t -> bool
 end
 
+(** {2 1-term Watch Scheme} *)
+
+module Watch1 : sig
+  type t
+
+  val dummy : t
+  val make : term list -> t
+  val make_a : term array -> t (** owns the array *)
+
+  val init :
+    t ->
+    term ->
+    on_all_set:(unit -> unit) ->
+    unit
+  (** [init w t ~on_all_set] initializes [w] (the watchlist) for
+      term [t], by finding an unassigned term in the watchlist and
+      registering [t] to it.
+      If all terms are set, then it watches the one with the highest level
+      and call [on_all_set ()]
+  *)
+
+  val update :
+    t ->
+    term ->
+    watch:term ->
+    on_all_set:(unit -> unit) ->
+    watch_res
+  (** [update w t ~watch ~on_all_set] updates [w] after [watch]
+      has been assigned. It looks for another term in [w] for [t] to watch.
+      If all terms are set, then it calls [on_all_set ()]
+  *)
+end
+
+(** {2 2-terms Watch Scheme} *)
+
+module Watch2 : sig
+  type t
+
+  val dummy : t
+  val make : term list -> t
+  val make_a : term array -> t (** owns the array *)
+
+  val init :
+    t ->
+    term ->
+    on_unit:(term -> unit) ->
+    on_all_set:(unit -> unit) ->
+    unit
+  (** [init w t ~on_all_set] initializes [w] (the watchlist) for
+      term [t], by finding an unassigned term in the watchlist and
+      registering [t] to it.
+      If exactly one term [u] is not set, then it calls [on_unit u].
+      If all terms are set, then it watches the one with the highest level
+      and call [on_all_set ()]
+  *)
+
+  val update :
+    t ->
+    term ->
+    watch:term ->
+    on_unit:(term -> unit) ->
+    on_all_set:(unit -> unit) ->
+    watch_res
+  (** [update w t ~watch ~on_all_set] updates [w] after [watch]
+      has been assigned. It looks for another term in [w] for [t] to watch.
+      If exactly one term [u] is not set, then it calls [on_unit u].
+      If all terms are set, then it calls [on_all_set ()]
+  *)
+end
+
 (** {2 Assignment view} *)
 
 val assigned : t -> bool

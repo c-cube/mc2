@@ -8,6 +8,14 @@ let pp_list ?(sep=" ") pp = Fmt.list ~sep:(pp_sep sep) pp
 let pp_seq ?(sep=" ") pp = Fmt.seq ~sep:(pp_sep sep) pp
 let pp_array ?(sep=" ") pp = Fmt.array ~sep:(pp_sep sep) pp
 
+(* swap elements of array *)
+let[@inline] swap_arr a i j =
+  if i<>j then (
+    let tmp = a.(i) in
+    a.(i) <- a.(j);
+    a.(j) <- tmp;
+  )
+
 exception Error of string
 
 let () = Printexc.register_printer

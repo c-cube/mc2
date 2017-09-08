@@ -666,14 +666,6 @@ let backtrack_lvl (env:t) (a:atom array) : int * bool =
     )
   )
 
-(* swap elements of array *)
-let[@inline] swap_arr a i j =
-  if i<>j then (
-    let tmp = a.(i) in
-    a.(i) <- a.(j);
-    a.(j) <- tmp;
-  )
-
 (* move atoms assigned at high levels first *)
 let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
   Array.iteri
@@ -687,7 +679,7 @@ let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
            arr.(i) <- tmp;
          );
        ) else if i>1 && Atom.level a > Atom.level arr.(1) then (
-         swap_arr arr 1 i;
+         Util.swap_arr arr 1 i;
        ))
     arr
 

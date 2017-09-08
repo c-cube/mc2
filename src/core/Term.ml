@@ -210,6 +210,97 @@ let debug out t : unit =
   in
   Format.fprintf out "%a[%d]%a" pp t (id t) pp_val (value t)
 
+(* find a term in [w] that is not assigned, or otherwise,
+       the one with highest level
+       @return index of term to watch, and [true] if all are assigned *)
+let rec find_watch_ w i highest : int * bool =
+  if i=Array.length w then highest, true
+  else if has_value w.(i) then (
+    let highest =
+      if level w.(i) > level w.(highest) then i else highest
+    in
+    find_watch_ w (i+1) highest
+  ) else i, false
+
+module Watch1 = struct
+  type t = term array
+  let dummy = [||]
+  let make = Array.of_list
+  let[@inline] make_a a : t = a
+
+  let init w t ~on_all_set : unit =
+    let i, all_set = find_watch_ w 0 0 in
+    (* put watch first *)
+    Util.swap_arr w i 0;
+    add_watch w.(0) t;
+    if all_set then (
+      on_all_set ();
+    );
+    ()
+
+  let update w t ~watch ~on_all_set : watch_res =
+    (* find another watch. If none is present, keep the
+       current one and call [on_all_set]. *)
+    assert (w.(0) == watch);
+    let i, all_set = find_watch_ w 0 0 in
+    if all_set then (
+      on_all_set ();
+      Watch_keep (* just keep current watch *)
+    ) else (
+      (* use [i] as the watch *)
+      assert (i>0);
+      Util.swap_arr w i 0;
+      add_watch w.(0) t;
+      Watch_remove
+    )
+end
+
+module Watch2 = struct
+  type t = term array
+  let dummy = [||]
+  let make = Array.of_list
+  let[@inline] make_a a : t = a
+
+  let[@inline] init w t ~on_unit ~on_all_set : unit =
+    let i0, all_set0 = find_watch_ w 0 0 in
+    Util.swap_arr w i0 0;
+    let i1, all_set1 = find_watch_ w 1 0 in
+    Util.swap_arr w i1 1;
+    add_watch w.(0) t;
+    add_watch w.(1) t;
+    assert (if all_set0 then all_set1 else true);
+    if all_set0 then (
+      on_all_set ()
+    ) else if all_set1 then (
+      assert (not (has_value w.(0)));
+      on_unit w.(0);
+    );
+    ()
+
+  let update w t ~watch ~on_unit ~on_all_set : watch_res =
+    (* find another watch. If none is present, keep the
+       current ones and call [on_unit] or [on_all_set]. *)
+    if w.(0) == watch then (
+      (* ensure that if there is only one watch, it's the first *)
+      Util.swap_arr w 0 1;
+    ) else assert (w.(1) == watch);
+    let i, all_set1 = find_watch_ w 1 0 in
+    if all_set1 then (
+      if has_value w.(0) then (
+        on_all_set ();
+      ) else (
+        on_unit w.(0);
+      );
+      Watch_keep (* just keep current watch *)
+    ) else (
+      (* use [i] as the second watch *)
+      assert (i>1);
+      Util.swap_arr w i 1;
+      add_watch w.(1) t;
+      Watch_remove
+    )
+end
+
 (** {2 Hashconsing of a Theory Terms} *)
 
 module type TERM_ALLOC_OPS = sig
