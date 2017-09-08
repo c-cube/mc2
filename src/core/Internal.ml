@@ -148,11 +148,12 @@ type t = {
   learntsize_inc : float;
   (* multiplicative factor for [learntsize_factor] at each restart *)
 
-  mutable starts : int;
-  mutable decisions : int;
-  mutable propagations : int;
-  mutable conflicts : int;
-  mutable n_learnt : int;
+  mutable starts : int; (* number of (re)starts *)
+  mutable decisions : int; (* number of decisions *)
+  mutable propagations : int; (* number of propagations *)
+  mutable conflicts : int; (* number of conflicts *)
+  mutable n_learnt : int; (* total number of clauses learnt *)
+  mutable n_gc: int; (* number of rounds of GC *)
   mutable nb_init_clauses : int;
 }
 
@@ -346,6 +347,7 @@ let create_real (actions:actions lazy_t) : t = {
   propagations = 0;
   conflicts = 0;
   n_learnt=0;
+  n_gc=0;
   nb_init_clauses = 0;
 }
 
@@ -1269,6 +1271,7 @@ and pick_branch_lit (env:t) : unit =
 let reduce_db (env:t) =
   Log.debug 3 "reduce_db";
   assert (Stack.is_empty env.clauses_to_add);
+  env.n_gc <- env.n_gc + 1;
   (* mark, from clauses *)
   Stack.iter Clause.gc_mark env.clauses_root;
   Vec.iter Clause.gc_mark env.clauses_hyps;
@@ -1533,6 +1536,6 @@ let trail env = env.trail
 
 let pp_stats out (s:t): unit =
   Fmt.fprintf out
-    ":n_conflicts %d@ :n_learnt %d@ :n_decisions %d@ :n_restarts %d"
-    s.conflicts s.n_learnt s.decisions s.starts
+    ":n_conflicts %d@ :n_learnt %d@ :n_decisions %d@ :n_restarts %d@ :n_gc %d"
+    s.conflicts s.n_learnt s.decisions s.starts s.n_gc
 
