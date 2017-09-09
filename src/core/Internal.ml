@@ -1334,7 +1334,7 @@ let reduce_db (env:t) ~down_to : unit =
 
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
-let search (env:t) n_of_conflicts : unit =
+let search (env:t) n_of_conflicts n_of_learnt : unit =
   Log.debugf 5
     (fun k->k "(@[@{<yellow>search@}@ :nconflicts %d@])" n_of_conflicts);
   let conflictC = ref 0 in
@@ -1352,6 +1352,7 @@ let search (env:t) n_of_conflicts : unit =
         if H.is_empty env.order then (
           raise Sat;
         );
+
         (* should we restart? *)
         if n_of_conflicts > 0 && !conflictC >= n_of_conflicts then (
           Log.debug info "Restarting...";
@@ -1359,6 +1360,14 @@ let search (env:t) n_of_conflicts : unit =
           raise Restart
         );
         (* if decision_level() = 0 then simplify (); *)
+
+        (* garbage collect, if needed *)
+        if n_of_learnt >= 0 &&
+           Vec.size env.clauses_learnt - Vec.size env.trail >= n_of_learnt
+        then (
+          let n = n_of_learnt + 1 in
+          reduce_db env ~down_to:n
+        );
 
         (* next decision *)
         pick_branch_lit env
@@ -1440,18 +1449,10 @@ let solve ?(gc=true) ?(restarts=true) (env:t) : unit =
       begin
         try
           let nconf = if restarts then to_int !n_of_conflicts else max_int in
-          search env nconf
+          let nlearnt = if gc then to_int !n_of_learnts else max_int in
+          search env nconf nlearnt
         with
           | Restart ->
-            (* garbage collect, if needed *)
-            if gc &&
-               !n_of_learnts >= 0. &&
-               float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
-            then (
-              let n = (to_int !n_of_learnts) + 1 in
-              reduce_db env ~down_to:n
-            );
-
             (* increment parameters to ensure termination *)
             n_of_conflicts := !n_of_conflicts *. env.restart_inc;
             n_of_learnts   := !n_of_learnts *. env.learntsize_inc;
