@@ -1334,9 +1334,9 @@ let reduce_db (env:t) ~down_to : unit =
 
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
-let search (env:t) n_of_conflicts n_of_learnts : unit =
+let search (env:t) n_of_conflicts : unit =
   Log.debugf 5
-    (fun k->k "(@[@{<yellow>search@}@ :nconflicts %d@ :n_learnt %d@])" n_of_conflicts n_of_learnts);
+    (fun k->k "(@[@{<yellow>search@}@ :nconflicts %d@])" n_of_conflicts);
   let conflictC = ref 0 in
   env.starts <- env.starts + 1;
   while true do
@@ -1425,7 +1425,7 @@ let final_check (env:t) : final_check_res =
 
 (* fixpoint of propagation and decisions until a model is found, or a
    conflict is reached *)
-let solve (env:t) : unit =
+let solve ?(gc=true) ?(restarts=true) (env:t) : unit =
   Log.debugf 3 (fun k->k"@{<Green>#### Solve@}");
   if is_unsat env then (
     raise Unsat;
@@ -1439,11 +1439,13 @@ let solve (env:t) : unit =
     while true do
       begin
         try
-          search env (to_int !n_of_conflicts) (to_int !n_of_learnts)
+          let nconf = if restarts then to_int !n_of_conflicts else max_int in
+          search env nconf
         with
           | Restart ->
             (* garbage collect, if needed *)
-            if !n_of_learnts >= 0. &&
+            if gc &&
+               !n_of_learnts >= 0. &&
                float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
             then (
               let n = (to_int !n_of_learnts) + 1 in

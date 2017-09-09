@@ -118,7 +118,12 @@ type res =
   | Unsat of Unsat_state.t (** Returned when the solver reaches UNSAT *)
 (** Result type for the solver *)
 
-val solve : ?assumptions:atom list -> t -> res
+val solve :
+  ?gc:bool ->
+  ?restarts:bool ->
+  ?assumptions:atom list ->
+  t ->
+  res
 (** Try and solves the current set of assumptions. *)
 
 val pp_stats : t CCFormat.printer

@@ -95,12 +95,12 @@ type res =
   | Unsat of Unsat_state.t (** Returned when the solver reaches UNSAT *)
 (** Result type for the solver *)
 
-let solve ?(assumptions=[]) (s:t): res =
+let solve ?gc ?restarts ?(assumptions=[]) (s:t): res =
   try
     S.pop s;
     S.push s;
     S.local s assumptions;
-    S.solve s;
+    S.solve ?gc ?restarts s;
     pp_all s 99 "SAT";
     Sat (St_sat s)
   with S.Unsat ->

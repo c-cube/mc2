@@ -60,7 +60,7 @@ val iter_terms : t -> term Sequence.t
 (** Iterate on all terms known to plugins.
     Used for checking all variables to assign, and for garbage collection. *)
 
-val solve : t -> unit
+val solve : ?gc:bool -> ?restarts:bool -> t -> unit
 (** Try and solves the current set of assumptions.
     @return () if the current set of clauses is satisfiable
     @raise Unsat if a toplevel conflict is found *)

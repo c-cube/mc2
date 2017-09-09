@@ -20,6 +20,8 @@ let p_dot_proof = ref ""
 let p_proof_print = ref false
 let time_limit = ref 300.
 let size_limit = ref 1000_000_000.
+let restarts = ref true
+let gc = ref true
 let p_stat = ref false
 
 (* TODO: remove the functor, there will be only one input *)
@@ -81,6 +83,10 @@ let argspec = Arg.align [
     "-cnf", Arg.Set p_cnf, " Prints the cnf used.";
     "-check", Arg.Set Process.p_check,
     " Build, check and print the proof (if output is set), if unsat";
+    "-gc", Arg.Set gc, " enable garbage collection";
+    "-no-gc", Arg.Clear gc, " disable garbage collection";
+    "-restarts", Arg.Set restarts, " enable restarts";
+    "-no-restarts", Arg.Clear restarts, " disable restarts";
     "-dot", Arg.Set_string p_dot_proof,
     " If provided, print the dot proof in the given file";
     "-gc", Arg.Unit setup_gc_stat,
@@ -122,7 +128,8 @@ let main () =
        try
          let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
          E.fold_l
-           (fun () -> Process.process_stmt ~pp_cnf:!p_cnf ?dot_proof solver)
+           (fun () -> Process.process_stmt
+               ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf ?dot_proof solver)
            () input
        with Exit ->
          E.return())

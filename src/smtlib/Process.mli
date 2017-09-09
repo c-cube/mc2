@@ -29,6 +29,8 @@ val with_limits :
 *)
 
 val process_stmt :
+  ?gc:bool ->
+  ?restarts:bool ->
   ?pp_cnf:bool ->
   ?dot_proof:string ->
   Solver.t ->
