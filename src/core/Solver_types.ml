@@ -226,11 +226,12 @@ and premise =
   (** The clause is a 1-atom clause, where the atom is a local assumption *)
   | Lemma of lemma
   (** The clause is a theory-provided tautology, with the given proof. *)
-  | History of clause list
+  | Simplify of clause
+  (** Deduplication/sorting of atoms in the clause *)
+  | Hyper_res of clause list
   (** The clause can be obtained by resolution of the clauses
-      in the list. If the list has a single element [c] , then the clause can
-      be obtained by simplifying [c] (i.e eliminating doublons in its atom
-      list).  For a premise [History [a_1 :: ... :: a_n]] ([n > 0]) the clause
+      in the list.
+      For a premise [History [a_1 :: ... :: a_n]] ([n >= 2]) the clause
       is obtained by performing resolution of [a_1] with [a_2], and then
       performing a resolution step between the result and [a_3], etc...  Of
       course, each of the clause [a_i] also has its own premise.
@@ -320,7 +321,7 @@ let dummy_clause : clause = {
   c_atoms = [| |];
   c_activity = -1.;
   c_fields = Clause_fields.empty;
-  c_premise = History [];
+  c_premise = Hyp;
 }
 
 let dummy_atom : atom = {

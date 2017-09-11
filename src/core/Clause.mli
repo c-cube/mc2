@@ -5,8 +5,6 @@ open Solver_types
 
 type t = clause
 
-val empty : t (** The empty clause *)
-
 val make : ?tag:int -> atom list -> premise -> t
 (** [make atoms premise] creates a clause with the given attributes. *)
 
@@ -14,6 +12,9 @@ val make_arr : ?tag:int -> atom array -> premise -> t
 (** [make_arr atoms premise] creates a clause with the
     given attributes.
     Consumes the array. *)
+
+val equal : t -> t -> bool
+val hash : t -> int
 
 val visited : t -> bool
 val mark_visited : t -> unit
@@ -41,3 +42,5 @@ val pp_atoms : atom list CCFormat.printer
 val debug_atoms : atom list CCFormat.printer
 
 val pp_dimacs : t CCFormat.printer
+
+module Tbl : CCHashtbl.S with type key = clause

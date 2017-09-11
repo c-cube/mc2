@@ -26,7 +26,8 @@ let make ?tag ali c_premise : t=
   let c_atoms = Array.of_list ali in
   make_arr ?tag c_atoms c_premise
 
-let empty : t = make [] (History [])
+let[@inline] equal (a:t) (b:t) = a==b
+let[@inline] hash (a:t) : int = CCHash.int a.c_name
 
 let[@inline] visited c = Fields.get field_c_visited c.c_fields
 let[@inline] mark_visited c = c.c_fields <- Fields.set field_c_visited true c.c_fields
@@ -74,3 +75,9 @@ let pp_dimacs fmt { c_atoms; _} =
       a
   in
   Format.fprintf fmt "%a0" aux c_atoms
+
+module Tbl = CCHashtbl.Make(struct
+    type t = clause
+    let hash = hash
+    let equal = equal
+  end)

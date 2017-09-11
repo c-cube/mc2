@@ -4,8 +4,9 @@ open Solver_types
 type t = Solver_types.atom
 
 val equal : t -> t -> bool
-
 val compare : t -> t -> int
+
+val same_term : t -> t -> bool (** same term, ignoring sign? *)
 
 val is_pos : t -> bool (** Positive atom? *)
 val neg : t -> t (** Negation *)
@@ -31,3 +32,5 @@ val watched : t -> clause Vec.t
 
 val pp : t CCFormat.printer (** nice printer *)
 val debug : t CCFormat.printer (** very verbose printer *)
+
+module Set : CCSet.S with type elt = atom

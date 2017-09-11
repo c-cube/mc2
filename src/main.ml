@@ -83,6 +83,7 @@ let argspec = Arg.align [
     "-cnf", Arg.Set p_cnf, " Prints the cnf used.";
     "-check", Arg.Set Process_smtlib.p_check,
     " Build, check and print the proof (if output is set), if unsat";
+    "-no-check", Arg.Clear Process_smtlib.p_check, " inverse of -check";
     "-gc", Arg.Set gc, " enable garbage collection";
     "-no-gc", Arg.Clear gc, " disable garbage collection";
     "-restarts", Arg.Set restarts, " enable restarts";

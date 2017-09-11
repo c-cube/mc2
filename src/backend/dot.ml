@@ -77,7 +77,7 @@ module Make(A : Arg with type atom := atom
 
   let print_edges fmt n =
     match n.Proof.step with
-      | Proof.Resolution (p1, p2, _) ->
+      | Proof.Resolution {premise1=p1; premise2=p2; _} ->
         print_edge fmt (res_node_id n) (proof_id p1);
         print_edge fmt (res_node_id n) (proof_id p2)
       | _ -> ()
@@ -121,12 +121,12 @@ module Make(A : Arg with type atom := atom
         print_dot_node fmt (node_id n) "LIGHTBLUE" Proof.(n.conclusion) rule color l
 
       (* Tree nodes *)
-      | Proof.Duplicate (p, l) ->
+      | Proof.Deduplicate (p, l) ->
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Duplicate" "GREY"
           ((fun fmt () -> (Format.fprintf fmt "%s" (node_id n))) ::
              List.map (ttify A.print_atom) l);
         print_edge fmt (node_id n) (node_id (Proof.expand p))
-      | Proof.Resolution (_, _, a) ->
+      | Proof.Resolution {pivot=a; _} ->
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Resolution" "GREY"
           [(fun fmt () -> (Format.fprintf fmt "%s" (node_id n)))];
         print_dot_res_node fmt (res_node_id n) a;

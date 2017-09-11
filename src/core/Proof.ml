@@ -6,97 +6,69 @@ Copyright 2014 Simon Cruanes
 
 open Solver_types
 
-exception Insuficient_hyps
-exception Resolution_error of string
-
-(* Log levels *)
-let error = 1
-let warn = 3
-let info = 10
-let debug = 15
+module Fmt = CCFormat
 
 let merge = List.merge Atom.compare
 
 let _c = ref 0
 let fresh_pcl_name () = incr _c; "R" ^ (string_of_int !_c)
 
-(* Compute resolution of 2 clauses *)
-let resolve l =
-  let rec aux resolved acc = function
-    | [] -> resolved, acc
-    | [a] -> resolved, a :: acc
+type sorted_atom_list = atom list
+
+type resolve_res = {
+  resolve_atoms: sorted_atom_list;
+  resolve_pivots: atom list; (* what were the pivot(s) atom(s) *)
+}
+
+(* Compute resolution of 2 clauses, which have been merged into a
+   sorted list. Since atoms have an ordering where [a] and [¬a] are
+   next to each other, it's easy to detect the presence of both in the merge.
+
+   precondition: l is sorted *)
+let resolve (l:sorted_atom_list) : resolve_res =
+  (* pivots: atoms on which resolution was done
+     concl: remaining atoms for the conclusion *)
+  let rec aux pivots concl = function
+    | [] -> pivots, concl
+    | [a] -> pivots, a :: concl
     | a :: b :: r ->
-      if Atom.equal a b then
-        aux resolved (a :: acc) r
-      else if Atom.equal (Atom.neg a) b then
-        aux (Atom.abs a :: resolved) acc r
-      else
-        aux resolved (a :: acc) (b :: r)
+      if Atom.equal a b then (
+        aux pivots concl (b::r) (* remove dup *)
+      ) else if Atom.equal (Atom.neg a) b then (
+        aux (Atom.abs a :: pivots) concl r (* resolve *)
+      ) else (
+        aux pivots (a :: concl) (b :: r) (* add to conclusion *)
+      )
   in
-  let resolved, new_clause = aux [] [] l in
-  resolved, List.rev new_clause
+  let pivots, new_clause = aux [] [] l in
+  { resolve_pivots=pivots;
+    resolve_atoms=List.rev new_clause;
+  }
 
-(* Compute the set of doublons of a clause *)
-let find_doublons c = List.sort Atom.compare (Array.to_list (c.c_atoms))
-
-(* TODO: comment *)
-(* conflict analysis *)
-let analyze (cl:atom list) : atom list list * atom list =
-  let rec aux duplicates free = function
-    | [] -> duplicates, free
-    | [ x ] -> duplicates, x :: free
-    | x :: ((y :: r) as l) ->
-      if Atom.equal x y then
-        count duplicates (x :: free) x [y] r
-      else
-        aux duplicates (x :: free) l
-  and count duplicates free x acc = function
-    | (y :: r) when Atom.equal x y ->
-      count duplicates free x (y :: acc) r
-    | l ->
-      aux (acc :: duplicates) free l
-  in
-  let doublons, acc = aux [] [] cl in
-  doublons, List.rev acc
-
-let to_list c =
-  let cl = find_doublons c in
-  let doublons, l = analyze cl in
-  let conflicts, _ = resolve l in
-  if doublons <> [] then
-    Log.debug warn "Input clause has redundancies";
-  if conflicts <> [] then
-    Log.debug warn "Input clause is a tautology";
+(* turn a clause into a sorted list of atoms *)
+let clause_to_list (c:clause) : sorted_atom_list =
+  let cl = List.sort Atom.compare (Array.to_list c.c_atoms) in
   cl
 
-(*
-let pp_cl fmt l =
-  let rec aux fmt = function
-    | [] -> ()
-    | a :: r ->
-      Format.fprintf fmt "%a@,%a" pp_atom a aux r
+let[@inline] merge_clauses
+      (l1:sorted_atom_list) (l2:sorted_atom_list): sorted_atom_list =
+  List.merge Atom.compare l1 l2
+
+(* find set of duplicates in [c] *)
+let find_duplicates (c:clause) : atom list =
+  let r =
+    Array.fold_left
+      (fun acc a -> if Atom.marked a then a :: acc else (Atom.mark a; acc))
+      [] c.c_atoms
   in
-  Format.fprintf fmt "@[<v>%a@]" aux l
-*)
+  Array.iter Atom.unmark c.c_atoms;
+  r
 
-(* Comparison of clauses *)
-let cmp_cl c d =
-  let rec aux = function
-    | [], [] -> 0
-    | a :: r, a' :: r' ->
-      begin match Atom.compare a a' with
-        | 0 -> aux (r, r')
-        | x -> x
-      end
-    | _ :: _ , [] -> -1
-    | [], _ :: _ -> 1
-  in
-  aux (c, d)
+(* Comparison of clauses by their lists of atoms *)
+let[@inline] cl_list_eq c d = CCList.equal Atom.equal c d
+let[@inline] prove conclusion = conclusion
 
-let prove conclusion =
-  assert (conclusion.c_premise <> History []);
-  conclusion
-
+(* update proof of atom [a] *)
 let rec set_atom_proof a =
   let aux acc b =
     if Atom.equal (Atom.neg a) b then acc
@@ -104,15 +76,16 @@ let rec set_atom_proof a =
   in
   assert (Atom.level a >= 0);
   begin match Atom.reason a with
-    | Some Bcp c ->
-      Log.debugf debug
-        (fun k -> k "Analysing: @[%a@ %a@]" Atom.debug a Clause.debug c);
+    | Some (Bcp c) ->
+      Log.debugf 10
+        (fun k -> k "(@[proof.analyzing@ :atom %a@ :bcp %a@])"
+            Atom.debug a Clause.debug c);
       if Array.length c.c_atoms = 1 then (
-        Log.debugf debug (fun k -> k "Old reason: @[%a@]" Atom.debug a);
+        Log.debugf 15 (fun k -> k "(@[proof.analyze.old_reason@ %a@])" Atom.debug a);
         c
       ) else (
         assert (Atom.is_false a);
-        let r = History (c :: (Array.fold_left aux [] c.c_atoms)) in
+        let r = Premise.hyper_res (c :: Array.fold_left aux [] c.c_atoms) in
         let c' = Clause.make [Atom.neg a] r in
         (* update reason *)
         begin match a.a_term.t_value with
@@ -120,30 +93,30 @@ let rec set_atom_proof a =
           | TA_assign{value;_} ->
             a.a_term.t_value <- TA_assign{value;reason=Bcp c'}
         end;
-        Log.debugf debug
-          (fun k -> k "New reason: @[%a@ %a@]" Atom.debug a Clause.debug c');
+        Log.debugf 15
+          (fun k -> k "(@[proof.analyze.new_reason@ %a@ %a@])" Atom.debug a Clause.debug c');
         c'
       )
     | _ ->
-      Log.debugf error (fun k -> k "Error while proving atom %a" Atom.debug a);
-      raise (Resolution_error "Cannot prove atom")
+      Util.errorf "(@[proof.analyze.cannot_prove_atom@ %a@])" Atom.debug a
   end
 
 let prove_unsat (conflict:clause) : clause =
   if Array.length conflict.c_atoms = 0 then conflict
   else (
-    Log.debugf info (fun k -> k "@{<Green>Proving unsat@} from: @[%a@]" Clause.debug conflict);
+    Log.debugf 2 (fun k -> k "(@[@{<Green>Proving unsat@}@: from %a@])" Clause.debug conflict);
     let l = Array.fold_left (fun acc a -> set_atom_proof a :: acc) [] conflict.c_atoms in
-    let res = Clause.make [] (History (conflict :: l)) in
-    Log.debugf info (fun k -> k "@{<Green>Proof found@}: @[%a@]" Clause.debug res);
+    let res = Clause.make [] (Premise.hyper_res (conflict :: l)) in
+    Log.debugf 2 (fun k -> k "(@[@{<Green>Proof found@}@ %a@])" Clause.debug res);
     res
   )
 
 let prove_atom a =
-  if (Atom.is_true a && Atom.level a = 0) then
+  if Atom.is_true a && Atom.level a = 0 then (
     Some (set_atom_proof a)
-  else
+  ) else (
     None
+  )
 
 (* Interface exposed *)
 type t = clause
@@ -155,58 +128,94 @@ and step =
   | Hypothesis
   | Assumption
   | Lemma of lemma
-  | Duplicate of t * atom list
-  | Resolution of t * t * atom
+  | Deduplicate of t * atom list
+  | Resolution of {
+      premise1: t;
+      premise2: t;
+      pivot: atom;
+    }
 
-let rec chain_res (c, cl) = function
+let[@inline] conclusion n = n.conclusion
+let[@inline] step n = n.step
+
+let debug_step out (s:step) : unit = match s with
+  | Hypothesis -> Fmt.string out "hypothesis"
+  | Assumption -> Fmt.string out "assumption"
+  | Lemma l -> Fmt.fprintf out "(@[lemma %a@])" Lemma.pp l
+  | Deduplicate (c,l) ->
+    Fmt.fprintf out "(@[dedup@ :from %a@ :on (@[%a@])@])" Clause.debug c
+      Clause.debug_atoms l
+  | Resolution {premise1=p1; premise2=p2; pivot} ->
+    Fmt.fprintf out "(@[res@ :pivot %a@ :c1 %a@ :c2 %a@])"
+      Atom.debug pivot Clause.debug p1 Clause.debug p2
+
+type chain_res = {
+  cr_pivot : atom; (* pivot atom, on which resolution is done *)
+  cr_clause: atom list; (* clause obtained by res *)
+  cr_premise1 : clause;
+  cr_premise2 : clause;
+}
+
+(* perform resolution between [c] and the remaining list.
+   [cl] is the sorted list version of [c] *)
+let rec chain_res (c:clause) (cl:sorted_atom_list) : clause list -> chain_res = function
   | d :: r ->
-    Log.debugf debug
-      (fun k -> k "Res.resolving clauses : @[%a@\n%a@]"
-          Clause.debug c Clause.debug d);
-    let dl = to_list d in
-    begin match resolve (merge cl dl) with
-      | [a], l ->
+    Log.debugf 15 (fun k -> k "(@[proof.resolve@ :c1 %a@ :c2 %a@])"
+        Clause.debug c Clause.debug d);
+    let dl = clause_to_list d in
+    let res = resolve (merge_clauses cl dl) in
+    begin match res.resolve_pivots with
+      | [a] ->
         begin match r with
-          | [] -> l, c, d, a
+          | [] ->
+            {cr_clause=res.resolve_atoms; cr_pivot=a;
+             cr_premise1=c; cr_premise2=d}
           | _ ->
-            let new_clause = Clause.make l (History [c; d]) in
-            chain_res (new_clause, l) r
+            let new_clause =
+              Clause.make res.resolve_atoms (Premise.hyper_res [c; d])
+            in
+            chain_res new_clause res.resolve_atoms r
         end
-      | _ ->
-        Log.debugf error
-          (fun k -> k "While resolving clauses:@[<hov>%a@\n%a@]"
-              Clause.debug c Clause.debug d);
-        raise (Resolution_error "Clause mismatch")
+      | pivots ->
+        Util.errorf
+          "(@[<hv>proof: resolution error (multiple pivots)@ :pivots (@[%a@])@ :c1 %a@ :c2 %a@])"
+          Clause.debug c Clause.debug d (Util.pp_list Atom.debug) pivots
     end
   | _ ->
-    raise (Resolution_error "Bad history")
+    Util.errorf "proof: resolution error (bad history)@ %a" Clause.pp c
 
-let expand conclusion : node =
-  Log.debugf debug (fun k -> k "Res.expanding : @[%a@]" Clause.debug conclusion);
+let[@inline] mk_node conclusion step = {conclusion; step}
+
+let expand (conclusion:clause) : node =
+  Log.debugf 15 (fun k -> k "(@[proof.expanding@ %a@])" Clause.debug conclusion);
   begin match conclusion.c_premise with
-    | Lemma l ->
-      {conclusion; step = Lemma l; }
-    | Hyp ->
-      { conclusion; step = Hypothesis; }
-    | Local ->
-      { conclusion; step = Assumption; }
-    | History [] ->
-      Log.debugf error
-        (fun k -> k "Empty history for clause: %a" Clause.debug conclusion);
-      raise (Resolution_error "Empty history")
-    | History [ c ] ->
-      let duplicates, res = analyze (find_doublons c) in
-      assert (cmp_cl res (find_doublons conclusion) = 0);
-      { conclusion; step = Duplicate (c, List.concat duplicates) }
-    | History ( c :: ([_] as r)) ->
-      let (l, c', d', a) = chain_res (c, to_list c) r in
-      assert (cmp_cl l (to_list conclusion) = 0);
-      { conclusion; step = Resolution (c', d', a); }
-    | History ( c :: r ) ->
-      let (l, c', d', a) = chain_res (c, to_list c) r in
-      conclusion.c_premise <- History [c'; d'];
-      assert (cmp_cl l (to_list conclusion) = 0);
-      { conclusion; step = Resolution (c', d', a); }
+    | Lemma l -> mk_node conclusion (Lemma l)
+    | Hyp -> mk_node conclusion Hypothesis
+    | Local -> mk_node conclusion Assumption
+    | Simplify c ->
+      let duplicates = find_duplicates c in
+      mk_node conclusion (Deduplicate (c, duplicates))
+    | Hyper_res ([] | [_]) ->
+      Util.errorf "proof: resolution error (wrong hyperres)@ %a@ :premise %a"
+        Clause.debug conclusion Premise.pp conclusion.c_premise
+    | Hyper_res ( c :: ([_] as r)) ->
+      let res = chain_res c (clause_to_list c) r in
+      let step = Resolution {
+          premise1=res.cr_premise1;
+          premise2=res.cr_premise2;
+          pivot=res.cr_pivot;
+        } in
+      mk_node conclusion step
+    | Hyper_res (c :: r) ->
+      let res = chain_res c (clause_to_list c) r in
+      conclusion.c_premise <-
+        Premise.hyper_res [res.cr_premise1; res.cr_premise2];
+      let step = Resolution {
+          premise1=res.cr_premise1;
+          premise2=res.cr_premise2;
+          pivot=res.cr_pivot;
+        } in
+      mk_node conclusion step
   end
 
 (* Proof nodes manipulation *)
@@ -214,58 +223,55 @@ let is_leaf = function
   | Hypothesis
   | Assumption
   | Lemma _ -> true
-  | Duplicate _
+  | Deduplicate _
   | Resolution _ -> false
 
 let parents = function
   | Hypothesis
   | Assumption
   | Lemma _ -> []
-  | Duplicate (p, _) -> [p]
-  | Resolution (p, p', _) -> [p; p']
+  | Deduplicate (p, _) -> [p]
+  | Resolution {premise1=p1; premise2=p2; _} -> [p1;p2]
 
 let expl = function
   | Hypothesis -> "hypothesis"
   | Assumption -> "assumption"
   | Lemma _ -> "lemma"
-  | Duplicate _ -> "duplicate"
+  | Deduplicate  _ -> "deduplicate"
   | Resolution _ -> "resolution"
 
 (* Compute unsat-core
    TODO: replace visited bool by a int unique to each call
    of unsat_core, so that the cleanup can be removed ? *)
 let unsat_core proof =
-  let rec aux res acc = function
-    | [] -> res, acc
+  let rec aux res visited = function
+    | [] -> res, visited
     | c :: r ->
-      if not (Clause.visited c) then (
+      if Clause.visited c then (
+        aux res visited r
+      ) else (
         Clause.mark_visited c;
-        match c.c_premise with
-          | Hyp | Local | Lemma _ -> aux (c :: res) acc r
-          | History h ->
+        begin match c.c_premise with
+          | Hyp | Local | Lemma _ -> aux (c :: res) visited r
+          | Simplify d -> aux res (c :: visited) (d :: r)
+          | Hyper_res h ->
             let l =
               List.fold_left
                 (fun acc c ->
                    if not (Clause.visited c) then c :: acc else acc)
                 r h
             in
-            aux res (c :: acc) l
-      ) else (
-        aux res acc r
+            aux res (c :: visited) l
+        end
       )
   in
-  let res, tmp = aux [] [] [proof] in
+  let res, visited = aux [] [] [proof] in
   List.iter Clause.clear_visited res;
-  List.iter Clause.clear_visited tmp;
+  List.iter Clause.clear_visited visited;
   res
 
 (* Iterate on proofs *)
-module H = CCHashtbl.Make(struct
-    type t = clause
-    let hash cl =
-      Array.fold_left (fun i a -> Hashtbl.hash (a.a_id, i)) 0 cl.c_atoms
-    let equal = (==)
-  end)
+module H = Clause.Tbl
 
 type task =
   | Enter of t
@@ -284,9 +290,9 @@ let rec fold_aux s h f acc =
         Stack.push (Leaving c) s;
         let node = expand c in
         begin match node.step with
-          | Duplicate (p1, _) ->
+          | Deduplicate (p1, _) ->
             Stack.push (Enter p1) s
-          | Resolution (p1, p2, _) ->
+          | Resolution {premise1=p1; premise2=p2;_} ->
             Stack.push (Enter p2) s;
             Stack.push (Enter p1) s
           | Hypothesis | Assumption | Lemma _ -> ()
@@ -301,6 +307,50 @@ let fold f acc p =
   Stack.push (Enter p) s;
   fold_aux s h f acc
 
-let check p = fold (fun () _ -> ()) () p
+let[@inline] iter f p = fold (fun () x -> f x) () p
+
+let c_to_set c = Sequence.of_list c |> Atom.Set.of_seq |> Atom.Set.to_list
+
+let check p =
+  (* compare lists of atoms, ignoring order and duplicates *)
+  let check_same_l ~ctx c d =
+    let l1 = c_to_set c in
+    let l2 = c_to_set d in
+    if not (CCList.equal Atom.equal l1 l2) then (
+      Util.errorf
+        "(@[proof.check.distinct_clauses@ :ctx %s@ :c1 %a@ :c2 %a@])"
+        ctx Clause.debug_atoms c Clause.debug_atoms d
+    );
+  in
+  let check_same_c ~ctx c1 c2 =
+    check_same_l ~ctx (Array.to_list c1.c_atoms) (Array.to_list c2.c_atoms)
+  in
+  iter
+    (fun n ->
+       let concl = conclusion n in
+       let step = step n in
+       Log.debugf 15 (fun k->k"(@[<hv>proof.check.step@ :concl %a@ :step %a@])"
+           Clause.debug concl debug_step step);
+       begin match step with
+         | Lemma _ -> () (* TODO: check lemmas *)
+         | Hypothesis -> ()
+         | Assumption -> ()
+         | Deduplicate (c, dups) ->
+           let dups' = find_duplicates c in
+           if not (CCList.equal Atom.equal dups dups) then (
+             Util.errorf
+               "(@[<hv>proof.check.invalid_simplify_step@ :from %a@ :to %a@ :dups1 %a@ :dups2 %a@])"
+               Clause.debug c Clause.debug concl Clause.debug_atoms dups
+               Clause.debug_atoms dups'
+           );
+           check_same_c ~ctx:"in dedup" c concl
+         | Resolution {premise1=p1; premise2=p2; pivot} ->
+           let l =
+             merge_clauses (clause_to_list p1) (clause_to_list p2)
+             |> List.filter (fun a -> not (Atom.same_term pivot a))
+           in
+           check_same_l ~ctx:"in res" l (clause_to_list concl)
+       end)
+    p
 
 

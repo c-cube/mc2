@@ -371,10 +371,9 @@ let[@inline] arr_to_list arr i : _ list =
   if i >= Array.length arr then []
   else Array.to_list (Array.sub arr i (Array.length arr - i))
 
-(* TODO: merge with {!partition}? *)
-(* Eliminates atom doublons in clauses.
+(* Eliminates atom duplicates in clauses.
    returns [true] if something changed. *)
-let eliminate_doublons clause : clause * bool =
+let eliminate_duplicates (clause:clause) : clause * bool =
   let duplicates = ref [] in
   let res = ref [] in
   Array.iter
@@ -393,7 +392,7 @@ let eliminate_doublons clause : clause * bool =
     clause, false
   ) else (
     (* make a new clause, simplified *)
-    Clause.make !res (History [clause]), true
+    Clause.make !res (Simplify clause), true
   )
 
 (* Partition literals for new clauses, into:
@@ -406,8 +405,10 @@ let eliminate_doublons clause : clause * bool =
 
    Clauses that propagated false lits are remembered,
    to reconstruct resolution proofs.
+
+   precondition: clause does not contain duplicates
 *)
-let partition atoms : atom list * clause list =
+let partition_atoms (atoms:atom array) : atom list * clause list =
   let rec partition_aux trues unassigned falses history i =
     if i >= Array.length atoms then (
       trues @ unassigned @ falses, history
@@ -539,42 +540,38 @@ let report_unsat (env:t) (confl:clause) : _ =
   env.unsat_conflict <- Some confl;
   raise Unsat
 
-(* Simplification of boolean propagation reasons.
-   When doing boolean propagation *at level 0*, it can happen
+(* Simplification of boolean propagation reasons {b at level 0}.
+   When doing boolean propagation at level 0, it can happen
    that the clause cl, which propagates a formula, also contains
    other formulas, but has been simplified. in which case, we
    need to rebuild a clause with correct history, in order to
    be able to build a correct proof at the end of proof search. *)
-let simpl_reason : reason -> reason = function
+let simpl_reason_level_0 : reason -> reason = function
   | (Bcp cl) as r ->
-    let l, history = partition cl.c_atoms in
+    let l, history = partition_atoms cl.c_atoms in
     begin match l with
       | [_] ->
+        (* now the clause is unit, we should simplify it explicitly *)
         if history = [] then r
         (* no simplification has been done, so [cl] is actually a clause with only
-           [a], so it is a valid reason for propagating [a]. *)
+               [a], so it is a valid reason for propagating [a]. *)
         else (
           (* Clauses in [history] have been used to simplify [cl] into a clause [tmp_cl]
              with only one formula (which is [a]). So we explicitly create that clause
              and set it as the cause for the propagation of [a], that way we can
              rebuild the whole resolution tree when we want to prove [a]. *)
           let c' =
-            Clause.make l (History (cl :: history))
+            Clause.make l (Premise.hyper_res (cl :: history))
           in
           Log.debugf debug
-            (fun k -> k "Simplified reason: @[<v>%a@,%a@]"
+            (fun k -> k "(@[simplified_reason@ :from %a@ :to %a@])"
                 Clause.debug cl Clause.debug c');
           Bcp c'
         )
       | _ ->
-        Log.debugf error
-          (fun k ->
-             k
-               "@[<v 2>Failed at reason simplification:@,%a@,%a@]"
-               (Vec.print ~sep:"" Atom.debug)
-               (Vec.from_list l (List.length l) dummy_atom)
-               Clause.debug cl);
-        assert false
+        Util.errorf
+          "(@[simpl_reason_level_0.fail@ :simp-atoms %a@ :bcp-from %a@])"
+          Clause.debug_atoms l Clause.debug cl
     end
   | r -> r
 
@@ -582,16 +579,16 @@ let simpl_reason : reason -> reason = function
    Wrapper function for adding a new propagated formula. *)
 let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   if Atom.is_false a then (
-    Log.debugf error
-      (fun k->k "Trying to enqueue a false literal: %a" Atom.debug a);
-    assert false
+    Util.errorf "Trying to enqueue a false literal: %a" Atom.debug a
   );
+  Log.debugf 15 (fun k->k "(@[enqueue_bool %a@ :reason %a@])"
+      Atom.debug a Reason.pp (lvl,reason));
   assert (not (Atom.is_true a) && Atom.level a < 0 &&
           Atom.reason a = None && lvl >= 0);
   (* simplify reason *)
   let reason =
     if lvl > 0 then reason
-    else simpl_reason reason
+    else simpl_reason_level_0 reason
   in
   (* assign term *)
   let value = Value.of_bool (Atom.is_pos a) in
@@ -698,6 +695,7 @@ type conflict_res = {
   cr_learnt: atom array; (* lemma learnt from conflict *)
   cr_history: clause list; (* justification *)
   cr_is_uip: bool; (* conflict is UIP? *)
+  cr_confl : clause; (* original conflict clause *)
 }
 
 (* Conflict analysis for MCSat, looking for the last UIP
@@ -705,7 +703,7 @@ type conflict_res = {
    We do not really perform a series of resolution, but just keep enough
    information for proof reconstruction.
 *)
-let analyze (env:t) (c_clause:clause) : conflict_res =
+let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
   let pathC = ref 0 in (* number of literals >= conflict level. *)
   let learnt = ref [] in (* the resulting clause to be learnt *)
   let continue = ref true in (* used for termination of loop *)
@@ -720,7 +718,7 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
       (fun acc p -> max acc (Atom.level p)) 0 c_clause.c_atoms
   in
   Log.debugf debug
-    (fun k -> k "Analyzing conflict (%d/%d): %a"
+    (fun k -> k "(@[analyze_conflict (%d/%d)@ :conflict %a@])"
         conflict_level (decision_level env) Clause.debug c_clause);
   assert (conflict_level >= 0);
   (* now loop until there is either:
@@ -744,11 +742,12 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
       | None ->
         Log.debug debug "skipping resolution for semantic propagation"
       | Some clause ->
-        Log.debugf debug (fun k->k "Resolving clause: %a" Clause.debug clause);
+        Log.debugf debug
+          (fun k->k "(@[analyze_conflict.resolving@ :clause %a@])" Clause.debug clause);
         (* increase activity since [c] participates in a conflict *)
         begin match clause.c_premise with
-          | History _ -> bump_clause_activity env clause
-          | Hyp | Local | Lemma _ -> ()
+          | Hyper_res _ -> bump_clause_activity env clause
+          | Hyp | Local | Simplify _ | Lemma _ -> ()
         end;
         history := clause :: !history;
         (* visit the current predecessors *)
@@ -785,7 +784,7 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
     (* look for the next node to expand by going down the trail *)
     while
       let t = Vec.get env.trail !tr_ind in
-      Log.debugf 30 (fun k -> k "conflict_analyze.looking at:@ %a" Term.debug t);
+      Log.debugf 30 (fun k -> k "(@[conflict_analyze.at_trail_elt@ %a@])" Term.debug t);
       begin match t.t_var with
         | Var_none -> assert false
         | Var_semantic _ -> true (* skip semantic assignments *)
@@ -807,7 +806,7 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
     decr tr_ind;
     let reason = Term.reason_exn t in
     Log.debugf 30
-      (fun k->k"(@[<hv>conflict_analyze.check:@ %a@ :pathC %d@ :reason %a@])"
+      (fun k->k"(@[<hv>conflict_analyze.check_done:@ %a@ :pathC %d@ :reason %a@])"
           Term.debug t !pathC Reason.pp (Term.level t,reason));
     begin match !pathC, reason with
       | 0, _ ->
@@ -835,19 +834,22 @@ let analyze (env:t) (c_clause:clause) : conflict_res =
     cr_learnt = learnt_a;
     cr_history = List.rev !history;
     cr_is_uip = is_uip;
+    cr_confl = c_clause;
   }
 
 (* add the learnt clause to the clause database, propagate, etc. *)
-let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
+let record_learnt_clause (env:t) (cr:conflict_res): unit =
   begin match cr.cr_learnt with
     | [||] -> assert false
     | [|fuip|] ->
       assert (cr.cr_backtrack_lvl = 0);
       env.n_learnt <- env.n_learnt + 1;
       if Atom.is_false fuip then (
-        report_unsat env confl
+        report_unsat env cr.cr_confl
       ) else (
-        let uclause = Clause.make_arr cr.cr_learnt (History cr.cr_history) in
+        let uclause =
+          Clause.make_arr cr.cr_learnt (Premise.hyper_res cr.cr_history)
+        in
         Vec.push env.clauses_learnt uclause;
         Log.debugf debug (fun k->k "(@[learn_clause_0:@ %a@])" Clause.debug uclause);
         (* no need to attach [uclause], it is true at level 0 *)
@@ -855,7 +857,12 @@ let record_learnt_clause (env:t) (confl:clause) (cr:conflict_res): unit =
       )
     | c_learnt ->
       let fuip = c_learnt.(0) in
-      let lclause = Clause.make_arr c_learnt (History cr.cr_history) in
+      let premise = match cr.cr_history with
+        | [] -> assert false
+        | [c] -> Simplify c
+        | l -> Premise.hyper_res l
+      in
+      let lclause = Clause.make_arr c_learnt premise in
       Vec.push env.clauses_learnt lclause;
       env.n_learnt <- env.n_learnt + 1;
       Log.debugf debug (fun k->k "(@[learn_clause:@ %a@])" Clause.debug lclause);
@@ -888,15 +895,15 @@ let add_conflict (env:t) (confl:clause): unit =
   then (
     report_unsat env confl; (* Top-level conflict *)
   );
-  let cr = analyze env confl in
+  let cr = analyze_conflict env confl in
   cancel_until env (max cr.cr_backtrack_lvl (base_level env));
-  record_learnt_clause env confl cr
+  record_learnt_clause env cr
 
 (* Get the correct vector to insert a clause in. *)
 let clause_vector env c = match c.c_premise with
   | Hyp -> env.clauses_hyps
   | Local -> env.clauses_temp
-  | Lemma _ | History _ -> env.clauses_learnt
+  | Lemma _ | Simplify _ | Hyper_res _ -> env.clauses_learnt
 
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
@@ -907,12 +914,12 @@ let add_clause (env:t) (init:clause) : unit =
   Array.iter (fun a -> add_term env a.a_term) init.c_atoms;
   let vec = clause_vector env init in
   try
-    let c, has_remove_doublons = eliminate_doublons init in
-    if has_remove_doublons then (
+    let c, has_dedup = eliminate_duplicates init in
+    if has_dedup then (
       Log.debugf debug
         (fun k -> k "Doublons eliminated:@ %a@ :from %a" Clause.debug c Clause.debug init);
     );
-    let atoms, history = partition c.c_atoms in
+    let atoms, history = partition_atoms c.c_atoms in
     let clause =
       if history = []
       then (
@@ -920,7 +927,7 @@ let add_clause (env:t) (init:clause) : unit =
         List.iteri (fun i a -> c.c_atoms.(i) <- a) atoms;
         c
       ) else (
-        Clause.make atoms (History (c :: history))
+        Clause.make atoms (Premise.hyper_res (c :: history))
       )
     in
     Log.debugf info (fun k->k "@{<green>New clause@}: @[<hov>%a@]" Clause.debug clause);

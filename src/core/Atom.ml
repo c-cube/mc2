@@ -6,6 +6,8 @@ type t = atom
 let[@inline] equal a b = a.a_id = b.a_id
 let[@inline] compare a b = CCInt.compare a.a_id b.a_id
 
+let[@inline] same_term a b = a.a_term == b.a_term
+
 (* negation of the atom *)
 let[@inline] is_pos (a:t) : bool = match a.a_term.t_var with
   | Var_bool { pa; _ } -> a==pa
@@ -98,3 +100,8 @@ let debug out a =
 let pp out a =
   let sign = if is_pos a then "" else "¬" in
   Format.fprintf out "%s%a" sign Term.pp a.a_term
+
+module Set = CCSet.Make(struct
+    type t = atom
+    let compare = compare
+  end)
