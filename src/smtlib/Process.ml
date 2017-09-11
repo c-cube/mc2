@@ -202,7 +202,7 @@ let check_model state : bool =
   in
   List.for_all check_clause !hyps
 
-let p_check = ref true
+let p_check = ref false
 
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
