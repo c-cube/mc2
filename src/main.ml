@@ -136,6 +136,7 @@ let main () =
   in
   if !p_stat then (
     Format.printf "%a@." Solver.pp_stats solver;
+    Printf.printf "(gc_stats\n%t)\n" Gc.print_stat;
   );
   res
 
