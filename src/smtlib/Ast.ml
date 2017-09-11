@@ -725,7 +725,7 @@ let conv_fun_def ctx f body =
        f.A.fun_name, ty, fun_l args (conv_term ctx body))
 
 let rec conv_statement ctx (s:A.statement): statement list =
-  Log.debugf 2 (fun k->k "(@[<1>statement_of_ast@ %a@])" A.pp_stmt s);
+  Log.debugf 4 (fun k->k "(@[<1>statement_of_ast@ %a@])" A.pp_stmt s);
   Ctx.set_loc ctx ?loc:s.A.loc;
   conv_statement_aux ctx s
 
