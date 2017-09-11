@@ -9,7 +9,7 @@ Copyright 2014 Simon Cruanes
 
 open Solver_types
 
-type proof = Res.proof
+type proof = Proof.t
 type nonrec atom = atom (** The type of atoms given by the module argument for formulas *)
 
 (** {2 Types} *)

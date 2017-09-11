@@ -146,8 +146,8 @@ let prove_atom a =
     None
 
 (* Interface exposed *)
-type proof = clause
-and proof_node = {
+type t = clause
+and node = {
   conclusion : clause;
   step : step;
 }
@@ -155,8 +155,8 @@ and step =
   | Hypothesis
   | Assumption
   | Lemma of lemma
-  | Duplicate of proof * atom list
-  | Resolution of proof * proof * atom
+  | Duplicate of t * atom list
+  | Resolution of t * t * atom
 
 let rec chain_res (c, cl) = function
   | d :: r ->
@@ -181,7 +181,7 @@ let rec chain_res (c, cl) = function
   | _ ->
     raise (Resolution_error "Bad history")
 
-let expand conclusion : proof_node =
+let expand conclusion : node =
   Log.debugf debug (fun k -> k "Res.expanding : @[%a@]" Clause.debug conclusion);
   begin match conclusion.c_premise with
     | Lemma l ->
@@ -268,8 +268,8 @@ module H = CCHashtbl.Make(struct
   end)
 
 type task =
-  | Enter of proof
-  | Leaving of proof
+  | Enter of t
+  | Leaving of t
 
 let pop_opt s = try Some (Stack.pop s) with Stack.Empty -> None
 

@@ -223,7 +223,7 @@ let solve ?gc ?restarts ?dot_proof ~assumptions s : unit =
     | Solver.Unsat state ->
       if !p_check then (
         let p = Solver.Unsat_state.get_proof state in
-        Res.check p;
+        Proof.check p;
         begin match dot_proof with
           | None ->  ()
           | Some file ->

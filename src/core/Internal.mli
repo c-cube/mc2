@@ -110,7 +110,7 @@ val check : t -> bool
 
 (** {2 Proofs and Models} *)
 
-type proof = Res.proof
+type proof = Proof.t
 
 val unsat_conflict : t -> clause option
 (** Returns the unsat clause found at the toplevel, if it exists (i.e if

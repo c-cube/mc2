@@ -25,7 +25,7 @@ Copyright 2016 Simon Cruanes
 
 open Solver_types
 
-type proof = Res.proof
+type proof = Proof.t
 
 (** Heterogeneous tuple of services *)
 type _ service_list =

@@ -58,5 +58,6 @@ module Default : Arg with type atom := Atom.t
 module Make(A : Arg with type atom := Atom.t
                                 and type hyp := Clause.t
                                 and type lemma := Clause.t
-                                and type assumption := Clause.t) : S with type t := Res.proof
+                                and type assumption := Clause.t)
+  : S with type t := Proof.t
 (** Functor for making a module to export proofs to the DOT format. *)

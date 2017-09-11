@@ -7,7 +7,7 @@ Copyright 2014 Simon Cruanes
 open Solver_types
 module Fmt = CCFormat
 
-type proof = Res.proof
+type proof = Proof.t
 
 exception Sat
 exception Unsat
