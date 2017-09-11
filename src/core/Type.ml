@@ -42,7 +42,7 @@ let[@inline] pp out t = match t with
   | Ty {tc; view; _} -> tc.tcty_pp out view
 
 let[@inline] decide (ty:t) (a:actions) (t:term) : value = match ty with
-  | Bool -> assert false
+  | Bool -> Value.true_
   | Ty {tc; _} -> tc.tcty_decide a t
 
 let[@inline] mk_decide_state (ty:t) : decide_state = match ty with
@@ -54,7 +54,7 @@ let[@inline] mk_eq (ty:t) t u : term = match ty with
   | Ty {tc; _} -> tc.tcty_eq t u
 
 let[@inline] refresh_state (ty:t) lvl t : unit = match ty with
-  | Bool -> assert false
+  | Bool -> ()
   | Ty {tc; _} -> tc.tcty_refresh_state lvl t
 
 let tc_mk
