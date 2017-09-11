@@ -10,7 +10,7 @@ open CCResult.Infix
 module E = CCResult
 module Fmt = CCFormat
 module Ast = Mc2_smtlib.Ast
-module Process = Mc2_smtlib.Process
+module Process_smtlib = Mc2_smtlib.Process
 
 type 'a or_error = ('a, string) E.t
 
@@ -81,7 +81,7 @@ let usage = "Usage : main [options] <file>"
 let argspec = Arg.align [
     "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " Enable stack traces";
     "-cnf", Arg.Set p_cnf, " Prints the cnf used.";
-    "-check", Arg.Set Process.p_check,
+    "-check", Arg.Set Process_smtlib.p_check,
     " Build, check and print the proof (if output is set), if unsat";
     "-gc", Arg.Set gc, " enable garbage collection";
     "-no-gc", Arg.Clear gc, " disable garbage collection";
@@ -100,6 +100,14 @@ let argspec = Arg.align [
     "<lvl> Sets the debug verbose level";
   ]
 
+type syntax =
+  | Dimacs
+  | Smtlib
+
+let syntax_of_file file =
+  if CCString.suffix ~suf:".cnf" file then Dimacs
+  else Smtlib
+
 let main () =
   CCFormat.set_color_default true;
   (* Administrative duties *)
@@ -108,50 +116,61 @@ let main () =
     Arg.usage argspec usage;
     exit 2
   );
-  Process.setup_gc();
+  let syn = syntax_of_file !file in
+  Util.setup_gc();
   let solver =
-    Solver.create
-      ~plugins:[
-        Mc2_propositional.plugin;
-        Mc2_unin_sort.plugin;
-        Mc2_uf.plugin;
-      ] ()
-  in
-  let res = Process.with_limits
-    ~time:!time_limit
-    ~memory:!size_limit
-    (fun () ->
-       (* parse pb *)
-       Mc2_smtlib.Ast.parse !file >>= fun input ->
-       (* TODO: parse list of plugins on CLI *)
-       (* process statements *)
-       try
-         let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
-         E.fold_l
-           (fun () -> Process.process_stmt
-               ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf ?dot_proof solver)
-           () input
-       with Exit ->
-         E.return())
-  in
-  if !p_stat then (
-    Format.printf "%a@." Solver.pp_stats solver;
-    Printf.printf "(gc_stats\n%t)\n" Gc.print_stat;
-  );
-  res
+    let plugins = match syn with
+      | Dimacs ->
+        [ Mc2_dimacs.Plugin_sat.plugin;
+        ]
+      | Smtlib ->
+        [ Mc2_propositional.plugin;
+          Mc2_unin_sort.plugin;
+          Mc2_uf.plugin;
+        ]
+    in
+    Solver.create ~plugins ()
+    in
+    let res = Util.with_limits
+      ~time:!time_limit
+      ~memory:!size_limit
+      (fun () -> match syn with
+         | Smtlib ->
+           (* parse pb *)
+           Mc2_smtlib.Ast.parse !file >>= fun input ->
+           (* TODO: parse list of plugins on CLI *)
+           (* process statements *)
+           begin try
+             let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
+             E.fold_l
+               (fun () -> Process_smtlib.process_stmt
+                   ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf ?dot_proof solver)
+               () input
+             with Exit ->
+               E.return()
+           end
+         | Dimacs ->
+           Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
+           Mc2_dimacs.Process.process ~gc:!gc ~restarts:!restarts solver pb)
+    in
+    if !p_stat then (
+      Format.printf "%a@." Solver.pp_stats solver;
+      Printf.printf "(gc_stats\n%t)\n" Gc.print_stat;
+    );
+    res
 
 let () = match main() with
   | E.Ok () -> ()
   | E.Error msg ->
     print_endline msg;
     exit 1
-  | exception Process.Out_of_time ->
+  | exception Util.Out_of_time ->
     Format.printf "Timeout@.";
     exit 2
-  | exception Process.Out_of_space ->
+  | exception Util.Out_of_space ->
     Format.printf "Spaceout@.";
     exit 3
-  | exception Process.Incorrect_model ->
+  | exception Process_smtlib.Incorrect_model ->
     Format.printf "Internal error : incorrect *sat* model@.";
     exit 4
   | exception Ast.Ill_typed msg ->

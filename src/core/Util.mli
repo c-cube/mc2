@@ -11,3 +11,21 @@ exception Error of string
 
 val errorf : ('a, Format.formatter, unit, 'b) format4 -> 'a
 val error : string -> 'a
+
+exception Out_of_time
+exception Out_of_space
+
+val with_limits :
+  time:float ->
+  memory:float ->
+  (unit -> 'a) ->
+  'a
+(** Perform computation [f ()] with limited amount of time and space.
+    @param time limit, in seconds, measured with [Sys.time()]
+    @param memory number of words in the heap
+    @raise Out_of_time if out of time
+    @raise Out_of_space if out of space
+*)
+
+val setup_gc : unit -> unit
+(** Change parameters of the GC *)

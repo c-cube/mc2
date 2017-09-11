@@ -171,26 +171,9 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
 (** {2 Processing Statements} *)
 
 exception Incorrect_model
-exception Out_of_time
-exception Out_of_space
 
 (* list of (local) hypothesis *)
 let hyps = ref []
-
-let with_limits ~time ~memory f =
-  (* Limits alarm *)
-  let check () =
-    let t = Sys.time () in
-    let heap_size = (Gc.quick_stat ()).Gc.heap_words in
-    let s = float heap_size *. float Sys.word_size /. 8. in
-    if t > time then (
-      raise Out_of_time
-    ) else if s > memory then (
-      raise Out_of_space
-    )
-  in
-  let al = Gc.create_alarm check in
-  CCFun.finally ~h:(fun () -> Gc.delete_alarm al) ~f
 
 let check_model state : bool =
   let check_clause c =
@@ -338,9 +321,3 @@ let process_stmt
          *)
   end
 
-let setup_gc () =
-  let g = Gc.get () in
-  g.Gc.space_overhead <- 3_000; (* major gc *)
-  g.Gc.max_overhead <- 10_000; (* compaction *)
-  g.Gc.minor_heap_size <- 500_000; (* ×8 to obtain bytes on 64 bits -->  *)
-  Gc.set g
