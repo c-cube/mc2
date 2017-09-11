@@ -27,9 +27,9 @@ module Make(Elt : RANKED) = struct
   let create () =
     { heap = Vec.make_empty Elt.dummy; }
 
-  let left i = (i lsl 1) + 1 (* i*2 + 1 *)
-  let right i = (i + 1) lsl 1 (* (i+1)*2 *)
-  let parent i = (i - 1) asr 1 (* (i-1) / 2 *)
+  let[@inline] left i = (i lsl 1) + 1 (* i*2 + 1 *)
+  let[@inline] right i = (i + 1) lsl 1 (* (i+1)*2 *)
+  let[@inline] parent i = (i - 1) asr 1 (* (i-1) / 2 *)
 
   (*
   let rec heap_property cmp ({heap=heap} as s) i =
@@ -40,6 +40,8 @@ module Make(Elt : RANKED) = struct
   let heap_property cmp s = heap_property cmp s 1
   *)
 
+  (* [elt] is above or at its expected position. Move it up the heap
+     (towards high indices) to restore the heap property *)
   let percolate_up {heap} (elt:Elt.t) : unit =
     let pi = ref (parent (Elt.idx elt)) in
     let i = ref (Elt.idx elt) in
@@ -77,9 +79,9 @@ module Make(Elt : RANKED) = struct
     Vec.set heap !i elt;
     Elt.set_idx elt !i
 
-  let in_heap x = Elt.idx x >= 0
+  let[@inline] in_heap x = Elt.idx x >= 0
 
-  let decrease s x = assert (in_heap x); percolate_up s x
+  let[@inline] decrease s x = assert (in_heap x); percolate_up s x
 
   (*
   let increase cmp s n =
@@ -117,6 +119,18 @@ module Make(Elt : RANKED) = struct
       Elt.set_idx elt (Vec.size s.heap);
       Vec.push s.heap elt;
       percolate_up s elt;
+    )
+
+  let remove s elt =
+    if in_heap elt then (
+      let i = Elt.idx elt in
+      (* remove [elt] by swapping with last *)
+      Vec.fast_remove s.heap i;
+      if Vec.size s.heap > i then (
+        (* now put new element back at its place *)
+        percolate_up s (Vec.get s.heap i);
+      );
+      Elt.set_idx elt ~-1;
     )
 
   let grow_to_at_least s sz =

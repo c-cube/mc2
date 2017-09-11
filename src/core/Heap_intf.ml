@@ -36,6 +36,9 @@ module type S = sig
   val insert : t -> elt -> unit
   (** Insert a new element into the heap *)
 
+  val remove : t -> elt -> unit
+  (** Remove element if it's in the heap *)
+
   val grow_to_at_least: t -> int -> unit
   (** Hint: augment the internal capacity of the heap until it reaches at
       least the given integer *)

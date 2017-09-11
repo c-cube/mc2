@@ -116,7 +116,7 @@ type t = {
        th_head = elt_head = length trail
   *)
 
-  order : H.t;
+  term_heap : H.t;
   (* Heap ordered by variable activity *)
 
   var_decay : float;
@@ -244,7 +244,7 @@ let rec add_term (env:t) (t:term): unit =
     Term.field_set field_t_is_added t;
     Term.setup_var t;
     Term.iter_subterms t (add_term env); (* add subterms, recursively *)
-    H.insert env.order t; (* add to priority queue for decision *)
+    H.insert env.term_heap t; (* add to priority queue for decision *)
     term_init env t; (* setup watches, possibly propagating already *)
   )
 
@@ -252,7 +252,7 @@ let[@inline] add_atom (env:t) (a:atom) : unit = add_term env (Atom.term a)
 
 (* put [t] in the heap of terms to decide *)
 let[@inline] schedule_decision_term (env:t) (t:term): unit =
-  H.insert env.order t
+  H.insert env.term_heap t
 
 (* Rather than iterate over all the heap when we want to decrease all the
    variables/literals activity, we instead increase the value by which
@@ -277,7 +277,7 @@ let bump_term_activity_aux (env:t) (t:term): unit =
     decay_all_terms env;
   );
   if H.in_heap t then (
-    H.decrease env.order t
+    H.decrease env.term_heap t
   )
 
 (* increase activity of var [t] *)
@@ -328,7 +328,7 @@ let create_real (actions:actions lazy_t) : t = {
   dirty_terms = Vec.make 50 dummy_term;
   seen_tmp = Vec.make 10 dummy_term;
 
-  order = H.create();
+  term_heap = H.create();
 
   var_incr = 1.;
   clause_incr = 1.;
@@ -1244,11 +1244,11 @@ and pick_branch_lit (env:t) : unit =
       pick_branch_aux env atom
     | None ->
       (* look into the heap for the next decision *)
-      if H.is_empty env.order then (
+      if H.is_empty env.term_heap then (
         raise Sat (* full trail! *)
       ) else (
         (* pick some term *)
-        let t = H.remove_min env.order in
+        let t = H.remove_min env.term_heap in
         begin match t.t_var with
           | Var_none ->  assert false
           | Var_bool {pa; _} ->
@@ -1326,6 +1326,7 @@ let reduce_db (env:t) ~down_to : unit =
   Vec.iter
     (fun t ->
        Term.dirty_unmark t;
+       H.remove env.term_heap t;
        let lazy watches = t.t_watches in
        Vec.filter_in_place (fun c -> not (Term.is_deleted c)) watches)
     dirty_terms;
@@ -1349,7 +1350,7 @@ let search (env:t) n_of_conflicts : unit =
         (* No conflict after propagation *)
         assert (env.elt_head = Vec.size env.trail);
         assert (env.elt_head = env.th_head);
-        if H.is_empty env.order then (
+        if H.is_empty env.term_heap then (
           raise Sat;
         );
         (* should we restart? *)
@@ -1426,7 +1427,7 @@ let final_check (env:t) : final_check_res =
 (* fixpoint of propagation and decisions until a model is found, or a
    conflict is reached *)
 let solve ?(gc=true) ?(restarts=true) (env:t) : unit =
-  Log.debugf 3 (fun k->k"@{<Green>#### Solve@}");
+  Log.debugf 2 (fun k->k"@{<Green>#### Solve@}");
   if is_unsat env then (
     raise Unsat;
   );
