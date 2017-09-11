@@ -4,9 +4,9 @@ provers = [ "mc2", "verit", "read-status" ]
 [mc2]
 
 binary = "./mc2"
-cmd = "./mc2 -check -s mcsat $file"
-unsat = "UNSAT"
-sat = "SAT"
+cmd = "./mc2 -check -time $timeout $file"
+unsat = "Unsat"
+sat = "Sat"
 version = "git:."
 
 [verit]

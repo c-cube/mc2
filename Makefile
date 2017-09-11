@@ -37,7 +37,7 @@ test:
 TESTOPTS ?= -j 3
 TESTTOOL=logitest
 
-logitest: build
+logitest:
 	@mkdir -p snapshots
 	$(TESTTOOL) run -c src/tests/conf.toml $(TESTOPTS) \
 	  --meta `git rev-parse HEAD` --summary snapshots/`date -I`.txt
