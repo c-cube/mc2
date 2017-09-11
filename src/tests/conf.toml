@@ -7,6 +7,7 @@ binary = "./mc2"
 cmd = "./mc2 -check -time $timeout $file"
 unsat = "Unsat"
 sat = "Sat"
+unknown = "Timeout"
 version = "git:."
 
 [verit]
