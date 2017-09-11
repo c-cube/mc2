@@ -31,24 +31,17 @@ let build p_id Plugin.S_nil : Plugin.t =
       | True -> Fmt.string out "true"
       | _ -> assert false
 
-    (* self-watch *)
-    let init_watches _ t = Term.add_watch t t
-
-    (* check that [t_true] is only ever assigned to [true] *)
-    let update_watches acts t ~watch:_ =
+    (* on initialization, add clause [true] *)
+    let init acts t =
       assert (is_t_true t);
-      if Term.Bool.is_false t then (
-        assert (Term.Bool.is_false t);
-        (* conflict clause: [true] *)
-        Actions.raise_conflict acts [Term.Bool.pa t] lemma_true_is_true
-      );
-      Watch_keep
+      let c_true = Clause.make [Term.Bool.pa t] (Lemma lemma_true_is_true) in
+      Actions.push_clause acts c_true
 
     let eval_bool (t:term) : eval_bool_res =
       assert (is_t_true t);
-      Eval_bool (true, [])
+      Eval_unknown
 
-    let tc : tc_term = Term.tc_mk ~eval_bool ~init_watches ~update_watches ~pp ()
+    let tc : tc_term = Term.tc_mk ~eval_bool ~init ~pp ()
 
     (* the main "true" term *)
     let t_true : term = Term.Unsafe.make_term p_id True Type.bool tc

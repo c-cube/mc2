@@ -95,11 +95,11 @@ and term = {
 
 and tc_term = {
   tct_pp : term_view CCFormat.printer; (** print views of this plugin *)
-  tct_init_watches: actions -> term -> unit; (** called when term is added *)
+  tct_init: actions -> term -> unit; (** called when term is added *)
   tct_update_watches: actions -> term -> watch:term -> watch_res;
   (** [watch] was assign, update term [t], and return whether [t] should
       still watch [watch] *)
-  tct_delete_watches: term -> (term -> unit) -> unit;
+  tct_delete: term -> (term -> unit) -> unit;
   (** iterate on current watches to mark them as dirty, when the term
       is deleted *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
@@ -291,9 +291,9 @@ type term_view += Dummy
 
 let tct_default : tc_term = {
   tct_pp=(fun _ _ -> assert false);
-  tct_init_watches=(fun _ _ -> ());
+  tct_init=(fun _ _ -> ());
   tct_update_watches=(fun _ _ ~watch:_ -> Watch_keep);
-  tct_delete_watches=(fun _ _ -> ());
+  tct_delete=(fun _ _ -> ());
   tct_subterms=(fun _ _ -> ());
   tct_eval_bool=(fun _ -> Eval_unknown);
 }

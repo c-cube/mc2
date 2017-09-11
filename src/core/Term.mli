@@ -88,9 +88,9 @@ val add_watch : t -> t -> unit
 
 (** Make a new typeclass *)
 val tc_mk :
-  ?init_watches:(actions -> term -> unit) ->
+  ?init:(actions -> term -> unit) ->
   ?update_watches:(actions -> term -> watch:term -> watch_res) ->
-  ?delete_watches:(term -> (term -> unit) -> unit) ->
+  ?delete:(term -> (term -> unit) -> unit) ->
   ?subterms:( term_view -> (term->unit) -> unit) ->
   ?eval_bool :( term -> eval_bool_res) ->
   pp:term_view CCFormat.printer ->

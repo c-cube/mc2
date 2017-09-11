@@ -156,16 +156,16 @@ let[@inline] add_watch (t:t) (u:t) : unit =
   Vec.push vec u
 
 let tc_mk
-    ?(init_watches=fun _ _ -> ())
+    ?(init=fun _ _ -> ())
     ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
-    ?(delete_watches=fun _ _ -> ())
+    ?(delete=fun _ _ -> ())
     ?(subterms=fun _ _ -> ())
     ?(eval_bool=fun _ -> Eval_unknown)
     ~pp
     () : tc =
-  { tct_init_watches=init_watches;
+  { tct_init=init;
     tct_update_watches=update_watches;
-    tct_delete_watches=delete_watches;
+    tct_delete=delete;
     tct_subterms=subterms;
     tct_pp=pp;
     tct_eval_bool=eval_bool;
@@ -354,7 +354,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   let delete ~mark_dirty (t:t) : unit =
     Log.debugf 5 (fun k->k "(@[<1>Term_alloc.delete@ %a@])" debug t);
     t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
-    t.t_tc.tct_delete_watches t mark_dirty;
+    t.t_tc.tct_delete t mark_dirty;
     assert (plugin_id t = Ops.p_id);
     Vec.push recycle_ids (plugin_specific_id t);
     H.remove tbl (view t);

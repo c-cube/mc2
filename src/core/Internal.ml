@@ -229,8 +229,8 @@ let[@inline] iter_terms (env:t) : term Sequence.t =
     (fun (module P : Plugin.S) -> P.iter_terms)
   |> Sequence.filter Term.has_var
 
-let[@inline] init_watches (env:t) (t:term) : unit =
-  t.t_tc.tct_init_watches (actions env) t
+let[@inline] term_init (env:t) (t:term) : unit =
+  t.t_tc.tct_init (actions env) t
 
 (* provision term (and its sub-terms) for future assignments.
    This is the function exposed to users and therefore it performs some checks. *)
@@ -245,7 +245,7 @@ let rec add_term (env:t) (t:term): unit =
     Term.setup_var t;
     Term.iter_subterms t (add_term env); (* add subterms, recursively *)
     H.insert env.order t; (* add to priority queue for decision *)
-    init_watches env t; (* setup watches, possibly propagating already *)
+    term_init env t; (* setup watches, possibly propagating already *)
   )
 
 let[@inline] add_atom (env:t) (a:atom) : unit = add_term env (Atom.term a)
