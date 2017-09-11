@@ -27,6 +27,9 @@ install: lib
 uninstall:
 	jbuilder uninstall
 
+doc:
+	jbuilder build @doc
+
 test:
 	@echo "run API tests…"
 	jbuilder runtest
