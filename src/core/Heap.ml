@@ -121,18 +121,6 @@ module Make(Elt : RANKED) = struct
       percolate_up s elt;
     )
 
-  let remove s elt =
-    if in_heap elt then (
-      let i = Elt.idx elt in
-      (* remove [elt] by swapping with last *)
-      Vec.fast_remove s.heap i;
-      if Vec.size s.heap > i then (
-        (* now put new element back at its place *)
-        percolate_up s (Vec.get s.heap i);
-      );
-      Elt.set_idx elt ~-1;
-    )
-
   let grow_to_at_least s sz =
     Vec.grow_to_at_least s.heap sz
 

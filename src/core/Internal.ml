@@ -1256,7 +1256,8 @@ and pick_branch_lit (env:t) : unit =
       ) else (
         (* pick some term *)
         let t = H.remove_min env.term_heap in
-        begin match t.t_var with
+        if Term.is_deleted t then pick_branch_lit env (* try next *)
+        else begin match t.t_var with
           | Var_none ->  assert false
           | Var_bool {pa; _} ->
             (* TODO: phase saving *)
@@ -1333,7 +1334,6 @@ let reduce_db (env:t) ~down_to : unit =
   Vec.iter
     (fun t ->
        Term.dirty_unmark t;
-       H.remove env.term_heap t;
        let lazy watches = t.t_watches in
        Vec.filter_in_place (fun c -> not (Term.is_deleted c)) watches)
     dirty_terms;
