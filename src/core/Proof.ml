@@ -179,7 +179,7 @@ let rec chain_res (c:clause) (cl:sorted_atom_list) : clause list -> chain_res = 
       | pivots ->
         Util.errorf
           "(@[<hv>proof: resolution error (multiple pivots)@ :pivots (@[%a@])@ :c1 %a@ :c2 %a@])"
-          Clause.debug c Clause.debug d (Util.pp_list Atom.debug) pivots
+          (Util.pp_list Atom.debug) pivots Clause.debug c Clause.debug d
     end
   | _ ->
     Util.errorf "proof: resolution error (bad history)@ %a" Clause.pp c

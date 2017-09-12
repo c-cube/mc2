@@ -579,9 +579,9 @@ let simpl_reason_level_0 : reason -> reason = function
    Wrapper function for adding a new propagated formula. *)
 let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   if Atom.is_false a then (
-    Util.errorf "Trying to enqueue a false literal: %a" Atom.debug a
+    Util.errorf "Trying to enqueue a false literal:@ %a" Atom.debug a
   );
-  Log.debugf 15 (fun k->k "(@[enqueue_bool %a@ :reason %a@])"
+  Log.debugf 15 (fun k->k "(@[solver.enqueue_bool %a@ :reason %a@])"
       Atom.debug a Reason.pp (lvl,reason));
   assert (not (Atom.is_true a) && Atom.level a < 0 &&
           Atom.reason a = None && lvl >= 0);
@@ -597,7 +597,8 @@ let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   Vec.push env.trail a.a_term;
   env.propagations <- env.propagations + 1;
   Log.debugf debug
-    (fun k->k "Enqueue (%d/%d): %a" (Vec.size env.trail)(decision_level env) Atom.debug a);
+    (fun k->k "(@[solver.enqueue_bool (%d/%d)@ %a@])"
+        (Vec.size env.trail)(decision_level env) Atom.debug a);
   ()
 
 (* atom [a] evaluates to [true] because of [terms] *)
@@ -627,7 +628,8 @@ let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) (lvl:int) : un
   t.t_level <- lvl;
   Vec.push env.trail t;
   Log.debugf debug
-    (fun k->k "Enqueue (%d/%d): %a" (Vec.size env.trail)(decision_level env) Term.debug t);
+    (fun k->k "(@[solver.enqueue_semantic (%d/%d)@ %a@])"
+        (Vec.size env.trail)(decision_level env) Term.debug t);
   ()
 
 (* evaluate an atom for MCsat, if it's not assigned
@@ -845,6 +847,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       assert (cr.cr_backtrack_lvl = 0);
       env.n_learnt <- env.n_learnt + 1;
       if Atom.is_false fuip then (
+        assert (Atom.level fuip = 0);
         report_unsat env cr.cr_confl
       ) else (
         let uclause =
@@ -908,7 +911,7 @@ let clause_vector env c = match c.c_premise with
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
 let add_clause (env:t) (init:clause) : unit =
-  Log.debugf debug (fun k -> k "Adding clause: @[<hov>%a@]" Clause.debug init);
+  Log.debugf debug (fun k -> k "(@[solver.add_clause@ %a@])" Clause.debug init);
   (* Insertion of new lits is done before simplification. Indeed, else a lit in a
      trivial clause could end up being not decided on, which is a bug. *)
   Array.iter (fun a -> add_term env a.a_term) init.c_atoms;
@@ -917,7 +920,7 @@ let add_clause (env:t) (init:clause) : unit =
     let c, has_dedup = eliminate_duplicates init in
     if has_dedup then (
       Log.debugf debug
-        (fun k -> k "Doublons eliminated:@ %a@ :from %a" Clause.debug c Clause.debug init);
+        (fun k -> k "(@[solver.deduplicate@ :into %a@ :from %a@])" Clause.debug c Clause.debug init);
     );
     let atoms, history = partition_atoms c.c_atoms in
     let clause =
@@ -930,7 +933,7 @@ let add_clause (env:t) (init:clause) : unit =
         Clause.make atoms (Premise.hyper_res (c :: history))
       )
     in
-    Log.debugf info (fun k->k "@{<green>New clause@}: @[<hov>%a@]" Clause.debug clause);
+    Log.debugf info (fun k->k "(@{<green>solver.new_clause@}@ %a@])" Clause.debug clause);
     begin match atoms with
       | [] ->
         (* Report_unsat will raise, and the current clause will be lost if we do not
@@ -944,7 +947,7 @@ let add_clause (env:t) (init:clause) : unit =
           (* Since we cannot propagate the atom [a], in order to not lose
              the information that [a] must be true, we add clause to the list
              of clauses to add, so that it will be e-examined later. *)
-          Log.debug debug "Unit clause, adding to clauses to add";
+          Log.debug debug "(solver.add_clause: unit_clause adding to clauses to add)";
           Stack.push clause env.clauses_to_add;
           report_unsat env clause
         ) else if Atom.is_true a then (
@@ -952,12 +955,13 @@ let add_clause (env:t) (init:clause) : unit =
              However it means we can't propagate it at level 0. In order to not lose
              that information, we store the clause in a stack of clauses that we will
              add to the solver at the next pop. *)
-          Log.debug debug "Unit clause, adding to root clauses";
+          Log.debug debug "(solver.add_clause: unit clause, adding to root clauses)";
           assert (0 < Atom.level a && Atom.level a <= base_level env);
           Stack.push clause env.clauses_root;
           ()
         ) else (
-          Log.debugf debug (fun k->k "Unit clause, propagating: %a" Atom.debug a);
+          Log.debugf debug
+            (fun k->k "(@[solver.add_clause: unit clause, propagating@ :atom %a@])" Atom.debug a);
           Vec.push vec clause;
           enqueue_bool env a ~level:0 (Bcp clause)
         )
@@ -982,7 +986,8 @@ let add_clause (env:t) (init:clause) : unit =
     end
   with Trivial ->
     Vec.push vec init;
-    Log.debugf info (fun k->k "Trivial clause ignored : @[%a@]" Clause.debug init)
+    Log.debugf info
+      (fun k->k "(@[solver.add_clause: trivial clause ignored@ :c %a@])" Clause.debug init)
 
 (* really add clauses pushed by plugins to the solver *)
 let flush_clauses (env:t) =
