@@ -58,11 +58,11 @@ let pp out c =
   Format.fprintf out "(@[<hv>%a:@ %a@])" pp_name c pp_atoms c.c_atoms
 
 let pp_atoms out = Format.fprintf out "(@[<hv>%a@])" (Util.pp_list ~sep:" ∨ " Atom.pp)
-let debug_atoms out = Format.fprintf out "(@[<hv>%a@])" (Util.pp_list ~sep:" ∨ " Atom.debug)
+let debug_atoms out = Format.fprintf out "(@[<v>%a@])" (Util.pp_list ~sep:" ∨ " Atom.debug)
 
 let debug out ({c_atoms; c_premise=cp; _} as c) =
   let pp_atoms_vec out = Util.pp_array ~sep:" ∨ " Atom.debug out in
-  Format.fprintf out "%a@[<hv>{@[<hv>%a@]}[A:%s]@ cpremise={@[<hov>%a@]}@]"
+  Format.fprintf out "%a@[<hv>{@[<v>%a@]}[A:%s]@ cpremise=%a@]"
     pp_name c pp_atoms_vec c_atoms (if attached c then "1" else "0") Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =

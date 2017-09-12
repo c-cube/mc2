@@ -756,9 +756,10 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
         for j = 0 to Array.length clause.c_atoms - 1 do
           let q = clause.c_atoms.(j) in
           assert (Atom.is_true q || Atom.is_false q && Atom.level q >= 0); (* unsure? *)
-          (* TODO: remove this, proof will be simplified eventually *)
           if Atom.level q <= 0 then (
-            (* must be a 0-level propagation *)
+            (* Must be a 0-level propagation. [q] is not part
+               of the conflict clause, because it will be useless,
+               but we still keep track of it in the proof. *)
             assert (Atom.level q=0 && Atom.is_false q);
             begin match Atom.reason q with
               | Some (Bcp cl) -> history := cl :: !history
@@ -771,6 +772,8 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
           if not (Term.marked q.a_term) then (
             Term.mark q.a_term;
             Vec.push seen q.a_term;
+            (* only atoms above level 0 can participate to the conflict,
+               these proved at level 0 would bring no information *)
             if Atom.level q > 0 then (
               bump_term_activity env q.a_term;
               if Atom.level q >= conflict_level then (

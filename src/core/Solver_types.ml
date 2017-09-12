@@ -244,7 +244,12 @@ and premise =
   *)
 (** Premises for clauses. Indeed each clause generated during a run of the solver
     should be satisfied, the premise is the justification of why it should be
-    satisfied by the solver. *)
+    satisfied by the solver.
+
+    The premise of a clause can be updated, during proof processing,
+    going from [Hyper_res l] towards explicit steps of resolution
+    with [Resolve]. This update preserves the semantics of proofs
+    but acts as a memoization of the proof reconstruction process. *)
 
 and lemma = {
   lemma_view: lemma_view; (** The lemma content *)
