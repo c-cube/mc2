@@ -11,7 +11,11 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type 'a t = { mutable dummy: 'a; mutable data : 'a array; mutable sz : int }
+type 'a t = {
+  mutable dummy: 'a;
+  mutable data : 'a array;
+  mutable sz : int;
+}
 
 let _size_too_big()=
   failwith "Vec: capacity exceeds maximum array size"
@@ -20,7 +24,7 @@ let make capa d =
   if capa > Sys.max_array_length then _size_too_big();
   {data = Array.make capa d; sz = 0; dummy = d}
 
-let make_empty d = {data = [||]; sz=0; dummy=d }
+let[@inline] make_empty d = {data = [||]; sz=0; dummy=d }
 
 let init capa f d =
   if capa > Sys.max_array_length then _size_too_big();
@@ -30,11 +34,6 @@ let from_array data sz d =
   assert (sz <= Array.length data);
   {data = data; sz = sz; dummy = d}
 
-let from_list l sz d =
-  let l = ref l in
-  let f_init _ = match !l with [] -> assert false | e::r -> l := r; e in
-  {data = Array.init sz f_init; sz = sz; dummy = d}
-
 let to_list s =
   let l = ref [] in
   for i = 0 to s.sz - 1 do
@@ -42,9 +41,9 @@ let to_list s =
   done;
   List.rev !l
 
-let clear s = s.sz <- 0
+let[@inline] clear s = s.sz <- 0
 
-let shrink t i =
+let[@inline] shrink t i =
   assert (i >= 0);
   assert (i<=t.sz);
   t.sz <- i
@@ -109,11 +108,11 @@ let[@inline] set t i v =
   else
     Array.unsafe_set t.data i v
 
-let copy t =
+let[@inline] copy t =
   let data = Array.copy t.data in
   {t with data; }
 
-let move_to t t' =
+let[@inline] move_to t t' =
   t'.data <- Array.copy t.data;
   t'.sz <- t.sz
 
@@ -124,7 +123,7 @@ let remove t e =
   for i = !j to t.sz - 2 do t.data.(i) <- t.data.(i+1) done;
   pop t
 
-let fast_remove t i =
+let[@inline] fast_remove t i =
   assert (i < t.sz);
   t.data.(i) <- t.data.(t.sz - 1);
   t.sz <- t.sz - 1
@@ -142,16 +141,17 @@ let sort t f =
 
 let iter f t =
   for i = 0 to size t - 1 do
-    f t.data.(i)
+    f (Array.unsafe_get t.data i)
   done
 
 let fold f acc t =
   let rec _fold f acc t i =
     if i=t.sz
     then acc
-    else
-      let acc' = f acc (Array.get t.data i) in
+    else (
+      let acc' = f acc (Array.unsafe_get t.data i) in
       _fold f acc' t (i+1)
+    )
   in _fold f acc t 0
 
 exception ExitVec
@@ -159,7 +159,7 @@ exception ExitVec
 let exists p t =
   try
     for i = 0 to t.sz - 1 do
-      if p (Array.get t.data i) then raise ExitVec
+      if p (Array.unsafe_get t.data i) then raise ExitVec
     done;
     false
   with ExitVec -> true
@@ -167,7 +167,7 @@ let exists p t =
 let for_all p t =
   try
     for i = 0 to t.sz - 1 do
-      if not (p (Array.get t.data i)) then raise ExitVec
+      if not (p (Array.unsafe_get t.data i)) then raise ExitVec
     done;
     true
   with ExitVec -> false

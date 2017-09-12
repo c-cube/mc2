@@ -30,9 +30,6 @@ val from_array : 'a array -> int -> 'a -> 'a t
     to create a vector. [size] is the length of the slice of [data] that is
     used ([size <= Array.length data] must hold) *)
 
-val from_list : 'a list -> int -> 'a -> 'a t
-(** [from_list l n] takes the [n] first elements of list [l] to make a new vector *)
-
 val to_list : 'a t -> 'a list
 (** Returns the list of elements of the vector *)
 
