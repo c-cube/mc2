@@ -22,11 +22,15 @@
 /* DIMACS syntax */
 
 prelude:
-  | P CNF LIT LIT EOL { print_endline "read prelude"; () }
+  | P CNF LIT LIT { () }
+  | error
+    {
+      Util.errorf "expected prelude %a" pp_pos ($startpos,$endpos)
+    }
 
 file:
   | EOF                             { [] }
-  | prelude l=clause* EOF { l }
+  | prelude EOL* l=separated_list(EOL*, clause) EOF { l }
   | error
     {
       Util.errorf "expected prelude then clause list %a"
