@@ -7,10 +7,6 @@ Copyright 2014 Simon Cruanes
 (* Tests that require the API *)
 
 open Mc2_core
-open Mc2_sat
-
-module F = Sat.Expr
-module T = Tseitin.Make(F)
 
 let (|>) x f = f x
 
@@ -41,20 +37,26 @@ type solver_res =
 exception Incorrect_model
 
 module type BASIC_SOLVER = sig
-  val solve : ?assumptions:F.t list -> unit -> solver_res
-  val assume : ?tag:int -> F.t list list -> unit
+  val solve : ?assumptions:int list -> unit -> solver_res
+  val assume : ?tag:int -> int list list -> unit
 end
 
 let mk_solver (): (module BASIC_SOLVER) =
-  let module S = struct
-    include Sat.Make(struct end)
-    let solve ?assumptions ()= match solve ?assumptions() with
-      | Sat _ ->
-        R_sat
-      | Unsat us ->
-        let p = us.Solver_intf.get_proof () in
-        Proof.check p;
-        R_unsat
+  let solver = Solver.create ~plugins:[Mc2_dimacs.Plugin_sat.plugin] () in
+  let mk_atom = Solver.get_service_exn solver Mc2_dimacs.Plugin_sat.k_atom in
+  let module S : BASIC_SOLVER = struct
+    let assume ?tag clauses =
+      Solver.assume ?tag solver (List.map (List.map mk_atom) clauses)
+    let solve ?(assumptions=[]) () =
+      let assumptions = List.map mk_atom assumptions in
+      begin match Solver.solve solver ~assumptions with
+        | Solver.Sat _ ->
+          R_sat
+        | Solver.Unsat us ->
+          let p = Solver.Unsat_state.get_proof us in
+          Proof.check p;
+          R_unsat
+      end
   end
   in (module S)
 
@@ -65,8 +67,8 @@ let errorf msg = Format.ksprintf error msg
 
 module Test = struct
   type action =
-    | A_assume of F.t list list
-    | A_solve of F.t list * [`Expect_sat | `Expect_unsat]
+    | A_assume of int list list
+    | A_solve of int list * [`Expect_sat | `Expect_unsat]
 
   type t = {
     name: string;
@@ -74,11 +76,9 @@ module Test = struct
   }
 
   let mk_test name l = {name; actions=l}
-  let assume l = A_assume (List.map (List.map F.make) l)
+  let assume l = A_assume l
   let assume1 c = assume [c]
-  let solve ?(assumptions=[]) e =
-    let assumptions = List.map F.make assumptions in
-    A_solve (assumptions, e)
+  let solve ?(assumptions=[]) e = A_solve (assumptions, e)
 
   type result =
     | Pass

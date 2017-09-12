@@ -10,6 +10,9 @@ build: [
 build-doc: [
     [make "doc"]
 ]
+build-test: [
+  [make "test"]
+]
 install: [
     [make "install"]
 ]
