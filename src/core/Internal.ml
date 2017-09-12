@@ -1598,8 +1598,9 @@ let trail env = env.trail
 
 let pp_stats out (s:t): unit =
   Fmt.fprintf out
-    "(@[stats@ :n_conflicts %d@ :n_learnt %d@ :n_decisions %d@ :n_restarts %d@ \
+    "(@[stats@ :n_conflicts %d@ :n_learnt %d@ \
+     :n_decisions %d@ :n_propagations %d@ :n_restarts %d@ \
      :n_initial %d@ :n_gc %d@ :n_deleted %d@]"
-    s.conflicts s.n_learnt s.decisions s.starts
+    s.conflicts s.n_learnt s.decisions s.propagations s.starts
     (Vec.size s.clauses_hyps) s.n_gc s.n_deleted
 
