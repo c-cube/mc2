@@ -345,9 +345,6 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   (* view -> term *)
   let tbl = H.create Ops.initial_size
 
-  (* after GC, recycle identifiers into this vec *)
-  let recycle_ids : int Vec.t = Vec.make_empty 0
-
   (* delete a term: flag it for removal, then recycle its ID.
      The flag is used so that anything that might still hold it can know
      it has been deleted. *)
@@ -356,7 +353,6 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
     t.t_tc.tct_delete t;
     assert (plugin_id t = Ops.p_id);
-    Vec.push recycle_ids (plugin_specific_id t);
     H.remove tbl (view t);
     ()
 
@@ -364,15 +360,9 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   let get_fresh_id : unit -> int =
     let id_alloc = ref 0 in
     fun () ->
-      if Vec.size recycle_ids = 0 then (
-        let n = !id_alloc in
-        incr id_alloc;
-        n
-      ) else (
-        let n = Vec.last recycle_ids in
-        Vec.pop recycle_ids;
-        n
-      )
+      let n = !id_alloc in
+      incr id_alloc;
+      n
 
   (* build a fresh term *)
   let make_term_ t_view t_ty t_tc : t =
