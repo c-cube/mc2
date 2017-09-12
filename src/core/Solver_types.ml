@@ -211,6 +211,7 @@ and reason =
   (** The atom has been propagated by the given clause *)
   | Semantic of term list
   (** The atom can be evaluated using the terms in the list *)
+(** Reasons of propagation/decision of atoms/terms. *)
 
 (* TODO?
   | Consequence of term * lemma lazy_t
@@ -218,7 +219,6 @@ and reason =
       formula [f]. The proof should be a proof of the clause "[l] implies [f]".
   *)
    *)
-(** Reasons of propagation/decision of atoms/terms. *)
 
 and premise =
   | Hyp (** The clause is a hypothesis, provided by the user. *)

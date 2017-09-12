@@ -104,10 +104,10 @@ let rec set_atom_proof a =
 let prove_unsat (conflict:clause) : clause =
   if Array.length conflict.c_atoms = 0 then conflict
   else (
-    Log.debugf 2 (fun k -> k "(@[@{<Green>Proving unsat@}@: from %a@])" Clause.debug conflict);
+    Log.debugf 2 (fun k -> k "(@[@{<Green>proof.proving_unsat@}@ :from %a@])" Clause.debug conflict);
     let l = Array.fold_left (fun acc a -> set_atom_proof a :: acc) [] conflict.c_atoms in
     let res = Clause.make [] (Premise.hyper_res (conflict :: l)) in
-    Log.debugf 2 (fun k -> k "(@[@{<Green>Proof found@}@ %a@])" Clause.debug res);
+    Log.debugf 2 (fun k -> k "(@[@{<Green>proof.proof_found@}@ %a@])" Clause.debug res);
     res
   )
 

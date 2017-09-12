@@ -165,6 +165,9 @@ let () = match main() with
   | E.Error msg ->
     print_endline msg;
     exit 1
+  | exception Util.Error msg ->
+    print_endline msg;
+    exit 1
   | exception Util.Out_of_time ->
     Format.printf "Timeout@.";
     exit 2
