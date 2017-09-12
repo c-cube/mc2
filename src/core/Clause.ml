@@ -62,8 +62,13 @@ let debug_atoms out = Format.fprintf out "(@[<v>%a@])" (Util.pp_list ~sep:" ∨ 
 
 let debug out ({c_atoms; c_premise=cp; _} as c) =
   let pp_atoms_vec out = Util.pp_array ~sep:" ∨ " Atom.debug out in
-  Format.fprintf out "%a@[<hv>{@[<v>%a@]}[A:%s]@ cpremise=%a@]"
-    pp_name c pp_atoms_vec c_atoms (if attached c then "1" else "0") Premise.pp cp
+  let state =
+    if deleted c then "D"
+    else if attached c then "A"
+    else "N"
+  in
+  Format.fprintf out "%a@[<hv>{@[<v>%a@]}[%s]@ cpremise=%a@]"
+    pp_name c pp_atoms_vec c_atoms state Premise.pp cp
 
 let pp_dimacs fmt { c_atoms; _} =
   let aux fmt a =
