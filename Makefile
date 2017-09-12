@@ -9,6 +9,9 @@ OPTS= -j 3
 build:
 	jbuilder build $(TARGETS) $(OPTS)
 
+build-install:
+	jbuilder build @install
+
 build-dev:
 	jbuilder build $(TARGETS) $(OPTS) --dev
 
@@ -21,7 +24,7 @@ disable_log:
 clean:
 	jbuilder clean
 
-install: lib
+install: build-install
 	jbuilder install
 
 uninstall:

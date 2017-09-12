@@ -5,27 +5,26 @@ version: "dev"
 author: ["Sylvain Conchon" "Alain Mebsout" "Stephane Lecuyer" "Simon Cruanes" "Guillaume Bury"]
 maintainer: ["simon.cruanes@inria.fr"]
 build: [
-    [make "disable_log"]
-    [make "lib"]
+    [make "build-install"]
 ]
 build-doc: [
     [make "doc"]
 ]
 install: [
-    [make "DOCDIR=%{msat:doc}%" "install"]
+    [make "install"]
 ]
 remove: [
-    [make "DOCDIR=%{msat:doc}%" "uninstall"]
+    [make "uninstall"]
 ]
 depends: [
   "ocamlfind" {build}
   "ocamlbuild" {build}
 ]
 available: [
-  ocaml-version >= "4.00.1"
+  ocaml-version >= "4.03.0"
 ]
 tags: [ "sat" "smt" ]
-homepage: "https://github.com/c-cubey/mc2"
+homepage: "https://github.com/c-cube/mc2"
 dev-repo: "https://github.com/c-cube/mc2.git"
 bug-reports: "https://github.com/c-cube/mc2/issues/"
 
