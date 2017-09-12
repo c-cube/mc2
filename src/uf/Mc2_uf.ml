@@ -251,15 +251,10 @@ let build p_id Plugin.S_nil : Plugin.t =
           ~on_all_set:(fun () -> check_sig acts t)
       | _ -> assert false
 
-    let delete t f = match Term.view t with
-      | Const _ -> ()
-      | App {watches;_} -> Term.Watch1.iter watches f
-      | _ -> assert false
-
     let tc : tc_term =
       Term.tc_mk
         ~pp ~update_watches ~init ~subterms
-        ~delete ~eval_bool ()
+        ~eval_bool ()
 
     let check_if_sat _ = Sat
     let gc_all = T_alloc.gc_all

@@ -158,7 +158,7 @@ let[@inline] add_watch (t:t) (u:t) : unit =
 let tc_mk
     ?(init=fun _ _ -> ())
     ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
-    ?(delete=fun _ _ -> ())
+    ?(delete=fun _ -> ())
     ?(subterms=fun _ _ -> ())
     ?(eval_bool=fun _ -> Eval_unknown)
     ~pp
@@ -351,10 +351,10 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   (* delete a term: flag it for removal, then recycle its ID.
      The flag is used so that anything that might still hold it can know
      it has been deleted. *)
-  let delete ~mark_dirty (t:t) : unit =
+  let delete (t:t) : unit =
     Log.debugf 5 (fun k->k "(@[<1>Term_alloc.delete@ %a@])" debug t);
     t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
-    t.t_tc.tct_delete t mark_dirty;
+    t.t_tc.tct_delete t;
     assert (plugin_id t = Ops.p_id);
     Vec.push recycle_ids (plugin_specific_id t);
     H.remove tbl (view t);
@@ -390,7 +390,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
 
   let[@inline] iter_terms k = H.values tbl k
 
-  let gc_all ~mark_dirty () : unit =
+  let gc_all () : unit =
     Log.debugf 5 (fun k->k "(@[Term_alloc.gc_all@ :p_id %d@])" Ops.p_id);
     let to_gc = Vec.make_empty dummy_term in (* terms to be collected *)
     let n_alive = ref 0 in
@@ -405,7 +405,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
          ));
     (* delete *)
     let n_collected = Vec.size to_gc in
-    Vec.iter (delete ~mark_dirty) to_gc;
+    Vec.iter delete to_gc;
     Log.debugf 15
       (fun k->k "(@[Term_alloc.gc.stats@ :collected %d@ :alive %d@])"
           n_collected !n_alive);

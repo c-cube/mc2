@@ -1058,7 +1058,9 @@ let propagate_atom (env:t) (a:atom) : unit =
   while !i < Vec.size watched do
     let c = Vec.get watched !i in
     assert (Clause.attached c);
-    begin match propagate_in_clause env a c with
+    if Clause.deleted c
+    then Vec.fast_remove watched !i (* remove *)
+    else begin match propagate_in_clause env a c with
       | Watch_keep -> incr i
       | Watch_remove ->
         Vec.fast_remove watched !i;
@@ -1078,7 +1080,9 @@ let propagate_term (env:t) (t:term): unit =
   while !i < Vec.size watched do
     let u = Vec.get watched !i in
     assert (Term.is_added u);
-    begin match propagate_in_watching_term env u ~watch:t with
+    if Term.is_deleted u
+    then Vec.fast_remove watched !i
+    else begin match propagate_in_watching_term env u ~watch:t with
       | Watch_keep -> incr i
       | Watch_remove ->
         Vec.fast_remove watched !i;
@@ -1292,15 +1296,6 @@ let reduce_db (env:t) ~down_to : unit =
   (* sort learnt clauses by decreasing activity *)
   Vec.sort env.clauses_learnt
     (fun c1 c2 -> CCFloat.compare (Clause.activity c2)(Clause.activity c1));
-  (* atoms for which watches should be updated *)
-  let dirty_atoms = Vec.make_empty dummy_atom in
-  let dirty_terms = env.dirty_terms in
-  let mk_dirty_atom a =
-    if not (Atom.marked a) then (
-      Atom.mark a;
-      Vec.push dirty_atoms a;
-    )
-  in
   (* pop clauses *)
   while Vec.size env.clauses_learnt > down_to do
     let c = Vec.pop_last env.clauses_learnt in
@@ -1308,18 +1303,7 @@ let reduce_db (env:t) ~down_to : unit =
         Clause.debug c (Clause.activity c));
     Clause.set_deleted c;
     env.n_deleted <- env.n_deleted + 1;
-    if Array.length c.c_atoms >= 1 then (
-      mk_dirty_atom c.c_atoms.(0);
-      if Array.length c.c_atoms >= 2 then mk_dirty_atom c.c_atoms.(1);
-    );
   done;
-  (* now rebuild watches for the dirty atoms *)
-  Vec.iter
-    (fun a ->
-       Atom.unmark a;
-       Vec.filter_in_place (fun c -> not (Clause.deleted c)) a.a_watched)
-    dirty_atoms;
-  Vec.clear dirty_atoms;
   (* mark alive terms, starting from alive clauses and from the trail *)
   Stack.iter Clause.gc_mark env.clauses_root;
   Vec.iter Clause.gc_mark env.clauses_hyps;
@@ -1327,17 +1311,9 @@ let reduce_db (env:t) ~down_to : unit =
   Vec.iter Clause.gc_mark env.clauses_temp;
   Vec.iter Term.gc_mark_rec env.trail;
   (* now collect terms *)
-  let mark_dirty = Actions.mark_dirty (actions env) in
   CCVector.iter
-    (fun (module P : Plugin.S) -> P.gc_all ~mark_dirty ())
+    (fun (module P : Plugin.S) -> P.gc_all ())
     env.plugins;
-  Vec.iter
-    (fun t ->
-       Term.dirty_unmark t;
-       let lazy watches = t.t_watches in
-       Vec.filter_in_place (fun c -> not (Term.is_deleted c)) watches)
-    dirty_terms;
-  Vec.clear dirty_terms;
   ()
 
 (* do some amount of search, until the number of conflicts or clause learnt
