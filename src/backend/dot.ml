@@ -129,7 +129,7 @@ module Make(A : Arg with type atom := atom
       | Proof.Resolution {pivot=a; _} ->
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Resolution" "GREY"
           [(fun fmt () -> (Format.fprintf fmt "%s" (node_id n)))];
-        print_dot_res_node fmt (res_node_id n) a;
+        print_dot_res_node fmt (res_node_id n) (Term.Bool.pa a);
         print_edge fmt (node_id n) (res_node_id n)
 
   let print_node fmt n =

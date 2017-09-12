@@ -17,6 +17,8 @@
 module Term_fields = BitField.Make(struct end)
 module Clause_fields = BitField.Make(struct end)
 
+module Fmt = CCFormat
+
 (** {2 Type definitions} *)
 
 type plugin_id = int
@@ -227,6 +229,11 @@ and premise =
   (** The clause is a theory-provided tautology, with the given proof. *)
   | Simplify of clause
   (** Deduplication/sorting of atoms in the clause *)
+  | Resolve of {
+      c1: clause;
+      c2: clause;
+      pivot: term;
+    } (** Resolution step between two clauses *)
   | Hyper_res of clause list
   (** The clause can be obtained by resolution of the clauses
       in the list.

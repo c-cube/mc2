@@ -35,7 +35,7 @@ and step =
   | Resolution of {
       premise1: t;
       premise2: t;
-      pivot: atom;
+      pivot: term;
     }
   (** The conclusion can be deduced by performing a resolution between the conclusions
       of the two given proofs. The atom on which to perform the resolution is also given. *)

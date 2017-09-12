@@ -68,12 +68,8 @@ let find_duplicates (c:clause) : atom list =
 let[@inline] cl_list_eq c d = CCList.equal Atom.equal c d
 let[@inline] prove conclusion = conclusion
 
-(* update proof of atom [a] *)
-let rec set_atom_proof a =
-  let aux acc b =
-    if Atom.equal (Atom.neg a) b then acc
-    else set_atom_proof b :: acc
-  in
+(* update proof of atom [a] with additional information at level 0 *)
+let rec recompute_update_proof_of_atom (a:atom) : clause =
   assert (Atom.level a >= 0);
   begin match Atom.reason a with
     | Some (Bcp c) ->
@@ -85,8 +81,16 @@ let rec set_atom_proof a =
         c
       ) else (
         assert (Atom.is_false a);
-        let r = Premise.hyper_res (c :: Array.fold_left aux [] c.c_atoms) in
-        let c' = Clause.make [Atom.neg a] r in
+        let premise =
+          Array.fold_left
+            (fun acc b ->
+               if Atom.equal (Atom.neg a) b then acc
+               else recompute_update_proof_of_atom b :: acc)
+            []
+            c.c_atoms
+        in
+        let premise = Premise.hyper_res (c :: premise) in
+        let c' = Clause.make [Atom.neg a] premise in
         (* update reason *)
         begin match a.a_term.t_value with
           | TA_none -> assert false
@@ -105,15 +109,21 @@ let prove_unsat (conflict:clause) : clause =
   if Array.length conflict.c_atoms = 0 then conflict
   else (
     Log.debugf 2 (fun k -> k "(@[@{<Green>proof.proving_unsat@}@ :from %a@])" Clause.debug conflict);
-    let l = Array.fold_left (fun acc a -> set_atom_proof a :: acc) [] conflict.c_atoms in
-    let res = Clause.make [] (Premise.hyper_res (conflict :: l)) in
-    Log.debugf 2 (fun k -> k "(@[@{<Green>proof.proof_found@}@ %a@])" Clause.debug res);
+    let premise =
+      Array.fold_left
+        (fun acc a -> recompute_update_proof_of_atom a :: acc)
+        [] conflict.c_atoms
+    in
+    let premise = Premise.hyper_res (conflict :: premise) in
+    let res = Clause.make [] premise in
+    Log.debugf 2 (fun k -> k "(@[@{<Green>proof.proof_found@}@ %a@ :premise %a@])"
+        Clause.debug res Premise.pp premise);
     res
   )
 
 let prove_atom a =
   if Atom.is_true a && Atom.level a = 0 then (
-    Some (set_atom_proof a)
+    Some (recompute_update_proof_of_atom a)
   ) else (
     None
   )
@@ -132,7 +142,7 @@ and step =
   | Resolution of {
       premise1: t;
       premise2: t;
-      pivot: atom;
+      pivot: term;
     }
 
 let[@inline] conclusion n = n.conclusion
@@ -147,10 +157,10 @@ let debug_step out (s:step) : unit = match s with
       Clause.debug_atoms l
   | Resolution {premise1=p1; premise2=p2; pivot} ->
     Fmt.fprintf out "(@[res@ :pivot %a@ :c1 %a@ :c2 %a@])"
-      Atom.debug pivot Clause.debug p1 Clause.debug p2
+      Term.debug pivot Clause.debug p1 Clause.debug p2
 
 type chain_res = {
-  cr_pivot : atom; (* pivot atom, on which resolution is done *)
+  cr_pivot : term; (* pivot atom, on which resolution is done *)
   cr_clause: atom list; (* clause obtained by res *)
   cr_premise1 : clause;
   cr_premise2 : clause;
@@ -168,11 +178,12 @@ let rec chain_res (c:clause) (cl:sorted_atom_list) : clause list -> chain_res = 
       | [a] ->
         begin match r with
           | [] ->
-            {cr_clause=res.resolve_atoms; cr_pivot=a;
+            {cr_clause=res.resolve_atoms; cr_pivot=Atom.term a;
              cr_premise1=c; cr_premise2=d}
           | _ ->
             let new_clause =
-              Clause.make res.resolve_atoms (Premise.hyper_res [c; d])
+              Clause.make res.resolve_atoms
+                (Premise.resolve (Atom.term a) c d)
             in
             chain_res new_clause res.resolve_atoms r
         end
@@ -192,6 +203,14 @@ let expand (conclusion:clause) : node =
     | Lemma l -> mk_node conclusion (Lemma l)
     | Hyp -> mk_node conclusion Hypothesis
     | Local -> mk_node conclusion Assumption
+    | Resolve {c1;c2;pivot} ->
+      let step = Resolution {
+          premise1=c1;
+          premise2=c2;
+          pivot;
+        }
+      in
+      mk_node conclusion step
     | Simplify c ->
       let duplicates = find_duplicates c in
       mk_node conclusion (Deduplicate (c, duplicates))
@@ -209,7 +228,7 @@ let expand (conclusion:clause) : node =
     | Hyper_res (c :: r) ->
       let res = chain_res c (clause_to_list c) r in
       conclusion.c_premise <-
-        Premise.hyper_res [res.cr_premise1; res.cr_premise2];
+        Premise.resolve res.cr_pivot res.cr_premise1 res.cr_premise2;
       let step = Resolution {
           premise1=res.cr_premise1;
           premise2=res.cr_premise2;
@@ -244,28 +263,30 @@ let expl = function
    TODO: replace visited bool by a int unique to each call
    of unsat_core, so that the cleanup can be removed ? *)
 let unsat_core proof =
-  let rec aux res visited = function
-    | [] -> res, visited
+  (* visit recursively the proof of [c] to find the unsat core (the leaves)
+     @param res partial result (subset of unsat-core)
+     @param visited set of clauses for which the `visited` flag should be cleared
+     @param k continuation to call with results *)
+  let rec aux res visited c k =
+    if Clause.visited c then (
+      k res visited
+    ) else (
+      Clause.mark_visited c;
+      begin match c.c_premise with
+        | Hyp | Local -> k (c :: res) visited
+        | Lemma _ -> k res visited (* ignore lemmas *)
+        | Simplify d -> aux res (c :: visited) d k
+        | Resolve {c1;c2;_} -> aux_l res (c::visited) [c1;c2] k
+        | Hyper_res h -> aux_l res (c::visited) h k
+      end
+    )
+  and aux_l res visited l k = match l with
+    | [] -> k res visited
     | c :: r ->
-      if Clause.visited c then (
-        aux res visited r
-      ) else (
-        Clause.mark_visited c;
-        begin match c.c_premise with
-          | Hyp | Local | Lemma _ -> aux (c :: res) visited r
-          | Simplify d -> aux res (c :: visited) (d :: r)
-          | Hyper_res h ->
-            let l =
-              List.fold_left
-                (fun acc c ->
-                   if not (Clause.visited c) then c :: acc else acc)
-                r h
-            in
-            aux res (c :: visited) l
-        end
-      )
+      aux res visited c
+        (fun res visited -> aux_l res visited r k)
   in
-  let res, visited = aux [] [] [proof] in
+  let res, visited = aux [] [] proof CCPair.make in
   List.iter Clause.clear_visited res;
   List.iter Clause.clear_visited visited;
   res
@@ -347,7 +368,7 @@ let check p =
          | Resolution {premise1=p1; premise2=p2; pivot} ->
            let l =
              merge_clauses (clause_to_list p1) (clause_to_list p2)
-             |> List.filter (fun a -> not (Atom.same_term pivot a))
+             |> List.filter (fun a -> not (Atom.term a |> Term.equal pivot))
            in
            check_same_l ~ctx:"in res" l (clause_to_list concl)
        end)

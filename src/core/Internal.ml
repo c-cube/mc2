@@ -695,7 +695,7 @@ let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
 type conflict_res = {
   cr_backtrack_lvl : int; (* level to backtrack to *)
   cr_learnt: atom array; (* lemma learnt from conflict *)
-  cr_history: clause list; (* justification *)
+  cr_history: clause list; (* justification: conflict clause + resolution steps *)
   cr_is_uip: bool; (* conflict is UIP? *)
   cr_confl : clause; (* original conflict clause *)
 }
@@ -748,7 +748,7 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
           (fun k->k "(@[analyze_conflict.resolving@ :clause %a@])" Clause.debug clause);
         (* increase activity since [c] participates in a conflict *)
         begin match clause.c_premise with
-          | Hyper_res _ -> bump_clause_activity env clause
+          | Hyper_res _ | Resolve _ -> bump_clause_activity env clause
           | Hyp | Local | Simplify _ | Lemma _ -> ()
         end;
         history := clause :: !history;
@@ -756,9 +756,10 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
         for j = 0 to Array.length clause.c_atoms - 1 do
           let q = clause.c_atoms.(j) in
           assert (Atom.is_true q || Atom.is_false q && Atom.level q >= 0); (* unsure? *)
+          (* TODO: remove this, proof will be simplified eventually *)
           if Atom.level q <= 0 then (
             (* must be a 0-level propagation *)
-            assert (Atom.level q=0);
+            assert (Atom.level q=0 && Atom.is_false q);
             begin match Atom.reason q with
               | Some (Bcp cl) -> history := cl :: !history
               | _ -> assert false
@@ -860,11 +861,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       )
     | c_learnt ->
       let fuip = c_learnt.(0) in
-      let premise = match cr.cr_history with
-        | [] -> assert false
-        | [c] -> Simplify c
-        | l -> Premise.hyper_res l
-      in
+      let premise = Premise.hyper_res_or_simplify cr.cr_history in
       let lclause = Clause.make_arr c_learnt premise in
       Vec.push env.clauses_learnt lclause;
       env.n_learnt <- env.n_learnt + 1;
@@ -906,7 +903,7 @@ let add_conflict (env:t) (confl:clause): unit =
 let clause_vector env c = match c.c_premise with
   | Hyp -> env.clauses_hyps
   | Local -> env.clauses_temp
-  | Lemma _ | Simplify _ | Hyper_res _ -> env.clauses_learnt
+  | Lemma _ | Simplify _ | Hyper_res _ | Resolve _ -> env.clauses_learnt
 
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
