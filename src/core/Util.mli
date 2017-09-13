@@ -13,6 +13,10 @@ exception Error of string
 val errorf : ('a, Format.formatter, unit, 'b) format4 -> 'a
 val error : string -> 'a
 
+val err_sprintf : ('a, Format.formatter, unit, unit, unit, string) format6 -> 'a
+(** Like {!Fmt.sprintf} but specialized for errors *)
+
+
 exception Out_of_time
 exception Out_of_space
 

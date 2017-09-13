@@ -18,16 +18,17 @@ let[@inline] swap_arr a i j =
 
 exception Error of string
 
-let exn_ksprintf ~f fmt =
+let err_ksprintf ~f fmt =
   let buf = Buffer.create 32 in
   let out = Format.formatter_of_buffer buf in
   CCFormat.set_color_tag_handling out;
   Format.fprintf out "@[<2>@{<Red>error:@}@ ";
   Format.kfprintf
-    (fun _ -> Format.fprintf out "@]@?"; raise (f (Buffer.contents buf)))
+    (fun _ -> Format.fprintf out "@]@?"; f (Buffer.contents buf))
     out fmt
 
-let errorf msg = exn_ksprintf ~f:(fun e -> raise (Error e)) msg
+let err_sprintf fmt = err_ksprintf ~f:CCFun.id fmt
+let errorf msg = err_ksprintf ~f:(fun e -> raise (Error e)) msg
 let error msg = errorf "%s" msg
 
 exception Out_of_time
