@@ -38,12 +38,15 @@ let[@inline] set_attached c = c.c_fields <- Fields.set field_c_attached true c.c
 let[@inline] deleted c = Fields.get field_c_deleted c.c_fields
 let[@inline] set_deleted c = c.c_fields <- Fields.set field_c_deleted true c.c_fields
 
+let[@inline] gc_marked c = Fields.get field_c_gc_marked c.c_fields
+let[@inline] gc_mark c = c.c_fields <- Fields.set field_c_gc_marked true c.c_fields
+let[@inline] gc_unmark c = c.c_fields <- Fields.set field_c_gc_marked false c.c_fields
+
 let[@inline] get_tag c = c.c_tag
 let[@inline] name c = c.c_name
 let[@inline] premise c = c.c_premise
 let[@inline] activity c = c.c_activity
 let[@inline] atoms c = c.c_atoms
-let[@inline] gc_mark c = Array.iter (fun a -> Term.gc_mark_rec a.a_term) c.c_atoms
 
 let pp_atoms out v =
   if Array.length v = 0 then

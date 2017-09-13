@@ -69,7 +69,7 @@ val mk_eq : t -> t -> t
 
 val gc_unmark : t -> unit (** Unmark just this term *)
 val gc_marked : t -> bool
-val gc_mark_rec : t -> unit (** Mark term and its subterms, recursively *)
+val gc_mark : t -> unit (** Non recursive *)
 
 val dirty : t -> bool
 val dirty_mark : t -> unit

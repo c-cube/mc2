@@ -298,6 +298,7 @@ let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints?
 let field_c_attached = Clause_fields.mk_field() (** clause added to state? *)
 let field_c_visited = Clause_fields.mk_field() (** visited during some traversal? *)
 let field_c_deleted = Clause_fields.mk_field() (** deleted during GC *)
+let field_c_gc_marked = Clause_fields.mk_field() (** clause is alive for GC *)
 
 type term_view += Dummy
 

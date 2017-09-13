@@ -69,12 +69,6 @@ let level_semantic (t:t) : level =
 
 let[@inline] mk_eq (t:t) (u:t) : t = Type.mk_eq (ty t) t u
 
-let rec gc_mark_rec (t:t) : unit =
-  if not (gc_marked t) then (
-    gc_mark t;
-    iter_subterms t gc_mark_rec
-  )
-
 let[@inline] reason_exn t = match value t with
   | TA_assign{reason;_} -> reason
   | TA_none -> assert false

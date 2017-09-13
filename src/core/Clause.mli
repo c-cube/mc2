@@ -33,6 +33,8 @@ val premise : t -> premise
 val get_tag : t -> int option (** Recover tag from a clause, if any *)
 
 val gc_mark : t -> unit
+val gc_unmark : t -> unit
+val gc_marked : t -> bool
 
 val pp_name : t CCFormat.printer
 val pp : t CCFormat.printer (** nice printer *)

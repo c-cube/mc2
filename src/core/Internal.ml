@@ -1286,6 +1286,24 @@ and pick_branch_lit (env:t) : unit =
       )
   end
 
+(* recursively mark clause [c] and its atoms *)
+let rec gc_mark_clause (c:clause) : unit =
+  if not (Clause.gc_marked c) then (
+    Clause.gc_mark c;
+    Array.iter (fun a -> gc_mark_term a.a_term) c.c_atoms
+  )
+
+(* recursively mark [t] and its subterms *)
+and gc_mark_term (t:term) : unit =
+  if not (Term.gc_marked t) then (
+    Term.gc_mark t;
+    Term.iter_subterms t gc_mark_term;
+    begin match t.t_value with
+      | TA_assign {reason=Bcp c;_} -> gc_mark_clause c
+      | _ -> ()
+    end
+  )
+
 (* remove some learnt clauses, and the terms that are not reachable from
    any clause.
    The number of learnt clauses after reduction must be [downto] *)
@@ -1298,24 +1316,27 @@ let reduce_db (env:t) ~down_to : unit =
   assert (down_to <= n_clauses);
   Log.debugf 4
     (fun k->k"(@[reduce_db.remove_learnt@ :n_total %d@ :downto %d@])" n_clauses down_to);
-  (* sort learnt clauses by decreasing activity *)
+  (* mark terms of the trail alive, as well as clauses that propagated them,
+     and mark permanent clauses *)
+  Vec.iter gc_mark_term env.trail;
+  Stack.iter Clause.gc_mark env.clauses_root;
+  Vec.iter Clause.gc_mark env.clauses_hyps;
+  Vec.iter Clause.gc_mark env.clauses_temp;
+  (* sort learnt clauses by decreasing activity, but put marked clauses first *)
   Vec.sort env.clauses_learnt
     (fun c1 c2 -> CCFloat.compare (Clause.activity c2)(Clause.activity c1));
   (* pop clauses *)
-  while Vec.size env.clauses_learnt > down_to do
+  while Vec.size env.clauses_learnt > down_to &&
+        not (Clause.gc_marked (Vec.last env.clauses_learnt)) do
     let c = Vec.pop_last env.clauses_learnt in
+    assert (not (Clause.gc_marked c));
     Log.debugf 15 (fun k->k"(@[reduce_db.remove_clause@ %a@ :activity %f@])"
         Clause.debug c (Clause.activity c));
     Clause.set_deleted c;
     env.n_deleted <- env.n_deleted + 1;
   done;
   (* mark alive terms, starting from alive clauses and from the trail *)
-  Stack.iter Clause.gc_mark env.clauses_root;
-  Vec.iter Clause.gc_mark env.clauses_hyps;
   Vec.iter Clause.gc_mark env.clauses_learnt;
-  Vec.iter Clause.gc_mark env.clauses_temp;
-  Vec.iter Term.gc_mark_rec env.trail;
-  (* now collect terms *)
   CCVector.iter
     (fun (module P : Plugin.S) -> P.gc_all ())
     env.plugins;
