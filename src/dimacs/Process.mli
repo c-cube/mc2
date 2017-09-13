@@ -15,6 +15,8 @@ val process :
   ?restarts:bool ->
   ?pp_model:bool ->
   ?check:bool ->
+  ?time:float ->
+  ?memory:float ->
   Solver.t ->
   atom list list ->
   unit or_error

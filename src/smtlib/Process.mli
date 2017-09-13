@@ -16,6 +16,8 @@ val process_stmt :
   ?dot_proof:string ->
   ?pp_model:bool ->
   ?check:bool ->
+  ?time:float ->
+  ?memory:float ->
   Solver.t ->
   Ast.statement ->
   unit or_error

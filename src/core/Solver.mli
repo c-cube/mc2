@@ -80,6 +80,9 @@ exception UndecidedLit of term
 (** Exception raised by the evaluating functions when a literal
     has not yet been assigned a value. *)
 
+exception Out_of_time
+exception Out_of_space
+
 module Sat_state : sig
   type t = [`SAT] state
 
@@ -121,6 +124,8 @@ type res =
 val solve :
   ?gc:bool ->
   ?restarts:bool ->
+  ?time:float ->
+  ?memory:float ->
   ?assumptions:atom list ->
   t ->
   res

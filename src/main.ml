@@ -27,10 +27,6 @@ let gc = ref true
 let p_stat = ref false
 let p_gc_stat = ref false
 
-(* TODO: remove the functor, there will be only one input *)
-(* TODO: uniform typing interface for dimacs/smtlib *)
-(* TODO: tseitin theory *)
-
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
 let hyps = ref []
@@ -129,34 +125,31 @@ let main () =
     in
     Solver.create ~plugins ()
     in
-    let res = Util.with_limits
-      ~time:!time_limit
-      ~memory:!size_limit
-      (fun () ->
-         begin match syn with
-           | Smtlib ->
-             (* parse pb *)
-             Mc2_smtlib.Ast.parse !file >>= fun input ->
-             (* TODO: parse list of plugins on CLI *)
-             (* process statements *)
-             begin try
-                 let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
-                 E.fold_l
-                   (fun () ->
-                      Process_smtlib.process_stmt
-                        ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
-                        ?dot_proof ~pp_model:!p_model ~check:!check
-                        solver)
-                   () input
-               with Exit ->
-                 E.return()
-             end
-           | Dimacs ->
-             Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
-             Mc2_dimacs.Process.process
-               ~pp_model:!p_model ~gc:!gc ~restarts:!restarts ~check:!check
-               solver pb
-         end)
+    let res = match syn with
+      | Smtlib ->
+        (* parse pb *)
+        Mc2_smtlib.Ast.parse !file >>= fun input ->
+        (* TODO: parse list of plugins on CLI *)
+        (* process statements *)
+        begin try
+            let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
+            E.fold_l
+              (fun () ->
+                 Process_smtlib.process_stmt
+                   ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
+                   ~time:!time_limit ~memory:!size_limit
+                   ?dot_proof ~pp_model:!p_model ~check:!check
+                   solver)
+              () input
+          with Exit ->
+            E.return()
+        end
+      | Dimacs ->
+        Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
+        Mc2_dimacs.Process.process
+          ~pp_model:!p_model ~gc:!gc ~restarts:!restarts ~check:!check
+          ~time:!time_limit ~memory:!size_limit
+          solver pb
     in
     if !p_stat then (
       Format.printf "%a@." Solver.pp_stats solver;
@@ -174,10 +167,10 @@ let () = match main() with
   | exception Util.Error msg ->
     print_endline msg;
     exit 1
-  | exception Util.Out_of_time ->
+  | exception Solver.Out_of_time ->
     Format.printf "Timeout@.";
     exit 2
-  | exception Util.Out_of_space ->
+  | exception Solver.Out_of_space ->
     Format.printf "Spaceout@.";
     exit 3
   | exception Ast.Ill_typed msg ->

@@ -14,6 +14,8 @@ exception Unsat
 exception UndecidedLit of term
 exception Restart
 exception Conflict of clause
+exception Out_of_time
+exception Out_of_space
 
 (* Log levels *)
 let error = 1
@@ -196,6 +198,8 @@ let() = Printexc.register_printer
     (function
       | UndecidedLit t ->
         Some (Util.err_sprintf "undecided_lit: %a" Term.debug t)
+      | Out_of_space -> Some "out of space"
+      | Out_of_time -> Some "out of time"
       | _ -> None)
 
 (* how to add a plugin *)
@@ -1364,9 +1368,21 @@ let reduce_db (env:t) ~down_to : unit =
   Vec.iter Clause.gc_unmark env.clauses_learnt;
   ()
 
+(* check if time/memory limits are exceeded;
+   raise exception to exit *)
+let check_limits ~time ~memory () =
+  let t = Sys.time () in
+  let heap_size = (Gc.quick_stat ()).Gc.heap_words in
+  let s = float heap_size *. float Sys.word_size /. 8. in
+  if t > time then (
+    raise Out_of_time
+  ) else if s > memory then (
+    raise Out_of_space
+  )
+
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
-let search (env:t) n_of_conflicts : unit =
+let search (env:t) ~time ~memory n_of_conflicts : unit =
   Log.debugf 5
     (fun k->k "(@[@{<yellow>solver.search@}@ :nconflicts %d@])" n_of_conflicts);
   let conflictC = ref 0 in
@@ -1392,6 +1408,11 @@ let search (env:t) n_of_conflicts : unit =
           raise Restart
         );
         (* if decision_level() = 0 then simplify (); *)
+
+        (* check time/memory limits every 2^11 rounds *)
+        if env.conflicts = ((env.conflicts lsr 11) lsl 11) then (
+          check_limits ~time ~memory ();
+        );
 
         (* next decision *)
         pick_branch_lit env
@@ -1458,7 +1479,13 @@ let final_check (env:t) : final_check_res =
 
 (* fixpoint of propagation and decisions until a model is found, or a
    conflict is reached *)
-let solve ?(gc=true) ?(restarts=true) (env:t) : unit =
+let solve
+    ?(gc=true)
+    ?(restarts=true)
+    ?(time=max_float)
+    ?(memory=max_float)
+    (env:t)
+  : unit =
   Log.debugf 2 (fun k->k"@{<Green>#### Solve@}");
   if is_unsat env then (
     raise Unsat;
@@ -1468,39 +1495,42 @@ let solve ?(gc=true) ?(restarts=true) (env:t) : unit =
   let n_of_learnts =
     ref (CCFloat.max 50. ((to_float (nb_clauses env)) *. env.learntsize_factor))
   in
-  try
-    while true do
-      begin
-        try
-          let nconf = if restarts then to_int !n_of_conflicts else max_int in
-          search env nconf
-        with
-          | Restart ->
-            (* garbage collect, if needed *)
-            if gc &&
-               !n_of_learnts >= 0. &&
-               float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
-            then (
-              let n = (to_int !n_of_learnts) + 1 in
-              reduce_db env ~down_to:n
-            );
+  let rec loop () =
+    begin match
+        let nconf = if restarts then to_int !n_of_conflicts else max_int in
+        search env ~time ~memory nconf
+      with
+        | () -> ()
+        | exception Restart ->
+          (* garbage collect clauses, if needed *)
+          if gc &&
+             !n_of_learnts >= 0. &&
+             float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
+          then (
+            let n = (to_int !n_of_learnts) + 1 in
+            reduce_db env ~down_to:n
+          );
 
-            (* increment parameters to ensure termination *)
-            n_of_conflicts := !n_of_conflicts *. env.restart_inc;
-            n_of_learnts   := !n_of_learnts *. env.learntsize_inc;
-          | Sat ->
-            assert (fully_propagated env);
-            begin match final_check env with
-              | FC_sat -> raise Sat
-              | FC_conflict c ->
-                Log.debugf info
-                  (fun k -> k "(@[solver.theory_conflict_clause@ %a@])" Clause.debug c);
-                Stack.push c env.clauses_to_add
-              | FC_propagate -> () (* need to propagate *)
-            end;
-      end
-    done
-  with Sat -> ()
+          (* increment parameters to ensure termination *)
+          n_of_conflicts := !n_of_conflicts *. env.restart_inc;
+          n_of_learnts   := !n_of_learnts *. env.learntsize_inc;
+          loop()
+        | exception Sat -> check_sat ()
+    end
+  and check_sat () =
+    assert (fully_propagated env);
+    begin match final_check env with
+      | FC_sat -> () (* done *)
+      | FC_conflict c ->
+        Log.debugf info
+          (fun k -> k "(@[solver.theory_conflict_clause@ %a@])" Clause.debug c);
+        Stack.push c env.clauses_to_add;
+        loop()
+      | FC_propagate ->
+        loop() (* need to propagate *)
+    end
+  in
+  loop()
 
 let assume env ?tag (cnf:atom list list) =
   List.iter

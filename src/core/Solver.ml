@@ -19,6 +19,8 @@ type 'clause clause_sets = {
 (** Current state of the SAT solver *)
 
 exception UndecidedLit = Internal.UndecidedLit
+exception Out_of_space = Internal.Out_of_space
+exception Out_of_time = Internal.Out_of_time
 
 (** Main type *)
 type t = Internal.t
@@ -95,12 +97,12 @@ type res =
   | Unsat of Unsat_state.t (** Returned when the solver reaches UNSAT *)
 (** Result type for the solver *)
 
-let solve ?gc ?restarts ?(assumptions=[]) (s:t): res =
+let solve ?gc ?restarts ?time ?memory ?(assumptions=[]) (s:t): res =
   try
     S.pop s;
     S.push s;
     S.local s assumptions;
-    S.solve ?gc ?restarts s;
+    S.solve ?gc ?restarts ?time ?memory s;
     pp_all s 99 "SAT";
     Sat (St_sat s)
   with S.Unsat ->

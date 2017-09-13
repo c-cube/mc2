@@ -31,24 +31,6 @@ let err_sprintf fmt = err_ksprintf ~f:CCFun.id fmt
 let errorf msg = err_ksprintf ~f:(fun e -> raise (Error e)) msg
 let error msg = errorf "%s" msg
 
-exception Out_of_time
-exception Out_of_space
-
-let with_limits ~time ~memory f =
-  (* Limits alarm *)
-  let check () =
-    let t = Sys.time () in
-    let heap_size = (Gc.quick_stat ()).Gc.heap_words in
-    let s = float heap_size *. float Sys.word_size /. 8. in
-    if t > time then (
-      raise Out_of_time
-    ) else if s > memory then (
-      raise Out_of_space
-    )
-  in
-  let al = Gc.create_alarm check in
-  CCFun.finally ~h:(fun () -> Gc.delete_alarm al) ~f
-
 let setup_gc () =
   let g = Gc.get () in
   g.Gc.space_overhead <- 3_000; (* major gc *)
@@ -59,6 +41,4 @@ let setup_gc () =
 let () = Printexc.register_printer
     (function
       | Error msg -> Some msg
-      | Out_of_space -> Some "out of space"
-      | Out_of_time -> Some "out of time"
       | _ -> None)

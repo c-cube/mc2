@@ -19,6 +19,8 @@ open Solver_types
 
 exception Unsat
 exception UndecidedLit of term
+exception Out_of_time
+exception Out_of_space
 
 type t
 (** The core solver structure *)
@@ -60,10 +62,21 @@ val iter_terms : t -> term Sequence.t
 (** Iterate on all terms known to plugins.
     Used for checking all variables to assign, and for garbage collection. *)
 
-val solve : ?gc:bool -> ?restarts:bool -> t -> unit
+val solve :
+  ?gc:bool ->
+  ?restarts:bool ->
+  ?time:float ->
+  ?memory:float ->
+  t ->
+  unit
 (** Try and solves the current set of assumptions.
+    @param time limit, in seconds, measured with [Sys.time()]
+    @param memory number of words in the heap
     @return () if the current set of clauses is satisfiable
-    @raise Unsat if a toplevel conflict is found *)
+    @raise Unsat if a toplevel conflict is found
+    @raise Out_of_time if out of time
+    @raise Out_of_space if out of space
+*)
 
 val assume : t -> ?tag:int -> atom list list -> unit
 (** Add the list of clauses to the current set of assumptions.

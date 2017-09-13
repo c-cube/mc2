@@ -54,8 +54,6 @@ type term_view +=
 type value_view +=
   | V_unin of int
 
-(* TODO: remove these complicated lemmas? *)
-
 type lemma_view += Transitivity
 
 let tc_lemma =
