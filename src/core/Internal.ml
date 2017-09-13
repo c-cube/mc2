@@ -198,8 +198,8 @@ let() = Printexc.register_printer
     (function
       | UndecidedLit t ->
         Some (Util.err_sprintf "undecided_lit: %a" Term.debug t)
-      | Out_of_space -> Some "out of space"
-      | Out_of_time -> Some "out of time"
+      | Out_of_space -> Some "Unknown"
+      | Out_of_time -> Some "Timeout"
       | _ -> None)
 
 (* how to add a plugin *)
@@ -1657,7 +1657,7 @@ let pp_stats out (s:t): unit =
   Fmt.fprintf out
     "(@[stats@ :n_conflicts %d@ :n_learnt %d@ \
      :n_decisions %d@ :n_propagations %d@ :n_restarts %d@ \
-     :n_initial %d@ :n_gc %d@ :n_deleted %d@]"
+     :n_initial %d@ :n_gc %d@ :n_deleted %d@])"
     s.conflicts s.n_learnt s.decisions s.propagations s.starts
     (Vec.size s.clauses_hyps) s.n_gc s.n_deleted
 
