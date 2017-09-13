@@ -348,7 +348,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
      The flag is used so that anything that might still hold it can know
      it has been deleted. *)
   let delete (t:t) : unit =
-    Log.debugf 5 (fun k->k "(@[<1>Term_alloc.delete@ %a@])" debug t);
+    Log.debugf 5 (fun k->k "(@[<1>term.alloc.delete@ %a@])" debug t);
     t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
     t.t_tc.tct_delete t;
     assert (plugin_id t = Ops.p_id);
@@ -380,7 +380,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
   let[@inline] iter_terms k = H.values tbl k
 
   let gc_all () : unit =
-    Log.debugf 5 (fun k->k "(@[Term_alloc.gc_all@ :p_id %d@])" Ops.p_id);
+    Log.debugf 5 (fun k->k "(@[term.alloc.gc_all@ :p_id %d@])" Ops.p_id);
     let to_gc = Vec.make_empty dummy_term in (* terms to be collected *)
     let n_alive = ref 0 in
     (* collect *)
@@ -396,6 +396,6 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     let n_collected = Vec.size to_gc in
     Vec.iter delete to_gc;
     Log.debugf 15
-      (fun k->k "(@[Term_alloc.gc.stats@ :collected %d@ :alive %d@])"
+      (fun k->k "(@[term.alloc.gc.stats@ :collected %d@ :alive %d@])"
           n_collected !n_alive);
 end

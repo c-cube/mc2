@@ -1297,6 +1297,7 @@ and pick_branch_lit (env:t) : unit =
 (* recursively mark clause [c] and its atoms *)
 let rec gc_mark_clause (c:clause) : unit =
   if not (Clause.gc_marked c) then (
+    Log.debugf 15 (fun k->k "(@[gc_mark_clause@ %a@])" Clause.pp_name c);
     Clause.gc_mark c;
     Array.iter (fun a -> gc_mark_term a.a_term) c.c_atoms
   )
@@ -1354,7 +1355,7 @@ let reduce_db (env:t) ~down_to : unit =
    reaches the given parameters *)
 let search (env:t) n_of_conflicts : unit =
   Log.debugf 5
-    (fun k->k "(@[@{<yellow>search@}@ :nconflicts %d@])" n_of_conflicts);
+    (fun k->k "(@[@{<yellow>solver.search@}@ :nconflicts %d@])" n_of_conflicts);
   let conflictC = ref 0 in
   env.starts <- env.starts + 1;
   while true do
@@ -1368,11 +1369,12 @@ let search (env:t) n_of_conflicts : unit =
         assert (env.elt_head = Vec.size env.trail);
         assert (env.elt_head = env.th_head);
         if H.is_empty env.term_heap then (
+          Log.debugf 3 (fun k->k"@{<yellow>found SAT@}");
           raise Sat;
         );
         (* should we restart? *)
         if n_of_conflicts > 0 && !conflictC >= n_of_conflicts then (
-          Log.debug info "Restarting...";
+          Log.debug info "Restarting…";
           cancel_until env (base_level env);
           raise Restart
         );
@@ -1478,7 +1480,8 @@ let solve ?(gc=true) ?(restarts=true) (env:t) : unit =
             begin match final_check env with
               | FC_sat -> raise Sat
               | FC_conflict c ->
-                Log.debugf info (fun k -> k "Theory conflict clause: %a" Clause.debug c);
+                Log.debugf info
+                  (fun k -> k "(@[solver.theory_conflict_clause@ %a@])" Clause.debug c);
                 Stack.push c env.clauses_to_add
               | FC_propagate -> () (* need to propagate *)
             end;
@@ -1490,7 +1493,7 @@ let assume env ?tag (cnf:atom list list) =
   List.iter
     (fun l ->
        let c = Clause.make ?tag l Hyp in
-       Log.debugf debug (fun k->k "Assuming clause: @[<hov 2>%a@]" Clause.debug c);
+       Log.debugf debug (fun k->k "(@[solver.assume_clause@ %a@])" Clause.debug c);
        Stack.push c env.clauses_to_add)
     cnf
 
