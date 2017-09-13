@@ -196,7 +196,7 @@ let check_model state : bool =
     in
     if not ok then (
       Log.debugf 0
-        (fun k->k "(@[check.fail: clause %a@ not satisfied in model@])" Clause.debug_atoms c);
+        (fun k->k "(@[check.fail:@ clause %a@ not satisfied in model@])" Clause.debug_atoms c);
     );
     ok
   in
@@ -207,12 +207,20 @@ let p_check = ref false
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
 (* call the solver to check-sat *)
-let solve ?gc ?restarts ?dot_proof ~assumptions s : unit =
+let solve ?gc ?restarts ?dot_proof ?(pp_model=false) ~assumptions s : unit =
   let t1 = Sys.time() in
   let res = Solver.solve ?gc ?restarts s ~assumptions in
   let t2 = Sys.time () in
   begin match res with
     | Solver.Sat state ->
+      if pp_model then (
+        let pp_t out = function
+          | A_bool (t,b) -> Fmt.fprintf out "(@[%a@ %B@])" Term.pp t b
+          | A_semantic (t,v) -> Fmt.fprintf out "(@[%a@ %a@])" Term.pp t Value.pp v
+        in
+        Format.printf "(@[<hv1>model@ %a@])@."
+          (Util.pp_list pp_t) (Solver.Sat_state.model state)
+      );
       if !p_check then (
         if not (check_model state) then (
           raise Incorrect_model;
@@ -241,9 +249,10 @@ let solve ?gc ?restarts ?dot_proof ~assumptions s : unit =
 
 (* process a single statement *)
 let process_stmt
-  ?gc ?restarts
+    ?gc ?restarts
     ?(pp_cnf=false)
     ?dot_proof
+    ?(pp_model=false)
     (solver:Solver.t)
     (stmt:Ast.statement) : unit or_error =
   Log.debugf 5
@@ -264,7 +273,7 @@ let process_stmt
       Log.debug 1 "exit";
       raise Exit
     | A.CheckSat ->
-      solve ?gc ?restarts ?dot_proof solver ~assumptions:[];
+      solve ?gc ?restarts ?dot_proof ~pp_model solver ~assumptions:[];
       E.return()
     | A.TyDecl (id,n) ->
       decl_sort id n;

@@ -147,7 +147,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | _ -> false
 
     let pp out = function
-      | Eq(a,b) -> Fmt.fprintf out "(@[<hv>= %a %a@])" Term.pp a Term.pp b
+      | Eq(a,b) -> Fmt.fprintf out "(@[<hv>=@ %a@ %a@])" Term.pp a Term.pp b
       | _ -> assert false
 
     let subterms v yield = match v with

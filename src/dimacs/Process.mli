@@ -13,6 +13,7 @@ val solve : Solver.t -> Solver.res or_error
 val process :
   ?gc:bool ->
   ?restarts:bool ->
+  ?pp_model:bool ->
   Solver.t ->
   atom list list ->
   unit or_error

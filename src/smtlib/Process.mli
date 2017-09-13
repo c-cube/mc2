@@ -19,6 +19,7 @@ val process_stmt :
   ?restarts:bool ->
   ?pp_cnf:bool ->
   ?dot_proof:string ->
+  ?pp_model:bool ->
   Solver.t ->
   Ast.statement ->
   unit or_error

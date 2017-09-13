@@ -18,11 +18,13 @@ let file = ref ""
 let p_cnf = ref false
 let p_dot_proof = ref ""
 let p_proof_print = ref false
+let p_model = ref false
 let time_limit = ref 300.
 let size_limit = ref 1000_000_000.
 let restarts = ref true
 let gc = ref true
 let p_stat = ref false
+let p_gc_stat = ref false
 
 (* TODO: remove the functor, there will be only one input *)
 (* TODO: uniform typing interface for dimacs/smtlib *)
@@ -70,35 +72,29 @@ let int_arg r arg =
         | _ -> raise (Arg.Bad "bad numeric argument")
     with Failure _ -> raise (Arg.Bad "bad numeric argument")
 
-let setup_gc_stat () =
-  at_exit (fun () ->
-    Gc.print_stat stdout;
-  )
-
 let input_file = fun s -> file := s
 
 let usage = "Usage : main [options] <file>"
 let argspec = Arg.align [
-    "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " Enable stack traces";
-    "-cnf", Arg.Set p_cnf, " Prints the cnf used.";
-    "-check", Arg.Set Process_smtlib.p_check,
-    " Build, check and print the proof (if output is set), if unsat";
+    "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " enable stack traces";
+    "-cnf", Arg.Set p_cnf, " prints the cnf used.";
+    "-check", Arg.Set Process_smtlib.p_check, " build, check and print the proof (if output is set), if unsat";
     "-no-check", Arg.Clear Process_smtlib.p_check, " inverse of -check";
     "-gc", Arg.Set gc, " enable garbage collection";
     "-no-gc", Arg.Clear gc, " disable garbage collection";
     "-restarts", Arg.Set restarts, " enable restarts";
     "-no-restarts", Arg.Clear restarts, " disable restarts";
-    "-dot", Arg.Set_string p_dot_proof,
-    " If provided, print the dot proof in the given file";
-    "-gc", Arg.Unit setup_gc_stat,
-    " Outputs statistics about the GC";
-    "-stat", Arg.Set p_stat, " Print statistics";
+    "-dot", Arg.Set_string p_dot_proof, " if provided, print the dot proof in the given file";
+    "-stat", Arg.Set p_stat, " print statistics";
+    "-model", Arg.Set p_model, " print model";
+    "-no-model", Arg.Clear p_model, " do not print model";
+    "-gc-stat", Arg.Set p_gc_stat, " outputs statistics about the GC";
     "-size", Arg.String (int_arg size_limit),
-    "<s>[kMGT] Sets the size limit for the sat solver";
+    "<s>[kMGT] sets the size limit for the sat solver";
     "-time", Arg.String (int_arg time_limit),
-    "<t>[smhd] Sets the time limit for the sat solver";
+    "<t>[smhd] sets the time limit for the sat solver";
     "-v", Arg.Int Log.set_debug,
-    "<lvl> Sets the debug verbose level";
+    "<lvl> sets the debug verbose level";
   ]
 
 type syntax =
@@ -144,18 +140,24 @@ let main () =
            begin try
              let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
              E.fold_l
-               (fun () -> Process_smtlib.process_stmt
-                   ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf ?dot_proof solver)
+               (fun () ->
+                  Process_smtlib.process_stmt
+                    ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
+                    ?dot_proof ~pp_model:!p_model
+                    solver)
                () input
              with Exit ->
                E.return()
            end
          | Dimacs ->
            Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
-           Mc2_dimacs.Process.process ~gc:!gc ~restarts:!restarts solver pb)
+           Mc2_dimacs.Process.process
+             ~pp_model:!p_model ~gc:!gc ~restarts:!restarts solver pb)
     in
     if !p_stat then (
       Format.printf "%a@." Solver.pp_stats solver;
+    );
+    if !p_gc_stat then (
       Printf.printf "(gc_stats\n%t)\n" Gc.print_stat;
     );
     res
@@ -175,7 +177,7 @@ let () = match main() with
     Format.printf "Spaceout@.";
     exit 3
   | exception Process_smtlib.Incorrect_model ->
-    Format.printf "Internal error : incorrect *sat* model@.";
+    Format.printf "@{<Red>Internal error@}: incorrect *sat* model@.";
     exit 4
   | exception Ast.Ill_typed msg ->
     let b = Printexc.get_backtrace () in

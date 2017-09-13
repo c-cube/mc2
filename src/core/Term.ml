@@ -220,7 +220,8 @@ let debug out t : unit =
     | TA_assign {value;_} ->
       Format.fprintf out "[@@%d@<1>→%a]" t.t_level Value.pp value
   in
-  Format.fprintf out "%a[%d]%a" pp t (id t) pp_val (value t)
+  let state = if is_deleted t then "][D" else "" in
+  Format.fprintf out "%a[%d%s]%a" pp t (id t) state pp_val (value t)
 
 (* find a term in [w] that is not assigned, or otherwise,
        the one with highest level
