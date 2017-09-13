@@ -6,13 +6,8 @@ open Solver_types
 
 type 'a or_error = ('a, string) CCResult.t
 
-exception Incorrect_model
-
 val conv_bool_term : Service.Registry.t -> Ast.term -> atom list list
 (** Convert a boolean term into CNF *)
-
-val p_check : bool ref
-(** Check proofs and models? *)
 
 val process_stmt :
   ?gc:bool ->
@@ -20,6 +15,7 @@ val process_stmt :
   ?pp_cnf:bool ->
   ?dot_proof:string ->
   ?pp_model:bool ->
+  ?check:bool ->
   Solver.t ->
   Ast.statement ->
   unit or_error

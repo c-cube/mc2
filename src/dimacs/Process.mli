@@ -14,6 +14,7 @@ val process :
   ?gc:bool ->
   ?restarts:bool ->
   ?pp_model:bool ->
+  ?check:bool ->
   Solver.t ->
   atom list list ->
   unit or_error

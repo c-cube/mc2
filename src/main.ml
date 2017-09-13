@@ -19,6 +19,7 @@ let p_cnf = ref false
 let p_dot_proof = ref ""
 let p_proof_print = ref false
 let p_model = ref false
+let check = ref false
 let time_limit = ref 300.
 let size_limit = ref 1000_000_000.
 let restarts = ref true
@@ -78,8 +79,8 @@ let usage = "Usage : main [options] <file>"
 let argspec = Arg.align [
     "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " enable stack traces";
     "-cnf", Arg.Set p_cnf, " prints the cnf used.";
-    "-check", Arg.Set Process_smtlib.p_check, " build, check and print the proof (if output is set), if unsat";
-    "-no-check", Arg.Clear Process_smtlib.p_check, " inverse of -check";
+    "-check", Arg.Set check, " build, check and print the proof (if output is set), if unsat";
+    "-no-check", Arg.Clear check, " inverse of -check";
     "-gc", Arg.Set gc, " enable garbage collection";
     "-no-gc", Arg.Clear gc, " disable garbage collection";
     "-restarts", Arg.Set restarts, " enable restarts";
@@ -131,28 +132,31 @@ let main () =
     let res = Util.with_limits
       ~time:!time_limit
       ~memory:!size_limit
-      (fun () -> match syn with
-         | Smtlib ->
-           (* parse pb *)
-           Mc2_smtlib.Ast.parse !file >>= fun input ->
-           (* TODO: parse list of plugins on CLI *)
-           (* process statements *)
-           begin try
-             let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
-             E.fold_l
-               (fun () ->
-                  Process_smtlib.process_stmt
-                    ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
-                    ?dot_proof ~pp_model:!p_model
-                    solver)
-               () input
-             with Exit ->
-               E.return()
-           end
-         | Dimacs ->
-           Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
-           Mc2_dimacs.Process.process
-             ~pp_model:!p_model ~gc:!gc ~restarts:!restarts solver pb)
+      (fun () ->
+         begin match syn with
+           | Smtlib ->
+             (* parse pb *)
+             Mc2_smtlib.Ast.parse !file >>= fun input ->
+             (* TODO: parse list of plugins on CLI *)
+             (* process statements *)
+             begin try
+                 let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
+                 E.fold_l
+                   (fun () ->
+                      Process_smtlib.process_stmt
+                        ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
+                        ?dot_proof ~pp_model:!p_model ~check:!check
+                        solver)
+                   () input
+               with Exit ->
+                 E.return()
+             end
+           | Dimacs ->
+             Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
+             Mc2_dimacs.Process.process
+               ~pp_model:!p_model ~gc:!gc ~restarts:!restarts ~check:!check
+               solver pb
+         end)
     in
     if !p_stat then (
       Format.printf "%a@." Solver.pp_stats solver;
@@ -176,9 +180,6 @@ let () = match main() with
   | exception Util.Out_of_space ->
     Format.printf "Spaceout@.";
     exit 3
-  | exception Process_smtlib.Incorrect_model ->
-    Format.printf "@{<Red>Internal error@}: incorrect *sat* model@.";
-    exit 4
   | exception Ast.Ill_typed msg ->
     let b = Printexc.get_backtrace () in
     Format.fprintf Format.std_formatter "typing error\n%s@." msg;

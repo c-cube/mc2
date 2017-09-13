@@ -18,7 +18,7 @@ type 'clause clause_sets = {
 }
 (** Current state of the SAT solver *)
 
-exception UndecidedLit
+exception UndecidedLit = Internal.UndecidedLit
 
 (** Main type *)
 type t = Internal.t
@@ -56,7 +56,7 @@ let true_at_level0 _s a =
   try
     let b, lev = S.eval_level a in
     b && lev = 0
-  with S.UndecidedLit -> false
+  with S.UndecidedLit _ -> false
 
 let add_term = S.add_term
 

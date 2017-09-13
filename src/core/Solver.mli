@@ -76,7 +76,7 @@ type 'a state
 val state_solver: _ state -> t
 (** Get the solver back from a solver. *)
 
-exception UndecidedLit
+exception UndecidedLit of term
 (** Exception raised by the evaluating functions when a literal
     has not yet been assigned a value. *)
 

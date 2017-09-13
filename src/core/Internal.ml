@@ -11,7 +11,7 @@ type proof = Proof.t
 
 exception Sat
 exception Unsat
-exception UndecidedLit
+exception UndecidedLit of term
 exception Restart
 exception Conflict of clause
 
@@ -189,6 +189,14 @@ let[@inline] get_service env (k:_ Service.Key.t) =
 
 let[@inline] get_service_exn env (k:_ Service.Key.t) =
   Service.Registry.find_exn env.services k
+
+let[@inline] err_undecided_lit t = raise (UndecidedLit t)
+
+let() = Printexc.register_printer
+    (function
+      | UndecidedLit t ->
+        Some (Util.err_sprintf "undecided_lit: %a" Term.debug t)
+      | _ -> None)
 
 (* how to add a plugin *)
 let add_plugin (env:t) (fcty:Plugin.Factory.t) : Plugin.t =
@@ -1382,7 +1390,7 @@ let eval_level (a:atom) =
   else if Atom.is_false a then false, lvl
   else (
     begin match Term.eval_bool a.a_term with
-      | Eval_unknown -> raise UndecidedLit
+      | Eval_unknown -> err_undecided_lit a.a_term
       | Eval_bool (b, l) ->
         (* level is highest level of terms used to eval into [b] *)
         let lvl = List.fold_left (fun l t -> max l (Term.level t)) 0 l in
@@ -1566,7 +1574,8 @@ let check_clause (c:clause) : bool =
   let res =
     CCArray.exists
       (fun a ->
-         Atom.value_bool a |> CCOpt.get_lazy (fun () -> raise UndecidedLit))
+         Atom.value_bool a
+         |> CCOpt.get_lazy (fun () -> err_undecided_lit a.a_term))
       c.c_atoms
   in
   if res then true

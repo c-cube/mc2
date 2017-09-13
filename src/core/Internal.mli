@@ -18,7 +18,7 @@ Copyright 2014 Simon Cruanes
 open Solver_types
 
 exception Unsat
-exception UndecidedLit
+exception UndecidedLit of term
 
 type t
 (** The core solver structure *)

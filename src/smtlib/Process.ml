@@ -170,8 +170,6 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
 
 (** {2 Processing Statements} *)
 
-exception Incorrect_model
-
 (* list of (local) hypothesis *)
 let hyps = ref []
 
@@ -202,12 +200,10 @@ let check_model state : bool =
   in
   List.for_all check_clause !hyps
 
-let p_check = ref false
-
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
 (* call the solver to check-sat *)
-let solve ?gc ?restarts ?dot_proof ?(pp_model=false) ~assumptions s : unit =
+let solve ?gc ?restarts ?dot_proof ?(pp_model=false) ?(check=false) ~assumptions s : unit =
   let t1 = Sys.time() in
   let res = Solver.solve ?gc ?restarts s ~assumptions in
   let t2 = Sys.time () in
@@ -221,15 +217,15 @@ let solve ?gc ?restarts ?dot_proof ?(pp_model=false) ~assumptions s : unit =
         Format.printf "(@[<hv1>model@ %a@])@."
           (Util.pp_list pp_t) (Solver.Sat_state.model state)
       );
-      if !p_check then (
+      if check then (
         if not (check_model state) then (
-          raise Incorrect_model;
+          Util.error "invalid model"
         )
       );
       let t3 = Sys.time () -. t2 in
       Format.printf "Sat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
     | Solver.Unsat state ->
-      if !p_check then (
+      if check then (
         let p = Solver.Unsat_state.get_proof state in
         Proof.check p;
         begin match dot_proof with
@@ -252,7 +248,8 @@ let process_stmt
     ?gc ?restarts
     ?(pp_cnf=false)
     ?dot_proof
-    ?(pp_model=false)
+    ?pp_model
+    ?check
     (solver:Solver.t)
     (stmt:Ast.statement) : unit or_error =
   Log.debugf 5
@@ -273,7 +270,7 @@ let process_stmt
       Log.debug 1 "exit";
       raise Exit
     | A.CheckSat ->
-      solve ?gc ?restarts ?dot_proof ~pp_model solver ~assumptions:[];
+      solve ?gc ?restarts ?dot_proof ?check ?pp_model solver ~assumptions:[];
       E.return()
     | A.TyDecl (id,n) ->
       decl_sort id n;
