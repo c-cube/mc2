@@ -911,10 +911,11 @@ let add_conflict (env:t) (confl:clause): unit =
   record_learnt_clause env cr
 
 (* Get the correct vector to insert a clause in. *)
-let clause_vector env c = match c.c_premise with
+let rec clause_vector env c = match c.c_premise with
   | Hyp -> env.clauses_hyps
   | Local -> env.clauses_temp
-  | Lemma _ | Simplify _ | Hyper_res _ | Resolve _ -> env.clauses_learnt
+  | Simplify d -> clause_vector env d
+  | Lemma _ | Hyper_res _ | Resolve _ -> env.clauses_learnt
 
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
@@ -1328,27 +1329,39 @@ let reduce_db (env:t) ~down_to : unit =
   (* mark terms of the trail alive, as well as clauses that propagated them,
      and mark permanent clauses *)
   Vec.iter gc_mark_term env.trail;
-  Stack.iter Clause.gc_mark env.clauses_root;
-  Vec.iter Clause.gc_mark env.clauses_hyps;
-  Vec.iter Clause.gc_mark env.clauses_temp;
+  Stack.iter gc_mark_clause env.clauses_root;
+  Vec.iter gc_mark_clause env.clauses_hyps;
+  Vec.iter gc_mark_clause env.clauses_temp;
   (* sort learnt clauses by decreasing activity, but put marked clauses first *)
   Vec.sort env.clauses_learnt
     (fun c1 c2 -> CCFloat.compare (Clause.activity c2)(Clause.activity c1));
-  (* pop clauses *)
-  while Vec.size env.clauses_learnt > down_to &&
-        not (Clause.gc_marked (Vec.last env.clauses_learnt)) do
+  (* collect learnt clauses *)
+  let kept_clauses = Vec.make_empty dummy_clause in (* low activity, but needed *)
+  while Vec.size env.clauses_learnt > 0 &&
+        Vec.size env.clauses_learnt + Vec.size kept_clauses > down_to do
     let c = Vec.pop_last env.clauses_learnt in
-    assert (not (Clause.gc_marked c));
-    Log.debugf 15 (fun k->k"(@[reduce_db.remove_clause@ %a@ :activity %f@])"
-        Clause.debug c (Clause.activity c));
-    Clause.set_deleted c;
-    env.n_deleted <- env.n_deleted + 1;
+    if Clause.gc_marked c then (
+      Vec.push kept_clauses c; (* keep this one, it's alive *)
+    ) else (
+      (* remove the clause *)
+      Log.debugf 15 (fun k->k"(@[reduce_db.remove_clause@ %a@ :activity %f@])"
+          Clause.debug c (Clause.activity c));
+      Clause.set_deleted c;
+      env.n_deleted <- env.n_deleted + 1;
+    )
   done;
-  (* mark alive terms, starting from alive clauses and from the trail *)
-  Vec.iter Clause.gc_mark env.clauses_learnt;
+  Vec.append env.clauses_learnt kept_clauses;
+  (* mark terms from learnt clauses which are still alive *)
+  Vec.iter gc_mark_clause env.clauses_learnt;
+  (* collect dead terms *)
   CCVector.iter
     (fun (module P : Plugin.S) -> P.gc_all ())
     env.plugins;
+  (* unmark clauses for next GC *)
+  Stack.iter Clause.gc_unmark env.clauses_root;
+  Vec.iter Clause.gc_unmark env.clauses_temp;
+  Vec.iter Clause.gc_unmark env.clauses_hyps;
+  Vec.iter Clause.gc_unmark env.clauses_learnt;
   ()
 
 (* do some amount of search, until the number of conflicts or clause learnt
