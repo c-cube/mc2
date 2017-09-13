@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-perf record --call-graph=dwarf $@
+if [ -z "$FREQ" ] ; then FREQ=300 ; fi
+
+perf record -F "$FREQ" --call-graph=dwarf $@
 
 perf script \
   | stackcollapse-perf --kernel \
