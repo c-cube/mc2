@@ -30,6 +30,6 @@ let pp out = function
     Format.fprintf out "th_lemma@ %a" Lemma.pp l
   | Simplify c -> Format.fprintf out "simpl %a" pp_clause_name c
   | Resolve{c1;c2;_} ->
-    Format.fprintf out "res{%a;%a}" pp_clause_name c1 pp_clause_name c2
+    Format.fprintf out "res{@[%a;@,%a@]}" pp_clause_name c1 pp_clause_name c2
   | Hyper_res v ->
-    Fmt.fprintf out "hres{@[<hv>%a@]}" (Util.pp_list ~sep:"," pp_clause_name) v
+    Fmt.fprintf out "hres{@[%a@]}" (Util.pp_list ~sep:"," pp_clause_name) v
