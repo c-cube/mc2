@@ -61,6 +61,9 @@ val is_full : 'a t -> bool
 
 val push : 'a t -> 'a -> unit
 
+val append : 'a t -> 'a t -> unit
+(** [append v1 v2] pushes all elements of [v2] into [v1] *)
+
 val last : 'a t -> 'a
 (** Last element, or
     @raise Invalid_argument if the vector is empty *)

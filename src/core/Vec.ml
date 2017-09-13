@@ -144,6 +144,10 @@ let iter f t =
     f (Array.unsafe_get t.data i)
   done
 
+let append a b =
+  grow_to_at_least a (size a + size b);
+  iter (push a) b
+
 let fold f acc t =
   let rec _fold f acc t i =
     if i=t.sz
