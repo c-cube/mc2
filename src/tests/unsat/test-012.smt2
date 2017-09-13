@@ -4,3 +4,4 @@
 (declare-fun f (U) U)
 (assert (and (= a b) (not (= (f a) (f b)))))
 (check-sat)
+; :status unsat

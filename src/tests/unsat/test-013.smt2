@@ -4,3 +4,4 @@
 (declare-fun p (U) Bool)
 (assert (and (= a b) (not (p a)) (p b)))
 (check-sat)
+; :status unsat

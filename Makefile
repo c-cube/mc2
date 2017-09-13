@@ -42,11 +42,20 @@ test:
 
 TESTOPTS ?= -j 3
 TESTTOOL=logitest
+DATE=$(shell date +%FT%H:%M)
 
-logitest:
+logitest-quick:
 	@mkdir -p snapshots
-	$(TESTTOOL) run -c src/tests/conf.toml $(TESTOPTS) \
-	  --meta `git rev-parse HEAD` --summary snapshots/`date -I`.txt
+	$(TESTTOOL) run -c src/tests/conf.toml src/tests/ $(TESTOPTS) \
+	  --meta `git rev-parse HEAD` --summary snapshots/quick-$(DATE).txt \
+	  --csv snapshots/quick-$(DATE).csv
+
+logitest-full:
+	@mkdir -p snapshots
+	@DATE=`date +%F.%H:%M`
+	$(TESTTOOL) run -c src/tests/conf.toml QF_UF $(TESTOPTS) \
+	  --meta `git rev-parse HEAD` --summary snapshots/full-$(DATE).txt \
+	  --csv snapshots/full-$(DATE).csv
 
 reinstall: | uninstall install
 
