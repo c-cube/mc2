@@ -23,6 +23,7 @@ let solve s =
   with e -> CCResult.of_exn_trace e
 
 let check_model cs state : bool =
+  Log.debug 4 "checking model";
   let check_clause c =
     Log.debugf 15
       (fun k -> k "(@[check.clause@ %a@])" Clause.debug_atoms c);

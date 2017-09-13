@@ -94,8 +94,8 @@ let pp_value fmt a =
 
 let debug out a =
   let sign = if is_pos a then "" else "¬" in
-  Format.fprintf out "%s%a[%d][%a]"
-    sign Term.pp a.a_term a.a_term.t_id pp_value a 
+  Format.fprintf out "%s%a[%a]"
+    sign Term.debug_no_val a.a_term pp_value a
 
 let pp out a =
   let sign = if is_pos a then "" else "¬" in

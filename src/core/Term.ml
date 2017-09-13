@@ -213,6 +213,10 @@ let[@inline] eval_bool (t:term) : eval_bool_res =
   assert (Type.is_bool t.t_ty);
   t.t_tc.tct_eval_bool t
 
+let debug_no_val out t : unit =
+  let state = if is_deleted t then "][D" else "" in
+  Format.fprintf out "%a[%d%s]" pp t (id t) state
+
 (* verbose debug printer *)
 let debug out t : unit =
   let pp_val out = function
@@ -220,8 +224,8 @@ let debug out t : unit =
     | TA_assign {value;_} ->
       Format.fprintf out "[@@%d@<1>→%a]" t.t_level Value.pp value
   in
-  let state = if is_deleted t then "][D" else "" in
-  Format.fprintf out "%a[%d%s]%a" pp t (id t) state pp_val (value t)
+  debug_no_val out t;
+  pp_val out (value t)
 
 (* find a term in [w] that is not assigned, or otherwise,
        the one with highest level

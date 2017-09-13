@@ -174,6 +174,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
 let hyps = ref []
 
 let check_model state : bool =
+  Log.debug 4 "checking model";
   let check_clause c =
     Log.debugf 15
       (fun k -> k "(@[check.clause@ %a@])" Clause.debug_atoms c);

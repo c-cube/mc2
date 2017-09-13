@@ -16,6 +16,7 @@ val compare : t -> t -> int
 val hash : t -> int
 val pp : t CCFormat.printer
 val debug : t CCFormat.printer
+val debug_no_val : t CCFormat.printer (** like {!debug} but does not print val *)
 
 (** {2 ID Management} *)
 
