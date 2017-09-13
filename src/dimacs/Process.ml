@@ -73,11 +73,11 @@ let process ?gc ?restarts ?(pp_model=false) ?(check=false) ?time ?memory s pb =
         let t3 = Sys.time () -. t2 in
         Format.printf "Sat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
       | Solver.Unsat state ->
-        let t3 = Sys.time () -. t2 in
         if check then (
           let p = Solver.Unsat_state.get_proof state in
           Proof.check p;
         );
+        let t3 = Sys.time () -. t2 in
         Format.printf "Unsat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
     end;
     CCResult.return()
