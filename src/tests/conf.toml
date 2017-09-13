@@ -1,10 +1,19 @@
 
-provers = [ "mc2", "verit", "read-status" ]
+provers = [ "mc2", "mc2-nogc", "verit", "read-status" ]
 
 [mc2]
 
 binary = "./mc2"
 cmd = "./mc2 -check -time $timeout $file"
+unsat = "Unsat"
+sat = "Sat"
+unknown = "Timeout|Unknown"
+version = "git:."
+
+[mc2-nogc]
+
+binary = "./mc2"
+cmd = "./mc2 -check -no-gc -time $timeout $file"
 unsat = "Unsat"
 sat = "Sat"
 unknown = "Timeout|Unknown"
@@ -26,7 +35,7 @@ sat = ":status sat"
 
 timeout=30
 problems = ".*.smt2"
-provers = [ "mc2" ]
+provers = [ "mc2", "mc2-nogc" ]
 dir = [ "QF_UF" ]
 
 expect = "program:read-status"
