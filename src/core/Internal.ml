@@ -147,7 +147,7 @@ type t = {
   mutable learntsize_factor : float;
   (* initial limit for the number of learnt clauses, as a factor of initial
      number of clauses *)
-  learntsize_inc : float;
+  mutable learntsize_inc : float;
   (* multiplicative factor for [learntsize_factor] at each restart *)
 
   mutable starts : int; (* number of (re)starts *)
@@ -1562,6 +1562,8 @@ let solve
           (* increment parameters to ensure termination *)
           n_of_conflicts := !n_of_conflicts *. env.restart_inc;
           n_of_learnts   := !n_of_learnts *. env.learntsize_inc;
+          (* diminish by how much n_of_learnts increases *)
+          env.learntsize_inc <- 1. +. (env.learntsize_inc -. 1.) /. 1.3 ;
           loop()
         | exception Sat -> check_sat ()
     end
