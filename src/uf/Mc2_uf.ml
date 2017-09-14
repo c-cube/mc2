@@ -19,7 +19,7 @@ type term_view +=
       id: ID.t;
       ty: Type.t;
       args: term array;
-      mutable watches: Term.Watch1.t; (* 1-watch on [arg_1,…,arg_n,f(args)] *)
+      mutable watches: Term.Watch2.t; (* 2-watch on [arg_1,…,arg_n,f(args)] *)
     }
 
 type lemma_view +=
@@ -100,6 +100,14 @@ let build p_id Plugin.S_nil : Plugin.t =
         | _ -> assert false
       end
 
+    (* args1=args2 & t => u, where [t] positive *)
+    let mk_congruence_bool args1 args2 t u : atom list =
+      assert (Array.length args1 = Array.length args2);
+      let conclusion = Term.Bool.pa u
+      and body1 = Term.Bool.na t
+      and body2 = mk_neq_ args1 args2 in
+      conclusion :: body1 :: body2
+
     (* [t] and [u] are two boolean terms with equal arguments but
        distinct values (assume [t=true] [u=false] w.l.o.g.)
        build [t1=u1 ∧ … ∧ tn=u ∧ t => u] *)
@@ -109,11 +117,7 @@ let build p_id Plugin.S_nil : Plugin.t =
       begin match Term.view t, Term.view u with
         | App {id=f1; args=a1; _}, App {id=f2; args=a2; _} ->
           assert (ID.equal f1 f2);
-          assert (Array.length a1 = Array.length a2);
-          let conclusion = Term.Bool.pa u
-          and body1 = Term.Bool.na t
-          and body2 = mk_neq_ a1 a2 in
-          conclusion :: body1 :: body2
+          mk_congruence_bool a1 a2 t u
         | _ -> assert false
       end
 
@@ -158,6 +162,10 @@ let build p_id Plugin.S_nil : Plugin.t =
 
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512
+
+    let[@inline] args_exn t = match Term.view t with
+      | App {args;_} -> args
+      | _ -> assert false
 
     (* check that [t], which should have fully assigned arguments,
        is consistent with the signature table *)
@@ -215,23 +223,79 @@ let build p_id Plugin.S_nil : Plugin.t =
         | _ -> assert false
       end
 
+    (* look if there is a value associated to the signature for [t],
+       in which case, propagate it.
+       e.g. if [a=b] and [p(a)=⊤], we can propagate [p(b)=⊤]
+    *)
+    let check_propagate_bool acts (t:term) : unit =
+      assert (not (Term.has_some_value t));
+      begin match Term.view t with
+        | App {id;args;_} ->
+          let sigtr = { sig_head=id; sig_args=Array.map Term.value_exn args } in
+          Log.debugf 15
+            (fun k->k "(@[<hv>uf.check_propagate@ :sig %a@ :term %a@])"
+                pp_sig sigtr Term.debug t);
+          begin match Sig_tbl.get tbl_ sigtr with
+            | Some { e_sig; e_value; e_reason={e_term=u;_}} ->
+              (* can propagate [t := e.value] using [u] *)
+              assert (ID.equal e_sig.sig_head id);
+              assert (Value.is_bool e_value);
+              assert (not (Term.equal t u));
+              let v_bool = Value.as_bool_exn e_value in
+              let args_u = args_exn u in
+              Log.debugf 10
+                (fun k->k
+                    "(@[<hv>uf.propagate@ :sig %a@ :term %a@ :value %a@ \
+                     :reason %a@ :args_t %a@ :args_u %a@])"
+                    pp_sig sigtr Term.debug t Value.pp e_value Term.debug u
+                      (Fmt.Dump.array Term.debug) args
+                      (Fmt.Dump.array Term.debug) args_u);
+              (* lazy explanation for the propagation, using a congruence lemma *)
+              let c =
+                (* if [u=true], then [args(t)=args(u) => u => t],
+                   otherwise [args(t)=args(u) => t => u] *)
+                let hyp, concl = if v_bool then u, t else t, u in
+                mk_congruence_bool args args_u hyp concl
+              in
+              let lemma = lemma_congruence_bool in
+              Actions.propagate_bool_lemma acts t v_bool c lemma
+            | None -> ()
+          end
+        | _ -> ()
+      end
+
+    (* check if we can propagate a value for [t] *)
+    let[@inline] check_propagate acts (t:term) : unit =
+      if Term.is_bool t then (
+        check_propagate_bool acts t
+      )
+
     let init acts t = match Term.view t with
       | Const _ -> ()
       | App ({args;_} as r) ->
         (* watch all arguments, plus term itself *)
         let watches =
-          Term.Watch1.make_a
+          Term.Watch2.make_a
             (CCArray.init (Array.length args+1)
                (fun i-> if i=0 then t else args.(i-1)))
         in
         r.watches <- watches;
-        Term.Watch1.init watches t ~on_all_set:(fun () -> check_sig acts t)
+        Term.Watch2.init watches t
+          ~on_unit:(fun u ->
+            if Term.equal t u then (
+              check_propagate acts t
+            ))
+          ~on_all_set:(fun () -> check_sig acts t)
       | _ -> assert false
 
     let update_watches acts t ~watch = match Term.view t with
       | Const _ -> assert false (* no watches *)
       | App {watches;_} ->
-        Term.Watch1.update watches t ~watch
+        Term.Watch2.update watches t ~watch
+          ~on_unit:(fun u ->
+            if Term.equal t u then (
+              check_propagate acts t
+            ))
           ~on_all_set:(fun () -> check_sig acts t)
       | _ -> assert false
 
@@ -283,7 +347,7 @@ let build p_id Plugin.S_nil : Plugin.t =
         (* proper application *)
         let ty = app_ty id l in
         let args = Array.of_list l in
-        let watches = Term.Watch1.dummy in
+        let watches = Term.Watch2.dummy in
         T_alloc.make (App {id;ty;args;watches}) ty
 
     let () =
