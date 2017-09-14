@@ -14,7 +14,7 @@ val level : t -> level
 
 val propagate_bool_eval : t -> term -> bool -> subs:term list -> unit
 
-val propagate_bool_lemma : t -> term -> bool -> lvl:level -> (atom list * lemma) lazy_t -> unit
+val propagate_bool_lemma : t -> term -> bool -> atom list -> lemma -> unit
 
 val mark_dirty : t -> term -> unit
 

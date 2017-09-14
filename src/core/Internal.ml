@@ -632,19 +632,18 @@ let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
            assert (t_level > 0); max acc t_level)
         0 terms
     in
+    env.propagations <- env.propagations + 1;
     enqueue_bool env a ~level:lvl (Semantic terms)
   )
 
 (* atom [a] evaluates to [true] because of [terms] *)
-let enqueue_bool_theory_propagate (env:t) (a:atom) ~lvl (c:(atom list * lemma) lazy_t) : unit =
+let enqueue_bool_theory_propagate (env:t) (a:atom)
+    ~lvl (atoms:atom list) (lemma: lemma) : unit =
   if Atom.is_true a then ()
   else (
-    let c = lazy (
-      let lazy (atoms, lemma) = c in
-      let c = Clause.make atoms (Lemma lemma) in
-      simplify_clause c
-    ) in
-    enqueue_bool env a ~level:lvl (Bcp_lazy c)
+    let c = Clause.make atoms (Lemma lemma) |> simplify_clause in
+    env.propagations <- env.propagations + 1;
+    enqueue_bool env a ~level:lvl (Bcp c)
   )
 
 (* MCsat semantic assignment *)
@@ -1238,12 +1237,21 @@ let mk_actions (env:t) : actions =
         Term.debug t b (Util.pp_list Term.debug) subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval env a subs
-  and act_propagate_bool_lemma t (b:bool) ~lvl (c:(atom list * lemma) lazy_t) : unit =
+  and act_propagate_bool_lemma t (v_bool:bool) atoms lemma : unit =
+    let a = if v_bool then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
+    let lvl = List.fold_left
+      (fun lvl b ->
+         if not (Atom.equal a b) then (
+           add_atom env b;
+           eval_atom_to_false env b;
+           max lvl (Atom.level b)
+         ) else lvl)
+      0 atoms
+    in
     Log.debugf debug
-      (fun k->k "(@[<hv>Theory bool propagate %a@ :val %B@])"
-        Term.debug t b);
-    let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
-    enqueue_bool_theory_propagate env a ~lvl c
+      (fun k->k "(@[<hv>solver.theory_propagate_bool %a@ :val %B@ :lvl %d@ :clause %a@])"
+        Term.debug t v_bool lvl Clause.debug_atoms atoms);
+    enqueue_bool_theory_propagate env a ~lvl atoms lemma
   and act_mark_dirty (t:term): unit =
     if not (Term.dirty t) then (
       Log.debugf debug (fun k->k "(@[solver.mark_dirty@ %a@])" Term.debug t);

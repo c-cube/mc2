@@ -274,14 +274,12 @@ and actions = {
       assigned to boolean value [b], explained by evaluation with
       relevant (sub)terms [l]
       @param subs subterms used for the propagation *)
-  act_propagate_bool_lemma : term -> bool -> lvl:level -> (atom list * lemma) lazy_t -> unit;
+  act_propagate_bool_lemma : term -> bool -> atom list -> lemma -> unit;
   (** [act_propagate_bool_lemma t b ~lvl c] propagates the boolean literal [t]
       assigned to boolean value [b], explained by a valid theory
-      lemma [c] (which is lazy because it might never be used).
-      @param lvl the level at which propagation should occur.
+      lemma [c].
       Precondition: [c] is a tautology such that [c == (c' ∨ t=b)], where [c']
-      is composed of atoms false in current model, and where [lvl] is
-      the maximal level of atoms in [c']
+      is composed of atoms false in current model.
   *)
   act_mark_dirty : term -> unit;
   (** Mark the term as dirty because its set of unit constraints has changed.
