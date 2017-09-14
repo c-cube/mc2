@@ -17,6 +17,7 @@ val process :
   ?check:bool ->
   ?time:float ->
   ?memory:float ->
+  ?progress:bool ->
   Solver.t ->
   atom list list ->
   unit or_error

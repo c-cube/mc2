@@ -1421,9 +1421,14 @@ let check_limits ~time ~memory () =
     raise Out_of_space
   )
 
+let pp_progress (env:t) : unit =
+  Printf.printf "\r\027[K[%.2fs] [start %d|confl %d|decision %d|props %d|gc %d|del %d]%!"
+    (Sys.time ()) env.starts env.conflicts env.decisions env.propagations
+    env.n_gc env.n_deleted
+
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
-let search (env:t) ~time ~memory n_of_conflicts : unit =
+let search (env:t) ~time ~memory ~progress n_of_conflicts : unit =
   Log.debugf 5
     (fun k->k "(@[@{<yellow>solver.search@}@ :nconflicts %d@])" n_of_conflicts);
   let conflictC = ref 0 in
@@ -1451,7 +1456,8 @@ let search (env:t) ~time ~memory n_of_conflicts : unit =
         (* if decision_level() = 0 then simplify (); *)
 
         (* check time/memory limits every 2^11 rounds *)
-        if env.conflicts = ((env.conflicts lsr 11) lsl 11) then (
+        if env.conflicts = ((env.conflicts lsr 10) lsl 10) then (
+          if progress then pp_progress env;
           check_limits ~time ~memory ();
         );
 
@@ -1525,6 +1531,7 @@ let solve
     ?(restarts=true)
     ?(time=max_float)
     ?(memory=max_float)
+    ?(progress=false)
     (env:t)
   : unit =
   Log.debugf 2 (fun k->k"@{<Green>#### Solve@}");
@@ -1539,7 +1546,7 @@ let solve
   let rec loop () =
     begin match
         let nconf = if restarts then to_int !n_of_conflicts else max_int in
-        search env ~time ~memory nconf
+        search env ~time ~memory ~progress nconf
       with
         | () -> ()
         | exception Restart ->
@@ -1702,3 +1709,4 @@ let pp_stats out (s:t): unit =
     s.conflicts s.n_learnt s.decisions s.propagations s.starts
     (Vec.size s.clauses_hyps) s.n_gc s.n_deleted
 
+let[@inline] clear_progress () = print_string "\r\027[K";

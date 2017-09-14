@@ -67,6 +67,7 @@ val solve :
   ?restarts:bool ->
   ?time:float ->
   ?memory:float ->
+  ?progress:bool ->
   t ->
   unit
 (** Try and solves the current set of assumptions.
@@ -152,3 +153,6 @@ val history : t -> clause Vec.t
     {b DO NOT MUTATE} *)
 
 val pp_stats : t CCFormat.printer
+
+val clear_progress: unit -> unit
+(** Clear progress bar *)

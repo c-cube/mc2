@@ -26,6 +26,7 @@ let restarts = ref true
 let gc = ref true
 let p_stat = ref false
 let p_gc_stat = ref false
+let p_progress = ref false
 
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
@@ -86,12 +87,11 @@ let argspec = Arg.align [
     "-model", Arg.Set p_model, " print model";
     "-no-model", Arg.Clear p_model, " do not print model";
     "-gc-stat", Arg.Set p_gc_stat, " outputs statistics about the GC";
-    "-size", Arg.String (int_arg size_limit),
-    "<s>[kMGT] sets the size limit for the sat solver";
-    "-time", Arg.String (int_arg time_limit),
-    "<t>[smhd] sets the time limit for the sat solver";
-    "-v", Arg.Int Log.set_debug,
-    "<lvl> sets the debug verbose level";
+    "-p", Arg.Set p_progress, " print progress bar";
+    "-no-p", Arg.Clear p_progress, " no progress bar";
+    "-size", Arg.String (int_arg size_limit), " <s>[kMGT] sets the size limit for the sat solver";
+    "-time", Arg.String (int_arg time_limit), " <t>[smhd] sets the time limit for the sat solver";
+    "-v", Arg.Int Log.set_debug, "<lvl> sets the debug verbose level";
   ]
 
 type syntax =
@@ -138,7 +138,7 @@ let main () =
                  Process_smtlib.process_stmt
                    ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
                    ~time:!time_limit ~memory:!size_limit
-                   ?dot_proof ~pp_model:!p_model ~check:!check
+                   ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
                    solver)
               () input
           with Exit ->
@@ -148,7 +148,7 @@ let main () =
         Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
         Mc2_dimacs.Process.process
           ~pp_model:!p_model ~gc:!gc ~restarts:!restarts ~check:!check
-          ~time:!time_limit ~memory:!size_limit
+          ~time:!time_limit ~memory:!size_limit ~progress:!p_progress
           solver pb
     in
     if !p_stat then (

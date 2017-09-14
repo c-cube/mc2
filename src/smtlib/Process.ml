@@ -206,9 +206,10 @@ module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 (* call the solver to check-sat *)
 let solve
     ?gc ?restarts ?dot_proof
-    ?(pp_model=false) ?(check=false) ?time ?memory ~assumptions s : unit =
+    ?(pp_model=false) ?(check=false) ?time ?memory ?progress
+    ~assumptions s : unit =
   let t1 = Sys.time() in
-  let res = Solver.solve ?gc ?restarts ?time ?memory s ~assumptions in
+  let res = Solver.solve ?gc ?restarts ?time ?memory ?progress s ~assumptions in
   let t2 = Sys.time () in
   begin match res with
     | Solver.Sat state ->
@@ -248,13 +249,8 @@ let solve
 
 (* process a single statement *)
 let process_stmt
-    ?gc ?restarts
-    ?(pp_cnf=false)
-    ?dot_proof
-    ?pp_model
-    ?check
-    ?time
-    ?memory
+    ?gc ?restarts ?(pp_cnf=false) ?dot_proof ?pp_model ?check
+    ?time ?memory ?progress
     (solver:Solver.t)
     (stmt:Ast.statement) : unit or_error =
   Log.debugf 5
@@ -275,7 +271,7 @@ let process_stmt
       Log.debug 1 "exit";
       raise Exit
     | A.CheckSat ->
-      solve ?gc ?restarts ?dot_proof ?check ?pp_model ?time ?memory
+      solve ?gc ?restarts ?dot_proof ?check ?pp_model ?time ?memory ?progress
         solver ~assumptions:[];
       E.return()
     | A.TyDecl (id,n) ->

@@ -50,11 +50,11 @@ let check_model cs state : bool =
   in
   List.for_all check_clause cs
 
-let process ?gc ?restarts ?(pp_model=false) ?(check=false) ?time ?memory s pb =
+let process ?gc ?restarts ?(pp_model=false) ?(check=false) ?time ?memory ?progress s pb =
   try
     let t1 = Sys.time() in
     Solver.assume s pb;
-    let res = Solver.solve ?gc ?restarts ?time ?memory s ~assumptions:[] in
+    let res = Solver.solve ?gc ?restarts ?time ?memory s ?progress ~assumptions:[] in
     let t2 = Sys.time () in
     begin match res with
       | Solver.Sat st ->

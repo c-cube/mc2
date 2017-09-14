@@ -126,6 +126,7 @@ val solve :
   ?restarts:bool ->
   ?time:float ->
   ?memory:float ->
+  ?progress:bool ->
   ?assumptions:atom list ->
   t ->
   res

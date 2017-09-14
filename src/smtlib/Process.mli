@@ -18,6 +18,7 @@ val process_stmt :
   ?check:bool ->
   ?time:float ->
   ?memory:float ->
+  ?progress:bool ->
   Solver.t ->
   Ast.statement ->
   unit or_error
