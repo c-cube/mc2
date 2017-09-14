@@ -9,7 +9,7 @@
    (optional) ; only if deps present
    (libraries (containers mc2.core))
    (flags (:standard -w +a-4-42-44-48-50-58-32-60@8))
-   (ocamlopt_flags (:standard -O3 -color always
+   (ocamlopt_flags (:standard -O3 -color always -bin-annot
                     -unbox-closures -unbox-closures-factor 20))
   ))
 
