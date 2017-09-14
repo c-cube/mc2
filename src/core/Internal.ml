@@ -494,7 +494,7 @@ let new_decision_level (env:t) : unit =
 *)
 let attach_clause (_env:t) (c:clause): unit =
   if not (Clause.attached c) then (
-    Log.debugf debug (fun k -> k "Attaching %a" Clause.debug c);
+    Log.debugf debug (fun k -> k "(@[solver.attach_clause@ %a@])" Clause.debug c);
     Vec.push (Atom.neg c.c_atoms.(0)).a_watched c;
     Vec.push (Atom.neg c.c_atoms.(1)).a_watched c;
     Clause.set_attached c;
@@ -603,8 +603,6 @@ let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   if Atom.is_false a then (
     Util.errorf "Trying to enqueue a false literal:@ %a" Atom.debug a
   );
-  Log.debugf 15 (fun k->k "(@[solver.enqueue_bool %a@ :reason %a@])"
-      Atom.debug a Reason.pp (lvl,reason));
   assert (not (Atom.is_true a) && Atom.level a < 0 &&
           Atom.reason a = None && lvl >= 0);
   (* simplify reason *)
@@ -617,10 +615,9 @@ let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
   a.a_term.t_value <- TA_assign{value;reason};
   a.a_term.t_level <- lvl;
   Vec.push env.trail a.a_term;
-  env.propagations <- env.propagations + 1;
   Log.debugf debug
-    (fun k->k "(@[solver.enqueue_bool (%d/%d)@ %a@])"
-        (Vec.size env.trail)(decision_level env) Atom.debug a);
+    (fun k->k "(@[solver.enqueue_bool (%d/%d)@ %a@ :reason %a@])"
+        (Vec.size env.trail)(decision_level env) Atom.debug a Reason.pp (lvl,reason));
   ()
 
 (* atom [a] evaluates to [true] because of [terms] *)
@@ -894,6 +891,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
         Vec.push env.clauses_learnt uclause;
         Log.debugf debug (fun k->k "(@[learn_clause_0:@ %a@])" Clause.debug uclause);
         (* no need to attach [uclause], it is true at level 0 *)
+        env.propagations <- env.propagations + 1;
         enqueue_bool env fuip ~level:0 (Bcp uclause)
       )
     | c_learnt ->
@@ -906,6 +904,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       attach_clause env lclause;
       bump_clause_activity env lclause;
       if cr.cr_is_uip then (
+        env.propagations <- env.propagations + 1;
         enqueue_bool env fuip ~level:cr.cr_backtrack_lvl (Bcp lclause)
       ) else (
         (* semantic split: pick negation of one of top-level lits *)
@@ -994,6 +993,7 @@ let add_clause (env:t) (init:clause) : unit =
           Log.debugf debug
             (fun k->k "(@[solver.add_clause: unit clause, propagating@ :atom %a@])" Atom.debug a);
           Vec.push vec clause;
+          env.propagations <- env.propagations + 1;
           enqueue_bool env a ~level:0 (Bcp clause)
         )
       | a::b::_ ->
@@ -1011,6 +1011,7 @@ let add_clause (env:t) (init:clause) : unit =
           if Atom.is_false b && Atom.is_undef a then (
             let lvl = List.fold_left (fun m a -> max m (Atom.level a)) 0 atoms in
             cancel_until env (max lvl (base_level env));
+            env.propagations <- env.propagations + 1;
             enqueue_bool env a ~level:lvl (Bcp clause)
           )
         )
@@ -1072,6 +1073,7 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
       ) else (
         begin match th_eval env first with
           | None -> (* clause is unit, keep the same watches, but propagate *)
+            env.propagations <- env.propagations + 1;
             enqueue_bool env first ~level:(decision_level env) (Bcp c)
           | Some true -> ()
           | Some false ->
@@ -1214,7 +1216,7 @@ let mk_actions (env:t) : actions =
     )
   and act_level (): level = decision_level env
   and act_push_clause (c:clause) : unit =
-    Log.debugf debug (fun k->k "Pushing clause %a" Clause.debug c);
+    Log.debugf debug (fun k->k "(@[solver.push_clause@ %a@])" Clause.debug c);
     Stack.push c env.clauses_to_add
   and act_raise_conflict (type a) (atoms:atom list) (lemma:lemma): a =
     Log.debugf debug (fun k->k
@@ -1232,7 +1234,7 @@ let mk_actions (env:t) : actions =
     raise (Conflict c)
   and act_propagate_bool_eval t (b:bool) ~(subs:term list) : unit =
     Log.debugf debug
-      (fun k->k "(@[<hv>Semantic propagate %a@ :val %B@ :subs (@[<hv>%a@])@])"
+      (fun k->k "(@[<hv>solver.semantic_propagate %a@ :val %B@ :subs (@[<hv>%a@])@])"
         Term.debug t b (Util.pp_list Term.debug) subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval env a subs
@@ -1244,7 +1246,7 @@ let mk_actions (env:t) : actions =
     enqueue_bool_theory_propagate env a ~lvl c
   and act_mark_dirty (t:term): unit =
     if not (Term.dirty t) then (
-      Log.debugf debug (fun k->k "(@[Mark dirty@ %a@])" Term.debug t);
+      Log.debugf debug (fun k->k "(@[solver.mark_dirty@ %a@])" Term.debug t);
       Term.dirty_mark t;
       Vec.push env.dirty_terms t;
     )
