@@ -353,7 +353,7 @@ let create_real (actions:actions lazy_t) : t = {
   restart_first = 100;
 
   learntsize_factor = 1.5 ; (* can learn 3× as many clauses as present initially *)
-  learntsize_inc = 1.2; (* 1.3× more learnt clauses after each restart *)
+  learntsize_inc = 1.5; (* n× more learnt clauses after each restart *)
 
   starts = 0;
   decisions = 0;
