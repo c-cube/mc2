@@ -3,8 +3,9 @@
 
 .PHONY: clean build build-dev
 
+J?=3
 TARGETS=src/main.exe
-OPTS= -j 3
+OPTS= -j $(J)
 
 build:
 	jbuilder build $(TARGETS) $(OPTS)
@@ -40,7 +41,7 @@ test:
 	# @/usr/bin/time -f "%e" ./tests/run smt
 	@/usr/bin/time -f "%e" ./src/tests/run mcsat
 
-TESTOPTS ?= -j 3
+TESTOPTS ?= -j $(J)
 TESTTOOL=logitest
 DATE=$(shell date +%FT%H:%M)
 
