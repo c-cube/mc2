@@ -407,6 +407,16 @@ let eliminate_duplicates (clause:clause) : clause * bool =
     Clause.make !res (Simplify clause), true
   )
 
+(* simplify clause by removing duplicates *)
+let simplify_clause (c:clause) : clause =
+  let c', has_dedup = eliminate_duplicates c in
+  if has_dedup then (
+    Log.debugf debug
+      (fun k -> k "(@[solver.deduplicate@ :into %a@ :from %a@])"
+          Clause.debug c' Clause.debug c);
+  );
+  c'
+
 (* Partition literals for new clauses, into:
    - true literals (maybe makes the clause trivial if the lit is proved true at level 0)
    - unassigned literals, yet to be decided
@@ -438,7 +448,7 @@ let partition_atoms (atoms:atom array) : atom list * clause list =
         let l = Atom.level a in
         if l = 0 then (
           begin match Term.reason a.a_term with
-            | Some (Bcp cl) ->
+            | Some (Bcp cl | Bcp_lazy (lazy cl)) ->
               partition_aux trues unassigned falses (cl :: history) (i + 1)
             (* A var false at level 0 can be eliminated from the clause,
                but we need to kepp in mind that we used another clause to simplify it. *)
@@ -559,7 +569,7 @@ let report_unsat (env:t) (confl:clause) : _ =
    need to rebuild a clause with correct history, in order to
    be able to build a correct proof at the end of proof search. *)
 let simpl_reason_level_0 : reason -> reason = function
-  | (Bcp cl) as r ->
+  | (Bcp cl | Bcp_lazy (lazy cl)) as r ->
     let l, history = partition_atoms cl.c_atoms in
     begin match l with
       | [_] ->
@@ -626,6 +636,18 @@ let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
         0 terms
     in
     enqueue_bool env a ~level:lvl (Semantic terms)
+  )
+
+(* atom [a] evaluates to [true] because of [terms] *)
+let enqueue_bool_theory_propagate (env:t) (a:atom) ~lvl (c:(atom list * lemma) lazy_t) : unit =
+  if Atom.is_true a then ()
+  else (
+    let c = lazy (
+      let lazy (atoms, lemma) = c in
+      let c = Clause.make atoms (Lemma lemma) in
+      simplify_clause c
+    ) in
+    enqueue_bool env a ~level:lvl (Bcp_lazy c)
   )
 
 (* MCsat semantic assignment *)
@@ -774,7 +796,7 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
                but we still keep track of it in the proof. *)
             assert (Atom.level q=0 && Atom.is_false q);
             begin match Atom.reason q with
-              | Some (Bcp cl) -> history := cl :: !history
+              | Some (Bcp cl | Bcp_lazy (lazy cl)) -> history := cl :: !history
               | _ -> assert false
             end
           );
@@ -835,7 +857,7 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
         assert (n > 0);
         learnt := Atom.neg p :: !learnt;
         c := None
-      | n, Bcp cl ->
+      | n, (Bcp cl | Bcp_lazy (lazy cl))->
         assert (n > 0);
         assert (Atom.level p >= conflict_level);
         c := Some cl
@@ -930,11 +952,7 @@ let add_clause (env:t) (init:clause) : unit =
   Array.iter (fun a -> add_term env a.a_term) init.c_atoms;
   let vec = vec_to_insert_clause_into env init in
   try
-    let c, has_dedup = eliminate_duplicates init in
-    if has_dedup then (
-      Log.debugf debug
-        (fun k -> k "(@[solver.deduplicate@ :into %a@ :from %a@])" Clause.debug c Clause.debug init);
-    );
+    let c = simplify_clause init in
     let atoms, history = partition_atoms c.c_atoms in
     let clause =
       if history = []
@@ -1212,12 +1230,18 @@ let mk_actions (env:t) : actions =
       atoms;
     let c = Clause.make atoms (Lemma lemma) in
     raise (Conflict c)
-  and act_propagate_bool t (b:bool) ~(subs:term list) : unit =
+  and act_propagate_bool_eval t (b:bool) ~(subs:term list) : unit =
     Log.debugf debug
       (fun k->k "(@[<hv>Semantic propagate %a@ :val %B@ :subs (@[<hv>%a@])@])"
         Term.debug t b (Util.pp_list Term.debug) subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval env a subs
+  and act_propagate_bool_lemma t (b:bool) ~lvl (c:(atom list * lemma) lazy_t) : unit =
+    Log.debugf debug
+      (fun k->k "(@[<hv>Theory bool propagate %a@ :val %B@])"
+        Term.debug t b);
+    let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
+    enqueue_bool_theory_propagate env a ~lvl c
   and act_mark_dirty (t:term): unit =
     if not (Term.dirty t) then (
       Log.debugf debug (fun k->k "(@[Mark dirty@ %a@])" Term.debug t);
@@ -1230,7 +1254,8 @@ let mk_actions (env:t) : actions =
     act_mark_dirty;
     act_level;
     act_raise_conflict;
-    act_propagate_bool;
+    act_propagate_bool_eval;
+    act_propagate_bool_lemma;
   }
 
 (* main constructor *)
@@ -1315,6 +1340,11 @@ and gc_mark_term (t:term) : unit =
     Term.iter_subterms t gc_mark_term;
     begin match t.t_value with
       | TA_assign {reason=Bcp c;_} -> gc_mark_clause c
+      | TA_assign {reason=Bcp_lazy c;_} when Lazy.is_val c ->
+        let lazy c = c in
+        if Clause.attached c then (
+          gc_mark_clause c
+        );
       | _ -> ()
     end
   )

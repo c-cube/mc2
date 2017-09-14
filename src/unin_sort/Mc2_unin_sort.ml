@@ -287,7 +287,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             begin match eval_bool eqn with
               | Eval_unknown -> assert false
               | Eval_bool (b, subs) ->
-                Actions.propagate_bool acts eqn b ~subs
+                Actions.propagate_bool_eval acts eqn b ~subs
             end
           | _ -> ()
         end;

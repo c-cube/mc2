@@ -12,7 +12,9 @@ val push_clause : t -> clause -> unit
 
 val level : t -> level
 
-val propagate_bool : t -> term -> bool -> subs:term list -> unit
+val propagate_bool_eval : t -> term -> bool -> subs:term list -> unit
+
+val propagate_bool_lemma : t -> term -> bool -> lvl:level -> (atom list * lemma) lazy_t -> unit
 
 val mark_dirty : t -> term -> unit
 

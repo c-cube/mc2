@@ -210,6 +210,9 @@ and reason =
   (** The atom has been decided by the sat solver *)
   | Bcp of clause
   (** The atom has been propagated by the given clause *)
+  | Bcp_lazy of clause lazy_t
+  (** Same as {!Bcp} but the clause is produced on demand
+      (typically, useful for theory propagation) *)
   | Semantic of term list
   (** The atom can be evaluated using the terms in the list *)
 (** Reasons of propagation/decision of atoms/terms. *)
@@ -266,11 +269,20 @@ and actions = {
   (** push a new clause *)
   act_level : unit -> level;
   (** access current decision level *)
-  act_propagate_bool : term -> bool -> subs:term list -> unit;
-  (** [act_propagate_bool t b l] propagates the boolean literal [t]
-      assigned to boolean value [b], explained by evaluation of
-      (sub)terms [l]
+  act_propagate_bool_eval : term -> bool -> subs:term list -> unit;
+  (** [act_propagate_bool_eval t b l] propagates the boolean literal [t]
+      assigned to boolean value [b], explained by evaluation with
+      relevant (sub)terms [l]
       @param subs subterms used for the propagation *)
+  act_propagate_bool_lemma : term -> bool -> lvl:level -> (atom list * lemma) lazy_t -> unit;
+  (** [act_propagate_bool_lemma t b ~lvl c] propagates the boolean literal [t]
+      assigned to boolean value [b], explained by a valid theory
+      lemma [c] (which is lazy because it might never be used).
+      @param lvl the level at which propagation should occur.
+      Precondition: [c] is a tautology such that [c == (c' ∨ t=b)], where [c']
+      is composed of atoms false in current model, and where [lvl] is
+      the maximal level of atoms in [c']
+  *)
   act_mark_dirty : term -> unit;
   (** Mark the term as dirty because its set of unit constraints has changed.
       It potentially has to re-compute new information from that
