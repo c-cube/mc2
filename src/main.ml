@@ -128,7 +128,7 @@ let main () =
     let res = match syn with
       | Smtlib ->
         (* parse pb *)
-        Mc2_smtlib.Ast.parse !file >>= fun input ->
+        Process_smtlib.parse !file >>= fun input ->
         (* TODO: parse list of plugins on CLI *)
         (* process statements *)
         begin try

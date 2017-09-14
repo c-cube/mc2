@@ -8,9 +8,8 @@
    vim:set ft=yacc: *)
 
 %{
-  module A = Parse_ast
+  module A = Ast
   module Loc = Locations
-
 %}
 
 %token EOI
@@ -60,10 +59,10 @@
 %token <string>QUOTED
 %token <string>ESCAPED
 
-%start <Parse_ast.term> parse_term
-%start <Parse_ast.ty> parse_ty
-%start <Parse_ast.statement> parse
-%start <Parse_ast.statement list> parse_list
+%start <Ast.Ctx.t -> Ast.term> parse_term
+%start <Ast.Ctx.t -> Ast.ty> parse_ty
+%start <Ast.Ctx.t -> Ast.statement> parse
+%start <Ast.Ctx.t -> Ast.statement list> parse_list
 
 %%
 

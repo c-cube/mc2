@@ -37,8 +37,8 @@ let pp out pos =
       pos.stop_line pos.stop_column
 
 let pp_opt out = function
-  | None -> Format.fprintf out "<no location>"
-  | Some pos -> pp out pos
+  | None -> ()
+  | Some pos -> Format.fprintf out "@ at %a" pp pos
 
 let pp_to_string pp x =
   let buf = Buffer.create 64 in

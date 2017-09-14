@@ -9,6 +9,7 @@ module A = Ast
 module E = CCResult
 module Reg = Service.Registry
 module F = Mc2_propositional.F
+module Loc = Locations
 
 type 'a or_error = ('a, string) CCResult.t
 
@@ -262,7 +263,7 @@ let process_stmt
   let decl_sort = Solver.get_service_exn solver Mc2_unin_sort.k_decl_sort in
   let decl = Solver.get_service_exn solver Mc2_uf.k_decl in
   let conv_ty = conv_ty (Solver.services solver) in
-  begin match stmt with
+  begin match A.stmt_view stmt with
     | A.SetLogic "QF_UF" -> E.return ()
     | A.SetLogic s ->
       Log.debugf 0 (fun k->k "warning: unknown logic `%s`" s);
@@ -333,3 +334,28 @@ let process_stmt
          *)
   end
 
+let parse_chan_exn ?(filename="<no name>") ~ctx ic =
+  let lexbuf = Lexing.from_channel ic in
+  Loc.set_file lexbuf filename;
+  Parser.parse_list Lexer.token lexbuf ctx
+
+let parse_chan ?filename ~ctx ic =
+  try Result.Ok (parse_chan_exn ~ctx ?filename ic)
+  with e -> Result.Error (Printexc.to_string e)
+
+let parse_file_exn ~ctx file : A.statement list =
+  CCIO.with_in file (parse_chan_exn ~ctx ~filename:file)
+
+let parse_file file =
+  try Result.Ok (parse_file_exn file)
+  with e -> Result.Error (Printexc.to_string e)
+
+let parse ?(ctx=A.Ctx.create()) file =
+  try Result.Ok (parse_file_exn ~ctx file)
+  with e -> Result.Error (Printexc.to_string e)
+
+let parse_stdin ?(ctx=A.Ctx.create()) () =
+  try
+    parse_chan_exn ~ctx ~filename:"<stdin>" stdin
+    |> CCResult.return
+  with e -> Result.Error (Printexc.to_string e)

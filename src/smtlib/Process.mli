@@ -24,3 +24,13 @@ val process_stmt :
 (** Process the given statement.
     @raise Incorrect_model if model is not correct
 *)
+
+val parse : ?ctx:Ast.Ctx.t -> string -> Ast.statement list or_error
+(** Parse the given file, type-check, etc.
+    @raise Error in case the input is ill formed
+    @raise Ill_typed if the input is ill typed *)
+
+val parse_stdin : ?ctx:Ast.Ctx.t -> unit -> Ast.statement list or_error
+(** Parse stdin, type-check, etc.
+    @raise Error in case the input is ill formed
+    @raise Ill_typed if the input is ill typed *)

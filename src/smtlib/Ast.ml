@@ -8,7 +8,7 @@ open Mc2_core
 module Loc = Locations
 module Fmt = CCFormat
 
-type 'a or_error = ('a, string) CCResult.t
+type loc = Loc.t
 
 exception Error of string
 exception Ill_typed of string
@@ -110,6 +110,7 @@ module Ty = struct
       fmt
 end
 
+type ty = Ty.t
 type var = Ty.t Var.t
 
 type op =
@@ -128,6 +129,7 @@ type binder =
 type term = {
   term: term_cell;
   ty: Ty.t;
+  loc: loc option;
 }
 and term_cell =
   | Var of var
@@ -150,7 +152,11 @@ and select = {
 
 type definition = ID.t * Ty.t * term
 
-type statement =
+type statement = {
+  stmt_view: statement_view;
+  stmt_loc: loc option;
+}
+and statement_view =
   | SetLogic of string
   | SetOption of string list
   | SetInfo of string list
@@ -232,141 +238,170 @@ let pp_data out d =
   S.of_list (ID.to_sexp d.data_id :: cstors)
    *)
 
+let[@inline] term_view t = t.term
+let[@inline] loc t = t.loc
+let[@inline] mk_ ?loc term ty = {term; ty; loc}
+let[@inline] ty t = t.ty
+
+let[@inline] stmt_view t = t.stmt_view
+let[@inline] stmt_loc t = t.stmt_loc
+
 (** {2 Constructors} *)
 
-let[@inline] term_view t = t.term
-
-let rec app_ty_ ty l : Ty.t = match ty, l with
+let rec app_ty_ ?loc ty l : Ty.t = match ty, l with
   | _, [] -> ty
   | Ty.Arrow (ty_a,ty_rest), a::tail ->
     if Ty.equal ty_a a.ty
-    then app_ty_ ty_rest tail
+    then app_ty_ ?loc ty_rest tail
     else (
-      Ty.ill_typed "expected `@[%a@]`,@ got `@[%a : %a@]`"
-        Ty.pp ty_a pp_term a Ty.pp a.ty
+      Ty.ill_typed "expected `@[%a@]`,@ got `@[%a : %a@]`%a"
+        Ty.pp ty_a pp_term a Ty.pp a.ty Loc.pp_opt loc
     )
   | (Ty.Prop | Ty.Atomic _), a::_ ->
-    Ty.ill_typed "cannot apply ty `@[%a@]`@ to `@[%a@]`" Ty.pp ty pp_term a
-
-let[@inline] mk_ term ty = {term; ty}
-let[@inline] ty t = t.ty
+    Ty.ill_typed "cannot apply ty `@[%a@]`@ to `@[%a@]`%a" Ty.pp ty pp_term a Loc.pp_opt loc
 
 let true_ = mk_ (Bool true) Ty.prop
 let false_ = mk_ (Bool false) Ty.prop
 
-let var v = mk_ (Var v) (Var.ty v)
+let var ?loc v = mk_ ?loc (Var v) (Var.ty v)
 
-let const id ty = mk_ (Const id) ty
+let const ?loc id ty = mk_ ?loc (Const id) ty
 
-let select (s:select) (t:term) ty = mk_ (Select (s,t)) ty
+let select ?loc (s:select) (t:term) ty = mk_ ?loc (Select (s,t)) ty
 
-let app f l = match f.term, l with
+let app ?loc f l = match f.term, l with
   | _, [] -> f
   | App (f1, l1), _ ->
-    let ty = app_ty_ f.ty l in
-    mk_ (App (f1, l1 @ l)) ty
+    let ty = app_ty_ ?loc f.ty l in
+    mk_ ?loc (App (f1, l1 @ l)) ty
   | _ ->
-    let ty = app_ty_ f.ty l in
-    mk_ (App (f, l)) ty
+    let ty = app_ty_ ?loc f.ty l in
+    mk_ ?loc (App (f, l)) ty
 
-let app_a f a = app f (Array.to_list a)
+let app_a ?loc f a = app ?loc f (Array.to_list a)
 
-let if_ a b c =
+let if_ ?loc a b c =
   if a.ty <> Ty.Prop
   then Ty.ill_typed "if: test  must have type prop, not `@[%a@]`" Ty.pp a.ty;
-  if not (Ty.equal b.ty c.ty)
-  then Ty.ill_typed
-      "if: both branches must have same type,@ not `@[%a@]` and `@[%a@]`"
-      Ty.pp b.ty Ty.pp c.ty;
-  mk_ (If (a,b,c)) b.ty
+  if not (Ty.equal b.ty c.ty) then (
+    Ty.ill_typed
+      "if: both branches must have same type,@ not `@[%a@]` and `@[%a@]`%a"
+      Ty.pp b.ty Ty.pp c.ty Loc.pp_opt loc;
+  );
+  mk_ ?loc (If (a,b,c)) b.ty
 
-let match_ t m =
+let match_ ?loc t m =
   let c1, (_, rhs1) = ID.Map.choose m in
   ID.Map.iter
     (fun c (_, rhs) ->
        if not (Ty.equal rhs1.ty rhs.ty)
        then Ty.ill_typed
            "match: cases %a and %a disagree on return type,@ \
-           between %a and %a"
-           ID.pp c1 ID.pp c Ty.pp rhs1.ty Ty.pp rhs.ty)
+           between %a and %a%a"
+           ID.pp c1 ID.pp c Ty.pp rhs1.ty Ty.pp rhs.ty Loc.pp_opt loc)
     m;
-  mk_ (Match (t,m)) rhs1.ty
+  mk_ ?loc (Match (t,m)) rhs1.ty
 
-let let_ v t u =
-  if not (Ty.equal (Var.ty v) t.ty)
-  then Ty.ill_typed
-      "let: variable %a : @[%a@]@ and bounded term : %a@ should have same type"
-      Var.pp v Ty.pp (Var.ty v) Ty.pp t.ty;
-  mk_ (Let (v,t,u)) u.ty
+let let_ ?loc v t u =
+  if not (Ty.equal (Var.ty v) t.ty) then (
+    Ty.ill_typed
+      "let: variable %a : @[%a@]@ and bounded term : %a@ should have same type%a"
+      Var.pp v Ty.pp (Var.ty v) Ty.pp t.ty Loc.pp_opt loc;
+  );
+  mk_ ?loc (Let (v,t,u)) u.ty
 
-let let_l l u =
-  List.fold_right (fun (v,t) u -> let_ v t u) l u
+let let_l ?loc l u =
+  List.fold_right (fun (v,t) u -> let_ ?loc v t u) l u
 
-let bind ~ty b v t = mk_ (Bind(b,v,t)) ty
+let bind ?loc ~ty b v t = mk_ ?loc (Bind(b,v,t)) ty
 
-let fun_ v t =
+let fun_ ?loc v t =
   let ty = Ty.arrow (Var.ty v) t.ty in
-  mk_ (Bind (Fun,v,t)) ty
+  mk_ ?loc (Bind (Fun,v,t)) ty
 
-let quant_ q v t =
+let quant_ ?loc q v t =
   if not (Ty.equal t.ty Ty.prop) then (
     Ty.ill_typed
-      "quantifier: bounded term : %a@ should have type prop"
-      Ty.pp t.ty;
+      "quantifier: bounded term : %a@ should have type prop%a"
+      Ty.pp t.ty Loc.pp_opt loc;
   );
   let ty = Ty.prop in
-  mk_ (q v t) ty
+  mk_ ?loc (q v t) ty
 
-let forall = quant_ (fun v t -> Bind (Forall,v,t))
-let exists = quant_ (fun v t -> Bind (Exists,v,t))
+let forall ?loc = quant_ ?loc (fun v t -> Bind (Forall,v,t))
+let exists ?loc = quant_ ?loc (fun v t -> Bind (Exists,v,t))
 
-let mu v t =
+let mu ?loc v t =
   if not (Ty.equal (Var.ty v) t.ty)
-  then Ty.ill_typed "mu-term: var has type %a,@ body %a"
-      Ty.pp (Var.ty v) Ty.pp t.ty;
+  then Ty.ill_typed "mu-term: var has type %a,@ body %a%a"
+      Ty.pp (Var.ty v) Ty.pp t.ty Loc.pp_opt loc;
   let ty = Ty.arrow (Var.ty v) t.ty in
-  mk_ (Bind (Fun,v,t)) ty
+  mk_ ?loc (Bind (Fun,v,t)) ty
 
-let fun_l = List.fold_right fun_
-let fun_a = Array.fold_right fun_
-let forall_l = List.fold_right forall
-let exists_l = List.fold_right exists
-let mu_l = List.fold_right mu
+let fun_l ?loc = List.fold_right (fun_ ?loc)
+let fun_a ?loc = Array.fold_right (fun_ ?loc)
+let forall_l ?loc = List.fold_right (forall ?loc)
+let exists_l ?loc = List.fold_right (exists ?loc)
+let mu_l ?loc = List.fold_right (mu ?loc)
 
-let eq_neq_ op l = match l with
+let eq_neq_ ?loc op l = match l with
   | [] -> Ty.ill_typed "empty `distinct` is forbidden"
   | a :: tail ->
     begin match CCList.find_pred (fun b -> not @@ Ty.equal a.ty b.ty) tail with
       | Some b ->
-        Ty.ill_typed "%a: `@[%a@]` and `@[%a@]` do not have the same type"
-          pp_op op pp_term a pp_term b;
+        Ty.ill_typed "%a: `@[%a@]` and `@[%a@]` do not have the same type%a"
+          pp_op op pp_term a pp_term b Loc.pp_opt loc;
       | None ->
-        mk_ (Op (op, l)) Ty.prop
+        mk_ ?loc (Op (op, l)) Ty.prop
     end
 
-let eq_l = eq_neq_ Eq
-let eq a b = eq_l [a;b]
-let distinct = eq_neq_ Distinct
+let eq_l ?loc = eq_neq_ ?loc Eq
+let eq ?loc a b = eq_l ?loc [a;b]
+let distinct ?loc = eq_neq_ ?loc Distinct
 
-let check_prop_ t =
+let check_prop_ ?loc t =
   if not (Ty.equal t.ty Ty.prop)
-  then Ty.ill_typed "expected prop, got `@[%a : %a@]`" pp_term t Ty.pp t.ty
+  then Ty.ill_typed "expected prop, got `@[%a : %a@]`%a" pp_term t Ty.pp t.ty Loc.pp_opt loc
 
-let mk_prop_op op l =
-  List.iter check_prop_ l;
-  mk_ (Op (op,l)) Ty.prop
+let mk_prop_op ?loc op l =
+  List.iter (check_prop_ ?loc) l;
+  mk_ ?loc (Op (op,l)) Ty.prop
 
-let and_l = mk_prop_op And
-let or_l = mk_prop_op Or
-let imply_l = mk_prop_op Imply
+let and_l ?loc = mk_prop_op ?loc And
+let or_l ?loc = mk_prop_op ?loc Or
+let imply_l ?loc = mk_prop_op ?loc Imply
 
-let and_ a b = and_l [a;b]
-let or_ a b = or_l [a;b]
-let imply a b = imply_l [a;b]
+let and_ ?loc a b = and_l ?loc [a;b]
+let or_ ?loc a b = or_l ?loc [a;b]
+let imply ?loc a b = imply_l ?loc [a;b]
 
-let not_ t =
+let not_ ?loc t =
   check_prop_ t;
-  mk_ (Not t) Ty.prop
+  mk_ ?loc (Not t) Ty.prop
+
+let mk_st_ ?loc st = { stmt_view=st; stmt_loc=loc }
+
+let decl_sort ?loc s ~arity = mk_st_ ?loc (TyDecl (ID.make s, arity))
+let decl_fun ?loc ~tyvars f ty_args ty_ret =
+  let d = {fun_ty_vars=tyvars; fun_name=f; fun_args=ty_args; fun_ret=ty_ret} in
+  mk_st_ ?loc (Decl d)
+let fun_def ?loc fr = mk_st_ ?loc (Fun_def fr)
+let fun_rec ?loc fr = mk_st_ ?loc (Fun_rec fr)
+let funs_rec ?loc decls bodies = mk_st_ ?loc (Funs_rec {fsr_decls=decls; fsr_bodies=bodies})
+let data ?loc tyvars l = mk_st_ ?loc (Data (tyvars,l))
+let assert_ ?loc t = mk_st_ ?loc (Assert t)
+let lemma ?loc t = mk_st_ ?loc (Lemma t)
+let goal ?loc ~ty_vars t = mk_st_ ?loc (Goal(ty_vars, t))
+let set_logic ?loc s = mk_st_ ?loc (SetLogic s)
+let set_option ?loc l = mk_st_ ?loc (SetOption l)
+let set_info ?loc l = mk_st_ ?loc (SetInfo l)
+let check_sat ?loc () = mk_st_ ?loc CheckSat
+let exit ?loc () = mk_st_ ?loc Exit
+
+let assert_not ?loc t ctx =
+    let vars, t = unfold_binder Forall (conv_term ctx t) in
+    let g = not_ t in (* negate *)
+    goal ~ty_vars vars g
 
 (** {2 Printing} *)
 
@@ -420,18 +455,18 @@ module Ctx = struct
     names: ID.t StrTbl.t;
     kinds: kind ID.Tbl.t;
     data: (ID.t * Ty.t) list ID.Tbl.t; (* data -> cstors *)
-    mutable loc: Locations.t option; (* current loc *)
+    mutable c_loc: loc option; (* current loc *)
   }
 
   let create () : t = {
     names=StrTbl.create 64;
     kinds=ID.Tbl.create 64;
     data=ID.Tbl.create 64;
-    loc=None;
+    c_loc=None;
   }
 
-  let loc t = t.loc
-  let set_loc ?loc t = t.loc <- loc
+  let loc t = t.c_loc
+  let set_loc ?loc t = t.c_loc <- loc
 
   let add_id t (s:string) (k:kind): ID.t =
     let id = ID.make s in
@@ -834,37 +869,3 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
   | A.Stmt_lemma _ ->
     errorf_ctx ctx "smbc does not know how to handle `lemma` statements"
   | A.Stmt_check_sat -> [CheckSat]
-
-let parse_chan_exn ?(filename="<no name>") ic =
-  let lexbuf = Lexing.from_channel ic in
-  Loc.set_file lexbuf filename;
-  Parser.parse_list Lexer.token lexbuf
-
-let parse_chan ?filename ic =
-  try Result.Ok (parse_chan_exn ?filename ic)
-  with e -> Result.Error (Printexc.to_string e)
-
-let parse_file_exn file : A.statement list =
-  CCIO.with_in file (parse_chan_exn ~filename:file)
-
-let parse_file file =
-  try Result.Ok (parse_file_exn file)
-  with e -> Result.Error (Printexc.to_string e)
-
-let parse_file_exn ctx file : statement list =
-  (* delegate parsing to [Tip_parser] *)
-  parse_file_exn file
-  |> CCList.flat_map (conv_statement ctx)
-
-let parse file =
-  let ctx = Ctx.create () in
-  try Result.Ok (parse_file_exn ctx file)
-  with e -> Result.Error (Printexc.to_string e)
-
-let parse_stdin () =
-  let ctx = Ctx.create () in
-  try
-    parse_chan_exn ~filename:"<stdin>" stdin
-    |> CCList.flat_map (conv_statement ctx)
-    |> CCResult.return
-  with e -> Result.Error (Printexc.to_string e)

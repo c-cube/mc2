@@ -5,7 +5,7 @@
 
 open Mc2_core
 
-type 'a or_error = ('a, string) CCResult.t
+type loc = Locations.t
 
 (** {2 Types} *)
 
@@ -63,6 +63,7 @@ module Ty : sig
   val ill_typed : ('a, Format.formatter, unit, 'b) format4 -> 'a
 end
 
+type ty = Ty.t
 type var = Ty.t Var.t
 
 type op =
@@ -81,6 +82,7 @@ type binder =
 type term = private {
   term: term_cell;
   ty: Ty.t;
+  loc: loc option;
 }
 and term_cell =
   | Var of var
@@ -105,7 +107,11 @@ type definition = ID.t * Ty.t * term
 
 (* TODO: push/pop *)
 
-type statement =
+type statement = {
+  stmt_view: statement_view;
+  stmt_loc: loc option;
+}
+and statement_view =
   | SetLogic of string
   | SetOption of string list
   | SetInfo of string list
@@ -120,39 +126,51 @@ type statement =
   | Define of definition list
            *)
 
-(** {2 Constructors} *)
-
 val term_view : term -> term_cell
 val ty : term -> Ty.t
+val loc : term -> loc option
 
-val var : var -> term
-val const : ID.t -> Ty.t -> term
-val app : term -> term list -> term
-val app_a : term -> term array -> term
-val select : select -> term -> Ty.t -> term
-val if_ : term -> term -> term -> term
-val match_ : term -> (var list * term) ID.Map.t -> term
-val let_ : var -> term -> term -> term
-val let_l : (var * term) list -> term -> term
-val bind : ty:Ty.t -> binder -> var -> term -> term
-val fun_ : var -> term -> term
-val fun_l : var list -> term -> term
-val fun_a : var array -> term -> term
-val forall : var -> term -> term
-val forall_l : var list -> term -> term
-val exists : var -> term -> term
-val exists_l : var list -> term -> term
-val mu : var -> term -> term
-val eq : term -> term -> term
-val eq_l : term list -> term
-val distinct : term list -> term
-val not_ : term -> term
-val and_ : term -> term -> term
-val and_l : term list -> term
-val or_ : term -> term -> term
-val or_l : term list -> term
-val imply : term -> term -> term
-val imply_l : term list -> term
+val stmt_view : statement -> statement_view
+val stmt_loc : statement -> loc option
+
+(** {2 Context for Parsing and Typing} *)
+
+module Ctx : sig
+  type t
+  val create: unit -> t
+  val pp : t CCFormat.printer
+end
+
+(** {2 Constructors} *)
+
+val var : ?loc:loc -> var -> term
+val const : ?loc:loc -> ID.t -> Ty.t -> term
+val app : ?loc:loc -> term -> term list -> term
+val app_a : ?loc:loc -> term -> term array -> term
+val select : ?loc:loc -> select -> term -> Ty.t -> term
+val if_ : ?loc:loc -> term -> term -> term -> term
+val match_ : ?loc:loc -> term -> (var list * term) ID.Map.t -> term
+val let_ : ?loc:loc -> var -> term -> term -> term
+val let_l : ?loc:loc -> (var * term) list -> term -> term
+val bind : ?loc:loc -> ty:Ty.t -> binder -> var -> term -> term
+val fun_ : ?loc:loc -> var -> term -> term
+val fun_l : ?loc:loc -> var list -> term -> term
+val fun_a : ?loc:loc -> var array -> term -> term
+val forall : ?loc:loc -> var -> term -> term
+val forall_l : ?loc:loc -> var list -> term -> term
+val exists : ?loc:loc -> var -> term -> term
+val exists_l : ?loc:loc -> var list -> term -> term
+val mu : ?loc:loc -> var -> term -> term
+val eq : ?loc:loc -> term -> term -> term
+val eq_l : ?loc:loc -> term list -> term
+val distinct : ?loc:loc -> term list -> term
+val not_ : ?loc:loc -> term -> term
+val and_ : ?loc:loc -> term -> term -> term
+val and_l : ?loc:loc -> term list -> term
+val or_ : ?loc:loc -> term -> term -> term
+val or_l : ?loc:loc -> term list -> term
+val imply : ?loc:loc -> term -> term -> term
+val imply_l : ?loc:loc -> term list -> term
 val true_ : term
 val false_ : term
 
@@ -162,21 +180,3 @@ val unfold_fun : term -> var list * term
 
 val pp_term : term CCFormat.printer
 val pp_statement : statement CCFormat.printer
-
-(** {2 Parsing and Typing} *)
-
-module Ctx : sig
-  type t
-  val create: unit -> t
-  val pp : t CCFormat.printer
-end
-
-val parse : string -> statement list or_error
-(** Parse the given file, type-check, etc.
-    @raise Error in case the input is ill formed
-    @raise Ill_typed if the input is ill typed *)
-
-val parse_stdin : unit -> statement list or_error
-(** Parse stdin, type-check, etc.
-    @raise Error in case the input is ill formed
-    @raise Ill_typed if the input is ill typed *)
