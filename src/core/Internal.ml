@@ -915,10 +915,10 @@ let add_conflict (env:t) (confl:clause): unit =
   record_learnt_clause env cr
 
 (* Get the correct vector to insert a clause in. *)
-let rec clause_vector env c = match c.c_premise with
+let[@unrolled 1] rec vec_to_insert_clause_into env c = match c.c_premise with
   | Hyp -> env.clauses_hyps
   | Local -> env.clauses_temp
-  | Simplify d -> clause_vector env d
+  | Simplify d -> vec_to_insert_clause_into env d
   | Lemma _ | Hyper_res _ | Resolve _ -> env.clauses_learnt
 
 (* Add a new clause, simplifying, propagating, and backtracking if
@@ -928,7 +928,7 @@ let add_clause (env:t) (init:clause) : unit =
   (* Insertion of new lits is done before simplification. Indeed, else a lit in a
      trivial clause could end up being not decided on, which is a bug. *)
   Array.iter (fun a -> add_term env a.a_term) init.c_atoms;
-  let vec = clause_vector env init in
+  let vec = vec_to_insert_clause_into env init in
   try
     let c, has_dedup = eliminate_duplicates init in
     if has_dedup then (
