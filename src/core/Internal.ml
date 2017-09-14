@@ -246,7 +246,7 @@ let[@inline] term_init (env:t) (t:term) : unit =
 
 (* provision term (and its sub-terms) for future assignments.
    This is the function exposed to users and therefore it performs some checks. *)
-let rec add_term (env:t) (t:term): unit =
+let[@unrolled 1] rec add_term (env:t) (t:term): unit =
   if Term.is_deleted t then (
     Util.errorf "(@[trying to add deleted term@ `%a`@])" Term.debug t
   ) else if Term.is_added t then (
@@ -1203,6 +1203,7 @@ let mk_actions (env:t) : actions =
         "(@[<hv>raise_conflict@ :clause %a@ :lemma %a@])"
         Clause.debug_atoms atoms Lemma.pp lemma);
     env.elt_head <- Vec.size env.trail;
+    let atoms = Atom.Set.of_list atoms |> Atom.Set.to_list in
     (* add atoms, also evaluate them if not already false *)
     List.iter
       (fun a ->
