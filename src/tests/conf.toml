@@ -34,7 +34,7 @@ sat = ":status sat"
 [test]
 
 timeout=30
-problems = ".*.smt2"
+problems = ".*.(smt2|cnf)"
 provers = [ "mc2", "mc2-nogc" ]
 dir = [ "QF_UF" ]
 
