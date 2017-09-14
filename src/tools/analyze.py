@@ -36,14 +36,15 @@ def analyze_file(f):
                 error[prover] = 1 + error.get(prover, 0)
                 time = float(row[prover + '.time'])
                 if time < 20:
-                    quick_errors.append((prover, row, time))
+                    quick_errors.append((prover, row['problem'], time))
             else:
                 print(f"unknown result for {prover} on {row}: {res}")
     for prover in provers:
-        print(f"{prover:{12}}: SAT {sat.get(prover,0):6}" \
-            f" | UNSAT {unsat.get(prover,0):6}" \
-            f" | UNKNOWN {unknown.get(prover,0):6}" \
-            f" | ERROR {error.get(prover,0):6}")
+        print(f"{prover:{12}}: sat {sat.get(prover,0):6}" \
+            f" | unsat {unsat.get(prover,0):6}" \
+            f" | solved {sat.get(prover,0)+unsat.get(prover,0):6}" \
+            f" | unknown {unknown.get(prover,0):6}" \
+            f" | error {error.get(prover,0):6}")
 
     for (prover,filename,time) in quick_errors:
         print(f"potential error: {prover} on `{filename}` after {time}")
