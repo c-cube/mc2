@@ -197,7 +197,7 @@ let rec chain_res (c:clause) (cl:sorted_atom_list) : clause list -> chain_res = 
         end
       | pivots ->
         Util.errorf
-          "(@[<hv>proof: resolution error (multiple pivots)@ :pivots (@[%a@])@ :c1 %a@ :c2 %a@])"
+          "(@[<hv>proof: resolution error (0 or multiple pivots)@ :pivots (@[%a@])@ :c1 %a@ :c2 %a@])"
           (Util.pp_list Atom.debug) pivots Clause.debug c Clause.debug d
     end
   | _ ->
@@ -331,17 +331,20 @@ let fold f acc p =
 
 let[@inline] iter f p = fold (fun () x -> f x) () p
 
-let c_to_set c = Sequence.of_list c |> Atom.Set.of_seq |> Atom.Set.to_list
+let c_to_set c = Sequence.of_list c |> Atom.Set.of_seq
 
 let check p =
   (* compare lists of atoms, ignoring order and duplicates *)
   let check_same_l ~ctx c d =
-    let l1 = c_to_set c in
-    let l2 = c_to_set d in
-    if not (CCList.equal Atom.equal l1 l2) then (
+    let s1 = c_to_set c in
+    let s2 = c_to_set d in
+    if not (Atom.Set.equal s1 s2) then (
       Util.errorf
-        "(@[proof.check.distinct_clauses@ :ctx %s@ :c1 %a@ :c2 %a@])"
+        "(@[<hv>proof.check.distinct_clauses@ :ctx %s@ \
+         :c1 %a@ :c2 %a@ :c1\\c2 %a@ :c2\\c1%a@])"
         ctx Clause.debug_atoms c Clause.debug_atoms d
+        Clause.debug_atoms (Atom.Set.diff s1 s2 |> Atom.Set.to_list)
+        Clause.debug_atoms (Atom.Set.diff s2 s1 |> Atom.Set.to_list)
     );
   in
   let check_same_c ~ctx c1 c2 =
@@ -359,7 +362,7 @@ let check p =
          | Assumption -> ()
          | Deduplicate (c, dups) ->
            let dups' = find_duplicates c in
-           if not (CCList.equal Atom.equal dups dups) then (
+           if not (Atom.Set.equal (Atom.Set.of_list dups) (Atom.Set.of_list dups')) then (
              Util.errorf
                "(@[<hv>proof.check.invalid_simplify_step@ :from %a@ :to %a@ :dups1 %a@ :dups2 %a@])"
                Clause.debug c Clause.debug concl Clause.debug_atoms dups
