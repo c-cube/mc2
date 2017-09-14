@@ -12,7 +12,7 @@ rule token = parse
   | [' ' '\t' '\r']         { token lexbuf }
   | 'p'                     { P }
   | "cnf"                   { CNF }
-  | '\n'                    { Lexing.new_line lexbuf; EOL }
+  | '\n'                    { Lexing.new_line lexbuf; token lexbuf }
   | '0'                     { ZERO }
   | '-'? number             { LIT (int_of_string (Lexing.lexeme lexbuf)) }
   | _                       { Util.errorf "dimacs.lexer: unexpected char `%s`" (Lexing.lexeme lexbuf) }

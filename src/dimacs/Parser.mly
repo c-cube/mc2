@@ -12,7 +12,7 @@
 
 %token <int> LIT
 %token ZERO
-%token P CNF EOL EOF
+%token P CNF EOF
 
 %start file
 %type <int list list> file
@@ -28,15 +28,16 @@ prelude:
       Util.errorf "expected prelude %a" pp_pos ($startpos,$endpos)
     }
 
-file:
-  | EOF                             { [] }
-  | prelude EOL* l=separated_list(EOL*, clause) EOF { l }
+clauses:
+  | l=clause* { l }
   | error
     {
-      Util.errorf "expected prelude then clause list %a"
+      Util.errorf "expected list of clauses %a"
         pp_pos ($startpos,$endpos)
     }
 
+file:
+  | prelude l=clauses EOF { l }
+
 clause:
-  | ZERO EOL        { [] }
-  | LIT clause      { $1 :: $2 }
+  | l=LIT+ ZERO { l }
