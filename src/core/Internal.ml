@@ -155,8 +155,10 @@ type t = {
   mutable propagations : int; (* number of propagations *)
   mutable conflicts : int; (* number of conflicts *)
   mutable n_learnt : int; (* total number of clauses learnt *)
-  mutable n_gc: int; (* number of rounds of GC *)
-  mutable n_deleted: int; (* number of deleted clauses *)
+  mutable n_gc_c: int; (* number of rounds of GC for clauses *)
+  mutable n_gc_t: int; (* number of rounds of GC for terms *)
+  mutable n_deleted_c: int; (* number of deleted clauses *)
+  mutable n_deleted_t: int; (* numbet of deleted terms *)
   mutable nb_init_clauses : int;
 }
 
@@ -360,8 +362,10 @@ let create_real (actions:actions lazy_t) : t = {
   propagations = 0;
   conflicts = 0;
   n_learnt=0;
-  n_gc=0;
-  n_deleted=0;
+  n_gc_c=0;
+  n_gc_t=0;
+  n_deleted_c=0;
+  n_deleted_t=0;
   nb_init_clauses = 0;
 }
 
@@ -1340,40 +1344,46 @@ let rec gc_mark_clause (c:clause) : unit =
   if not (Clause.gc_marked c) then (
     Log.debugf 15 (fun k->k "(@[gc_mark_clause@ %a@])" Clause.pp_name c);
     Clause.gc_mark c;
-    Array.iter (fun a -> gc_mark_term a.a_term) c.c_atoms
+    Array.iter (gc_mark_atom ~mark_clause:true) c.c_atoms
   )
 
 (* recursively mark [t] and its subterms *)
-and gc_mark_term (t:term) : unit =
+and gc_mark_term ~mark_clause (t:term) : unit =
   if not (Term.gc_marked t) then (
     Term.gc_mark t;
-    Term.iter_subterms t gc_mark_term;
-    begin match t.t_value with
-      | TA_assign {reason=Bcp c;_} -> gc_mark_clause c
+    Term.iter_subterms t (gc_mark_term ~mark_clause);
+    if mark_clause then begin match t.t_value with
+      | TA_assign {reason=Bcp c;_} ->
+        if Clause.attached c then (
+          gc_mark_clause c
+        )
       | TA_assign {reason=Bcp_lazy c;_} when Lazy.is_val c ->
         let lazy c = c in
         if Clause.attached c then (
           gc_mark_clause c
         );
       | _ -> ()
-    end
+    end;
   )
+
+and[@inline] gc_mark_atom ~mark_clause (a:atom) =
+  gc_mark_term ~mark_clause (Atom.term a)
 
 (* remove some learnt clauses, and the terms that are not reachable from
    any clause.
    The number of learnt clauses after reduction must be [downto] *)
-let reduce_db (env:t) ~down_to : unit =
-  Log.debugf 2 (fun k->k"@{<Yellow>## reduce_db@}");
+let gc_clauses (env:t) ~down_to : unit =
+  Log.debugf 2 (fun k->k"@{<Yellow>## gc_clauses@}");
   assert (Stack.is_empty env.clauses_to_add);
-  env.n_gc <- env.n_gc + 1;
+  env.n_gc_c <- env.n_gc_c + 1;
   (* remove some clauses *)
   let n_clauses = Vec.size env.clauses_learnt in
   assert (down_to <= n_clauses);
   Log.debugf 4
-    (fun k->k"(@[reduce_db.remove_learnt@ :n_total %d@ :downto %d@])" n_clauses down_to);
+    (fun k->k"(@[gc_clauses.remove_learnt@ :n_total %d@ :downto %d@])" n_clauses down_to);
   (* mark terms of the trail alive, as well as clauses that propagated them,
      and mark permanent clauses *)
-  Vec.iter gc_mark_term env.trail;
+  Vec.iter (gc_mark_term ~mark_clause:true) env.trail;
   Stack.iter gc_mark_clause env.clauses_root;
   Vec.iter gc_mark_clause env.clauses_hyps;
   Vec.iter gc_mark_clause env.clauses_temp;
@@ -1389,10 +1399,10 @@ let reduce_db (env:t) ~down_to : unit =
       Vec.push kept_clauses c; (* keep this one, it's alive *)
     ) else (
       (* remove the clause *)
-      Log.debugf 15 (fun k->k"(@[reduce_db.remove_clause@ %a@ :activity %f@])"
+      Log.debugf 15 (fun k->k"(@[gc_clauses.remove_clause@ %a@ :activity %f@])"
           Clause.debug c (Clause.activity c));
       Clause.set_deleted c;
-      env.n_deleted <- env.n_deleted + 1;
+      env.n_deleted_c <- env.n_deleted_c + 1;
     )
   done;
   Vec.append env.clauses_learnt kept_clauses;
@@ -1400,13 +1410,35 @@ let reduce_db (env:t) ~down_to : unit =
   Vec.iter gc_mark_clause env.clauses_learnt;
   (* collect dead terms *)
   CCVector.iter
-    (fun (module P : Plugin.S) -> P.gc_all ())
+    (fun (module P : Plugin.S) ->
+       let n = P.gc_all() in
+       env.n_deleted_t <- env.n_deleted_t + n)
     env.plugins;
   (* unmark clauses for next GC *)
   Stack.iter Clause.gc_unmark env.clauses_root;
   Vec.iter Clause.gc_unmark env.clauses_temp;
   Vec.iter Clause.gc_unmark env.clauses_hyps;
   Vec.iter Clause.gc_unmark env.clauses_learnt;
+  ()
+
+(* GC all terms that are neither in the trail nor in any active clause *)
+let gc_terms (env:t) : unit =
+  Log.debugf 2 (fun k->k"@{<Yellow>## gc_terms@}");
+  env.n_gc_t <- env.n_gc_t + 1;
+  assert (Stack.is_empty env.clauses_to_add);
+  (* marking *)
+  Vec.iter (gc_mark_term ~mark_clause:false) env.trail;
+  let f_clause c = Array.iter (gc_mark_atom ~mark_clause:false) c.c_atoms in
+  Stack.iter f_clause env.clauses_root;
+  Stack.iter f_clause env.clauses_to_add;
+  Vec.iter f_clause env.clauses_hyps;
+  Vec.iter f_clause env.clauses_temp;
+  (* collect dead terms *)
+  CCVector.iter
+    (fun (module P : Plugin.S) ->
+       let n = P.gc_all() in
+       env.n_deleted_t <- env.n_deleted_t + n)
+    env.plugins;
   ()
 
 (* check if time/memory limits are exceeded;
@@ -1422,13 +1454,14 @@ let check_limits ~time ~memory () =
   )
 
 let pp_progress (env:t) : unit =
-  Printf.printf "\r\027[K[%.2fs] [start %d|confl %d|decision %d|props %d|gc %d|del %d]%!"
+  Printf.printf "\r\027[K[%.2fs] [start %d|confl %d|decision %d|props %d|\
+                 gc_c %d|del_c %d|gc_t %d|del_t %d]%!"
     (Sys.time ()) env.starts env.conflicts env.decisions env.propagations
-    env.n_gc env.n_deleted
+    env.n_gc_c env.n_deleted_c env.n_gc_t env.n_deleted_t
 
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
-let search (env:t) ~time ~memory ~progress n_of_conflicts : unit =
+let search (env:t) ~gc ~time ~memory ~progress n_of_conflicts : unit =
   Log.debugf 5
     (fun k->k "(@[@{<yellow>solver.search@}@ :nconflicts %d@])" n_of_conflicts);
   let conflictC = ref 0 in
@@ -1455,10 +1488,15 @@ let search (env:t) ~time ~memory ~progress n_of_conflicts : unit =
         );
         (* if decision_level() = 0 then simplify (); *)
 
-        (* check time/memory limits every 2^11 rounds *)
+        (* check time/memory limits every 2^k rounds *)
         if env.conflicts = ((env.conflicts lsr 10) lsl 10) then (
           if progress then pp_progress env;
           check_limits ~time ~memory ();
+          
+          (* GC terms from time to time *)
+          if gc && env.conflicts = ((env.conflicts lsr 13) lsl 13) then (
+            gc_terms env;
+          )
         );
 
         (* next decision *)
@@ -1546,7 +1584,7 @@ let solve
   let rec loop () =
     begin match
         let nconf = if restarts then to_int !n_of_conflicts else max_int in
-        search env ~time ~memory ~progress nconf
+        search env ~gc ~time ~memory ~progress nconf
       with
         | () -> ()
         | exception Restart ->
@@ -1556,7 +1594,7 @@ let solve
              float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
           then (
             let n = (to_int !n_of_learnts) + 1 in
-            reduce_db env ~down_to:n
+            gc_clauses env ~down_to:n;
           );
 
           (* increment parameters to ensure termination *)
@@ -1705,10 +1743,12 @@ let trail env = env.trail
 
 let pp_stats out (s:t): unit =
   Fmt.fprintf out
-    "(@[stats@ :n_conflicts %d@ :n_learnt %d@ \
+    "(@[stats@ :n_conflicts %d@ \
      :n_decisions %d@ :n_propagations %d@ :n_restarts %d@ \
-     :n_initial %d@ :n_gc %d@ :n_deleted %d@])"
-    s.conflicts s.n_learnt s.decisions s.propagations s.starts
-    (Vec.size s.clauses_hyps) s.n_gc s.n_deleted
+     :n_learnt %d@ :n_initial %d@ \
+     @[:gc_c %d@ :deleted_c %d@]@ \
+     @[:gc_t %d :deleted_t %d@]@])"
+    s.conflicts s.decisions s.propagations s.starts s.n_learnt
+    (Vec.size s.clauses_hyps) s.n_gc_c s.n_deleted_c s.n_gc_t s.n_deleted_t
 
 let[@inline] clear_progress () = print_string "\r\027[K";

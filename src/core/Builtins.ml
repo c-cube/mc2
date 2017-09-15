@@ -47,7 +47,7 @@ let build p_id Plugin.S_nil : Plugin.t =
     let t_true : term = Term.Unsafe.make_term p_id True Type.bool tc
 
     let iter_terms yield = yield t_true
-    let gc_all () =()
+    let gc_all () = 0
     let check_if_sat _ = Sat
 
     let provided_services = [

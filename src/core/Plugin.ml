@@ -56,10 +56,9 @@ module type S = sig
       checking all variables to assign, and for
       garbage collection. *)
 
-  val gc_all : unit -> unit
+  val gc_all : unit -> int
   (** Garbage collect all unmarked terms
-      @param mark_dirty to mark a watch term as dirty. It will have
-      to rebuild its watches *)
+      @returns the number of collected (deleted) terms  *)
 end
 
 type t = (module S)

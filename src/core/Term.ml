@@ -379,7 +379,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
 
   let[@inline] iter_terms k = H.values tbl k
 
-  let gc_all () : unit =
+  let gc_all () : int =
     Log.debugf 5 (fun k->k "(@[term.alloc.gc_all@ :p_id %d@])" Ops.p_id);
     let to_gc = Vec.make_empty dummy_term in (* terms to be collected *)
     let n_alive = ref 0 in
@@ -398,4 +398,5 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     Log.debugf 15
       (fun k->k "(@[term.alloc.gc.stats@ :collected %d@ :alive %d@])"
           n_collected !n_alive);
+    n_collected
 end

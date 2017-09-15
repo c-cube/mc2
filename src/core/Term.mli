@@ -224,6 +224,6 @@ module Term_allocator(T : TERM_ALLOC_OPS) : sig
   val make : view -> Type.t -> tc_term -> t (** Make a term of the theory *)
   val delete : t -> unit (** Delete a term of the theory *)
   val iter_terms : term Sequence.t (** All terms *)
-  val gc_all : unit -> unit (** GC all unmarked tems; unmark alive terms *)
+  val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)
 end
 
