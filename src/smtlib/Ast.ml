@@ -44,32 +44,37 @@ end
 
 module Ty = struct
   type t =
-    | Prop
+    | Bool
+    | Rat
     | Atomic of ID.t * t list
     | Arrow of t * t
 
-  let prop = Prop
+  let bool = Bool
+  let rat = Rat
   let app id l = Atomic (id,l)
   let const id = app id []
   let arrow a b = Arrow (a,b)
   let arrow_l = List.fold_right arrow
 
   let to_int_ = function
-    | Prop -> 0
+    | Bool -> 0
     | Atomic _ -> 1
     | Arrow _ -> 2
+    | Rat -> 3
 
   let (<?>) = CCOrd.(<?>)
 
   let rec compare a b = match a, b with
-    | Prop, Prop -> 0
+    | Bool, Bool
+    | Rat, Rat -> 0
     | Atomic (f1,l1), Atomic (f2,l2) ->
       CCOrd.Infix.( ID.compare f1 f2 <?> (CCOrd.list compare, l1, l2))
     | Arrow (a1,a2), Arrow (b1,b2) ->
       compare a1 b1 <?> (compare, a2,b2)
-    | Prop, _
+    | Bool, _
     | Atomic _, _
     | Arrow _, _
+    | Rat, _
       -> CCInt.compare (to_int_ a) (to_int_ b)
 
   let equal a b = compare a b = 0
@@ -84,7 +89,8 @@ module Ty = struct
     aux [] ty
 
   let rec pp out t = match t with
-    | Prop -> Fmt.string out "Bool"
+    | Bool -> Fmt.string out "Bool"
+    | Rat -> Fmt.string out "Real"
     | Atomic (id,[]) -> ID.pp out id
     | Atomic (id,l) -> Fmt.fprintf out "(@[%a@ %a@])" ID.pp id (Util.pp_list pp) l
     | Arrow _ ->
@@ -119,6 +125,16 @@ type op =
   | Eq
   | Distinct
 
+type arith_op =
+  | Leq
+  | Lt
+  | Geq
+  | Gt
+  | Add
+  | Minus
+  | Mult
+  | Div
+
 type binder =
   | Fun
   | Forall
@@ -132,11 +148,13 @@ type term = {
 and term_cell =
   | Var of var
   | Const of ID.t
+  | Num of Z.t
   | App of term * term list
   | If of term * term * term
   | Select of select * term
   | Match of term * (var list * term) ID.Map.t
   | Bind of binder * var * term
+  | Arith of arith_op * term list
   | Let of var * term * term
   | Not of term
   | Op of op * term list
@@ -189,6 +207,16 @@ let pp_op out = function
   | Eq -> Fmt.string out "="
   | Distinct -> Fmt.string out "distinct"
 
+let pp_arith out = function
+  | Leq -> Fmt.string out "<="
+  | Lt -> Fmt.string out "<"
+  | Geq -> Fmt.string out ">="
+  | Gt -> Fmt.string out ">"
+  | Add -> Fmt.string out "+"
+  | Minus -> Fmt.string out "-"
+  | Mult -> Fmt.string out "*"
+  | Div -> Fmt.string out "/"
+
 let pp_term =
   let rec pp out t = match t.term with
     | Var v -> Var.pp out v
@@ -214,6 +242,9 @@ let pp_term =
         pp_binder b Var.pp v Ty.pp (Var.ty v) pp u
     | Let (v,t,u) ->
       Fmt.fprintf out "(@[<1>let ((@[%a@ %a@]))@ %a@])" Var.pp v pp t pp u
+    | Num z -> Z.pp_print out z
+    | Arith (op, l) ->
+      Fmt.fprintf out "(@[<hv>%a@ %a@])" pp_arith op (Util.pp_list pp) l
   in pp
 
 (* FIXME
@@ -245,14 +276,14 @@ let rec app_ty_ ty l : Ty.t = match ty, l with
       Ty.ill_typed "expected `@[%a@]`,@ got `@[%a : %a@]`"
         Ty.pp ty_a pp_term a Ty.pp a.ty
     )
-  | (Ty.Prop | Ty.Atomic _), a::_ ->
+  | (Ty.Bool | Ty.Rat | Ty.Atomic _), a::_ ->
     Ty.ill_typed "cannot apply ty `@[%a@]`@ to `@[%a@]`" Ty.pp ty pp_term a
 
 let[@inline] mk_ term ty = {term; ty}
 let[@inline] ty t = t.ty
 
-let true_ = mk_ (Bool true) Ty.prop
-let false_ = mk_ (Bool false) Ty.prop
+let true_ = mk_ (Bool true) Ty.bool
+let false_ = mk_ (Bool false) Ty.bool
 
 let var v = mk_ (Var v) (Var.ty v)
 
@@ -272,8 +303,8 @@ let app f l = match f.term, l with
 let app_a f a = app f (Array.to_list a)
 
 let if_ a b c =
-  if a.ty <> Ty.Prop
-  then Ty.ill_typed "if: test  must have type prop, not `@[%a@]`" Ty.pp a.ty;
+  if a.ty <> Ty.Bool
+  then Ty.ill_typed "if: test  must have type bool, not `@[%a@]`" Ty.pp a.ty;
   if not (Ty.equal b.ty c.ty)
   then Ty.ill_typed
       "if: both branches must have same type,@ not `@[%a@]` and `@[%a@]`"
@@ -304,17 +335,22 @@ let let_l l u =
 
 let bind ~ty b v t = mk_ (Bind(b,v,t)) ty
 
+let arith ty op l = mk_ (Arith (op,l)) ty
+
+let num ty z = mk_ (Num z) ty
+let num_str ty s = num ty (Z.of_string s)
+
 let fun_ v t =
   let ty = Ty.arrow (Var.ty v) t.ty in
   mk_ (Bind (Fun,v,t)) ty
 
 let quant_ q v t =
-  if not (Ty.equal t.ty Ty.prop) then (
+  if not (Ty.equal t.ty Ty.bool) then (
     Ty.ill_typed
-      "quantifier: bounded term : %a@ should have type prop"
+      "quantifier: bounded term : %a@ should have type bool"
       Ty.pp t.ty;
   );
-  let ty = Ty.prop in
+  let ty = Ty.bool in
   mk_ (q v t) ty
 
 let forall = quant_ (fun v t -> Bind (Forall,v,t))
@@ -341,32 +377,32 @@ let eq_neq_ op l = match l with
         Ty.ill_typed "%a: `@[%a@]` and `@[%a@]` do not have the same type"
           pp_op op pp_term a pp_term b;
       | None ->
-        mk_ (Op (op, l)) Ty.prop
+        mk_ (Op (op, l)) Ty.bool
     end
 
 let eq_l = eq_neq_ Eq
 let eq a b = eq_l [a;b]
 let distinct = eq_neq_ Distinct
 
-let check_prop_ t =
-  if not (Ty.equal t.ty Ty.prop)
-  then Ty.ill_typed "expected prop, got `@[%a : %a@]`" pp_term t Ty.pp t.ty
+let check_bool_ t =
+  if not (Ty.equal t.ty Ty.bool)
+  then Ty.ill_typed "expected bool, got `@[%a : %a@]`" pp_term t Ty.pp t.ty
 
-let mk_prop_op op l =
-  List.iter check_prop_ l;
-  mk_ (Op (op,l)) Ty.prop
+let mk_bool_op op l =
+  List.iter check_bool_ l;
+  mk_ (Op (op,l)) Ty.bool
 
-let and_l = mk_prop_op And
-let or_l = mk_prop_op Or
-let imply_l = mk_prop_op Imply
+let and_l = mk_bool_op And
+let or_l = mk_bool_op Or
+let imply_l = mk_bool_op Imply
 
 let and_ a b = and_l [a;b]
 let or_ a b = or_l [a;b]
 let imply a b = imply_l [a;b]
 
 let not_ t =
-  check_prop_ t;
-  mk_ (Not t) Ty.prop
+  check_bool_ t;
+  mk_ (Not t) Ty.bool
 
 (** {2 Printing} *)
 
@@ -411,7 +447,7 @@ module Ctx = struct
   and ty_kind =
     | K_uninterpreted (* uninterpreted type *)
     | K_other
-    | K_prop
+    | K_bool
       (* FIXME
     | K_data (* data type *)
          *)
@@ -503,7 +539,8 @@ let rec conv_ty ctx (t:A.ty) =
     Ty.ill_typed "at %a:@ %s" Locations.pp_opt (Ctx.loc ctx) msg
 
 and conv_ty_aux ctx t = match t with
-  | A.Ty_bool -> Ty.prop, Ctx.K_ty Ctx.K_prop
+  | A.Ty_bool -> Ty.bool, Ctx.K_ty Ctx.K_bool
+  | A.Ty_real -> Ty.rat, Ctx.K_ty Ctx.K_other
   | A.Ty_app (s,l) ->
     let id = find_id_ ctx s in
     let l = List.map (conv_ty_fst ctx) l in
@@ -685,6 +722,30 @@ and conv_term_aux ctx t : term = match t with
     let f = conv_term ctx f in
     let arg = conv_term ctx arg in
     app f [arg]
+  | A.Num s ->
+    begin match Z.of_string s with
+      | n -> num Ty.rat n
+      | exception _ -> errorf_ctx ctx "expected integer, got `%s`" s
+    end
+  | A.Arith (op, l) ->
+    let l = List.map (conv_term ctx) l in
+    List.iter
+      (fun t ->
+         if not (Ty.equal Ty.rat (ty t)) then (
+           errorf_ctx ctx "expected rational term,@ got `%a`" pp_term t
+         ))
+      l;
+    let ty, op = match op with
+      | A.Leq -> Ty.bool, Leq
+      | A.Lt -> Ty.bool, Lt
+      | A.Geq -> Ty.bool, Geq
+      | A.Gt -> Ty.bool, Gt
+      | A.Add -> Ty.rat, Add
+      | A.Minus -> Ty.rat, Minus
+      | A.Mult -> Ty.rat, Mult
+      | A.Div -> Ty.rat, Div
+    in
+    arith ty op l
   | A.Cast (t, ty_expect) ->
     let t = conv_term ctx t in
     let ty_expect = conv_ty_fst ctx ty_expect in
@@ -822,7 +883,7 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
   | A.Stmt_assert t ->
     let t = conv_term ctx t in
-    check_prop_ t;
+    check_bool_ t;
     [Assert t]
   | A.Stmt_assert_not ([], t) ->
     let vars, t = unfold_binder Forall (conv_term ctx t) in

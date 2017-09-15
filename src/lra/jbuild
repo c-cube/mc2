@@ -4,18 +4,11 @@
 
 ; main binary
 (library
-  ((name mc2_smtlib)
-   (public_name mc2.smtlib)
+  ((name mc2_lra)
+   (public_name mc2.lra)
    (optional) ; only if deps present
-   (libraries (containers mc2.core mc2.uf mc2.unin_sort
-               mc2.propositional mc2.backend mc2.lra))
+   (libraries (containers mc2.core zarith))
    (flags (:standard -w +a-4-42-44-48-50-58-32-60@8))
    (ocamlopt_flags (:standard -O3 -color always -bin-annot
                     -unbox-closures -unbox-closures-factor 20))
   ))
-
-(menhir
-  ((modules (Parser))))
-
-(ocamllex
-  (Lexer))

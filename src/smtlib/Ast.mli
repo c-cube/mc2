@@ -30,11 +30,13 @@ end
 
 module Ty : sig
   type t =
-    | Prop
+    | Bool
+    | Rat
     | Atomic of ID.t * t list
     | Arrow of t * t
 
-  val prop : t
+  val bool : t
+  val rat : t
   val const : ID.t -> t
   val arrow : t -> t -> t
   val arrow_l : t list -> t -> t
@@ -72,6 +74,16 @@ type op =
   | Eq
   | Distinct
 
+type arith_op =
+  | Leq
+  | Lt
+  | Geq
+  | Gt
+  | Add
+  | Minus
+  | Mult
+  | Div
+
 type binder =
   | Fun
   | Forall
@@ -85,11 +97,13 @@ type term = private {
 and term_cell =
   | Var of var
   | Const of ID.t
+  | Num of Z.t
   | App of term * term list
   | If of term * term * term
   | Select of select * term
   | Match of term * (var list * term) ID.Map.t
   | Bind of binder * var * term
+  | Arith of arith_op * term list
   | Let of var * term * term
   | Not of term
   | Op of op * term list
@@ -155,6 +169,9 @@ val imply : term -> term -> term
 val imply_l : term list -> term
 val true_ : term
 val false_ : term
+val num : Ty.t -> Z.t -> term
+val num_str : Ty.t -> string -> term (** parses int + {!num} *)
+val arith : Ty.t -> arith_op -> term list -> term
 
 val unfold_fun : term -> var list * term
 

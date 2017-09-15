@@ -6,6 +6,7 @@
 open Mc2_core
 
 module Loc = Locations
+module Fmt = CCFormat
 
 let pp_str = Format.pp_print_string
 
@@ -22,16 +23,29 @@ type ty_var = string
 (** Polymorphic types *)
 type ty =
   | Ty_bool
+  | Ty_real
   | Ty_app of ty_var * ty list
   | Ty_arrow of ty list * ty
 
 type typed_var = var * ty
+
+type arith_op =
+  | Leq
+  | Lt
+  | Geq
+  | Gt
+  | Add
+  | Minus
+  | Mult
+  | Div
 
 (** {2 AST: S-expressions with locations} *)
 type term =
   | True
   | False
   | Const of string
+  | Num of string
+  | Arith of arith_op * term list
   | App of string * term list
   | HO_app of term * term (* higher-order application *)
   | Match of term * match_branch list
@@ -96,6 +110,7 @@ and stmt =
   | Stmt_exit
 
 let ty_bool = Ty_bool
+let ty_real = Ty_real
 let ty_app s l = Ty_app (s,l)
 let ty_const s = ty_app s []
 let ty_arrow_l args ret = if args=[] then ret else Ty_arrow (args, ret)
@@ -124,6 +139,9 @@ let rec not_ t = match t with
   | Forall (vars,u) -> exists vars (not_ u)
   | Exists (vars,u) -> forall vars (not_ u)
   | _ -> Not t
+
+let arith op l = Arith (op,l)
+let num s = Num s
 
 let _mk ?loc stmt = { loc; stmt }
 
@@ -161,14 +179,28 @@ let pp_tyvar = pp_str
 
 let rec pp_ty out (ty:ty) = match ty with
   | Ty_bool -> pp_str out "Bool"
+  | Ty_real -> pp_str out "Real"
   | Ty_app (s,[]) -> pp_str out s
   | Ty_app (s,l) -> Format.fprintf out "(@[<hv1>%s@ %a@])" s (Util.pp_list pp_ty) l
   | Ty_arrow (args,ret) ->
     fpf out "(@[=>@ %a@ %a@])" (Util.pp_list pp_ty) args pp_ty ret
 
+let pp_arith out = function
+  | Leq -> Fmt.string out "<="
+  | Lt -> Fmt.string out "<"
+  | Geq -> Fmt.string out ">="
+  | Gt -> Fmt.string out ">"
+  | Add -> Fmt.string out "+"
+  | Minus -> Fmt.string out "-"
+  | Mult -> Fmt.string out "*"
+  | Div -> Fmt.string out "/"
+
 let rec pp_term out (t:term) = match t with
   | True -> pp_str out "true"
   | False -> pp_str out "false"
+  | Num s -> pp_str out s
+  | Arith (op,l) ->
+    Fmt.fprintf out "(@[<hv>%a@ %a@])" pp_arith op (Util.pp_list pp_term) l
   | Const s -> pp_str out s
   | App (f,l) -> fpf out "(@[<1>%s@ %a@])" f (Util.pp_list pp_term) l
   | HO_app (a,b) -> fpf out "(@[<1>@@@ %a@ %a@])" pp_term a pp_term b

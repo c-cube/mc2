@@ -68,3 +68,4 @@ val make_static : view -> tc -> t
 (** Static types, directly provided by plugins. This
     function is generative, i.e. it will yield a different type every
     time it is called. *)
+

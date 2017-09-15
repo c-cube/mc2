@@ -8,6 +8,12 @@
   module Loc = Locations
   open Parser (* for tokens *)
 
+  let is_num s =
+    let is_digit = function '0' .. '9' -> true | _ -> false in
+    if s.[0] = '-'
+    then CCString.for_all is_digit (String.sub s 1 (String.length s-1))
+    else CCString.for_all is_digit s
+
 }
 
 let printable_char = [^ '\n']
@@ -27,7 +33,6 @@ rule token = parse
   | comment_line { token lexbuf }
   | '(' { LEFT_PAREN }
   | ')' { RIGHT_PAREN }
-  | "Bool" { BOOL }
   | "true" { TRUE }
   | "false" { FALSE }
   | "or" { OR }
@@ -45,6 +50,14 @@ rule token = parse
   | "=>" { ARROW }
   | "=" { EQ }
   | "@" { AT }
+  | "+" { ADD }
+  | "-" { MINUS }
+  | "*" { PROD }
+  | "/" { DIV }
+  | "<=" { LEQ }
+  | "<" { LT }
+  | ">=" { GEQ }
+  | ">" { GT }
   | "declare-datatypes" { DATA }
   | "assert" { ASSERT }
   | "lemma" { LEMMA }
@@ -62,7 +75,10 @@ rule token = parse
   | "set-option" { SET_OPTION }
   | "set-info" { SET_INFO }
   | "exit" { EXIT }
-  | ident { IDENT(Lexing.lexeme lexbuf) }
+  | ident {
+    let s = Lexing.lexeme lexbuf in
+    if is_num s then NUM(s) else IDENT(s)
+  }
   | quoted {
       (* TODO: unescape *)
       let s = Lexing.lexeme lexbuf in

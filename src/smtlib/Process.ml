@@ -9,6 +9,7 @@ module A = Ast
 module E = CCResult
 module Reg = Service.Registry
 module F = Mc2_propositional.F
+module RLE = Mc2_lra.LE
 
 type 'a or_error = ('a, string) CCResult.t
 
@@ -39,16 +40,19 @@ let mk_sub_form =
 type term_or_form =
   | T of term
   | F of F.t
+  | Rat of RLE.t (* rational linear expression *)
 
 let[@inline] ret_t t = T t
 let[@inline] ret_f f = F f
+let[@inline] ret_rat t = Rat t
 let[@inline] ret_any t = if Term.is_bool t then F (F.atom (Term.Bool.pa t)) else T t
 
 let conv_ty (reg:Reg.t) (ty:A.Ty.t) : Type.t =
   let mk_ty = Reg.find_exn reg Mc2_unin_sort.k_make in
   (* convert a type *)
   let rec aux_ty (ty:A.Ty.t) : Type.t = match ty with
-    | A.Ty.Prop -> Type.bool
+    | A.Ty.Bool -> Type.bool
+    | A.Ty.Rat -> Reg.find_exn reg Mc2_lra.k_rat
     | A.Ty.Atomic (id, args) -> mk_ty id (List.map aux_ty args)
     | A.Ty.Arrow _ ->
       Util.errorf "cannot convert arrow type `%a`" A.Ty.pp ty
@@ -57,19 +61,27 @@ let conv_ty (reg:Reg.t) (ty:A.Ty.t) : Type.t =
 
 let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   let decl = Reg.find_exn reg Mc2_uf.k_decl in
-  let mk_eq_ = Reg.find_exn reg Mc2_unin_sort.k_eq in
+  (* polymorphic equality *)
+  let mk_eq_ t u =
+    assert (Type.equal (Term.ty t)(Term.ty u));
+    Type.mk_eq (Term.ty t) t u
+  in
   let mk_app = Reg.find_exn reg Mc2_uf.k_app in
   let mk_const = Reg.find_exn reg Mc2_uf.k_const in
   let fresh = Reg.find_exn reg Mc2_propositional.k_fresh in
   let mk_eq t u = Term.Bool.pa (mk_eq_ t u) in
   let mk_neq t u = Term.Bool.na (mk_eq_ t u) in
+  let t_of_ra t = Reg.find_exn reg Mc2_lra.k_make_expr t in
   let side_clauses : atom list list ref = ref [] in
   (* adaptative equality *)
   let mk_eq_t_tf (t:term) (u:term_or_form) : F.t = match u with
     | F u -> F.equiv (F.atom (Term.Bool.pa t)) u
     | T u -> mk_eq t u |> F.atom
+    | Rat u -> mk_eq t (t_of_ra u) |> F.atom
   and mk_eq_tf_tf (t:term_or_form) (u:term_or_form) = match t, u with
     | T t, T u -> mk_eq t u |> F.atom
+    | T t, Rat u | Rat u, T t -> mk_eq t (t_of_ra u) |> F.atom
+    | Rat t, Rat u -> mk_eq (t_of_ra t) (t_of_ra u) |> F.atom
     | F t, F u -> F.equiv t u
     | _ -> assert false
   in
@@ -95,6 +107,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         let ty_b = match b with
           | F _ -> Type.bool
           | T t -> Term.ty t
+          | Rat _ -> Reg.find_exn reg Mc2_lra.k_rat
         in
         let placeholder_id = mk_ite_id () in
         decl placeholder_id [] ty_b;
@@ -138,6 +151,67 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
       | A.Not f -> F.not_ (aux_form subst f) |> ret_f
       | A.Bool true -> ret_f F.true_
       | A.Bool false -> ret_f F.false_
+      | A.Num n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
+      | A.Arith (op, l) ->
+        let mk_pred = Reg.find_exn reg Mc2_lra.k_make_pred in
+        let mk_expr = Reg.find_exn reg Mc2_lra.k_make_expr in
+        let l = List.map (aux_rat subst) l in
+        begin match op, l with
+          | A.Minus, [a] -> RLE.neg a |> ret_rat
+          | _, [] | _, [_] ->
+            Util.errorf "ill-formed arith expr:@ %a@ (need ≥ 2 args)" A.pp_term t
+          | A.Leq, [a;b] ->
+            let e = RLE.diff a b in
+            mk_pred Mc2_lra.Leq0 e |> ret_any
+          | A.Geq, [a;b] ->
+            let e = RLE.diff b a in
+            mk_pred Mc2_lra.Leq0 e |> ret_any
+          | A.Lt, [a;b] ->
+            let e = RLE.diff a b in
+            mk_pred Mc2_lra.Lt0 e |> ret_any
+          | A.Gt, [a;b] ->
+            let e = RLE.diff b a in
+            mk_pred Mc2_lra.Lt0 e |> ret_any
+          | (A.Leq | A.Lt | A.Geq | A.Gt), _ ->
+            Util.errorf "ill-formed arith expr:@ %a@ (binary operator)" A.pp_term t
+          | A.Add, _ ->
+            let e = List.fold_left (fun n t -> RLE.add t n) RLE.empty l in
+            mk_expr e |> ret_t
+          | A.Minus, a::tail ->
+            let e =
+              List.fold_left
+                (fun n t -> RLE.diff n t)
+                a tail
+            in
+            mk_expr e |> ret_t
+          | A.Mult, _::_::_ ->
+            let coeffs, terms =
+                CCList.partition_map
+                  (fun t -> match RLE.as_const t with
+                     | None -> `Right t
+                     | Some c -> `Left c)
+                  l
+            in
+            begin match coeffs, terms with
+              | c::c_tail, [] ->
+                List.fold_right RLE.mult c_tail (RLE.const c) |> ret_rat
+              | _, [t] ->
+                List.fold_right RLE.mult coeffs t |> ret_rat
+              | _ ->
+                Util.errorf "non-linear expr:@ `%a`" A.pp_term t
+            end
+          | A.Div, (first::l) ->
+            (* support t/a/b/c where only [t] is a rational *)
+            let coeffs =
+              List.map
+                (fun c -> match RLE.as_const c with
+                   | None ->
+                     Util.errorf "non-linear expr:@ `%a`" A.pp_term t
+                   | Some c -> Q.inv c)
+                l
+            in
+            List.fold_right RLE.mult coeffs first |> ret_rat
+        end
       | A.Select _ -> assert false (* TODO *)
       | A.Match _ -> assert false (* TODO *)
       | A.Bind _ -> assert false (* TODO *)
@@ -146,6 +220,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   (* expect a term *)
   and aux_t subst (t:A.term) : term = match aux subst t with
     | T t -> t
+    | Rat e -> t_of_ra e
     | F (F.Lit a) when Atom.is_pos a -> a.a_term
     | F f ->
       (* name the sub-formula and add CNF *)
@@ -161,6 +236,13 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   and aux_form subst (t:A.term): F.t = match aux subst t with
     | T t -> F.atom (Term.Bool.pa t)
     | F f -> f
+    | Rat _ -> Util.errorf "expected proposition,@ got %a" A.pp_term t
+
+  (* expect a rational expr *)
+  and aux_rat subst (t:A.term) : RLE.t = match aux subst t with
+    | Rat e -> e
+    | T t -> RLE.singleton1 t
+    | F _ -> assert false
 
   and mk_cnf (f:F.t) : atom list list =
     F.cnf ~fresh f
@@ -260,7 +342,7 @@ let process_stmt
   let decl = Solver.get_service_exn solver Mc2_uf.k_decl in
   let conv_ty = conv_ty (Solver.services solver) in
   begin match stmt with
-    | A.SetLogic "QF_UF" -> E.return ()
+    | A.SetLogic ("QF_UF"|"QF_LRA"|"QF_UFLRA") -> E.return ()
     | A.SetLogic s ->
       Log.debugf 0 (fun k->k "warning: unknown logic `%s`" s);
       E.return ()

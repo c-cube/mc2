@@ -121,6 +121,7 @@ let main () =
         [ Mc2_propositional.plugin;
           Mc2_unin_sort.plugin;
           Mc2_uf.plugin;
+          Mc2_lra.plugin;
         ]
     in
     Solver.create ~plugins ()

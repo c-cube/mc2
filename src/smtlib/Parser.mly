@@ -18,7 +18,6 @@
 %token LEFT_PAREN
 %token RIGHT_PAREN
 
-%token BOOL
 %token PAR
 %token ARROW
 
@@ -37,6 +36,15 @@
 %token LET
 %token AS
 %token AT
+
+%token LEQ
+%token LT
+%token GEQ
+%token GT
+%token ADD
+%token MINUS
+%token PROD
+%token DIV
 
 %token SET_LOGIC
 %token SET_OPTION
@@ -59,6 +67,7 @@
 %token <string>IDENT
 %token <string>QUOTED
 %token <string>ESCAPED
+%token <string>NUM
 
 %start <Parse_ast.term> parse_term
 %start <Parse_ast.ty> parse_ty
@@ -256,8 +265,13 @@ tyvar:
   | s=IDENT { s }
 
 ty:
-  | BOOL { A.ty_bool }
-  | s=IDENT { A.ty_const s }
+  | s=IDENT {
+    begin match s with
+      | "Bool" -> A.ty_bool
+      | "Real" -> A.ty_real
+      | _ -> A.ty_const s
+    end
+    }
   | LEFT_PAREN s=IDENT args=ty+ RIGHT_PAREN
     { A.ty_app s args }
   | LEFT_PAREN ARROW tup=ty_arrow_args RIGHT_PAREN
@@ -298,12 +312,23 @@ term:
   | FALSE { A.false_ }
   | s=QUOTED { A.const s }
   | s=IDENT { A.const s }
+  | s=NUM { A.num s }
   | t=composite_term { t }
   | error
     {
       let loc = Loc.mk_pos $startpos $endpos in
       A.parse_errorf ~loc "expected term"
     }
+
+%inline arith_op:
+  | ADD { A.Add }
+  | MINUS { A.Minus }
+  | PROD { A.Mult }
+  | DIV { A.Div }
+  | LEQ { A.Leq }
+  | LT { A.Lt }
+  | GEQ { A.Geq }
+  | GT { A.Gt }
 
 composite_term:
   | LEFT_PAREN t=term RIGHT_PAREN { t }
@@ -315,6 +340,7 @@ composite_term:
   | LEFT_PAREN EQ a=term b=term RIGHT_PAREN { A.eq a b }
   | LEFT_PAREN ARROW a=term b=term RIGHT_PAREN { A.imply a b }
   | LEFT_PAREN f=IDENT args=term+ RIGHT_PAREN { A.app f args }
+  | LEFT_PAREN o=arith_op args=term+ RIGHT_PAREN { A.arith o args }
   | LEFT_PAREN f=composite_term args=term+ RIGHT_PAREN { A.ho_app_l f args }
   | LEFT_PAREN AT f=term arg=term RIGHT_PAREN { A.ho_app f arg }
   | LEFT_PAREN
