@@ -4,6 +4,7 @@
 .PHONY: clean build build-dev
 
 J?=3
+TIMEOUT?=30
 TARGETS=src/main.exe
 OPTS= -j $(J)
 
@@ -48,6 +49,7 @@ DATE=$(shell date +%FT%H:%M)
 logitest-quick:
 	@mkdir -p snapshots
 	$(TESTTOOL) run -c src/tests/conf.toml src/tests/ $(TESTOPTS) \
+	  --timeout $(TIMEOUT) \
 	  --meta `git rev-parse HEAD` --summary snapshots/quick-$(DATE).txt \
 	  --csv snapshots/quick-$(DATE).csv
 
@@ -55,6 +57,7 @@ logitest-full:
 	@mkdir -p snapshots
 	@DATE=`date +%F.%H:%M`
 	$(TESTTOOL) run -c src/tests/conf.toml QF_UF $(TESTOPTS) \
+	  --timeout $(TIMEOUT) \
 	  --meta `git rev-parse HEAD` --summary snapshots/full-$(DATE).txt \
 	  --csv snapshots/full-$(DATE).csv
 
