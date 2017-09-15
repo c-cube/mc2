@@ -583,7 +583,7 @@ let simpl_reason_level_0 : reason -> reason = function
              and set it as the cause for the propagation of [a], that way we can
              rebuild the whole resolution tree when we want to prove [a]. *)
           let c' =
-            Clause.make l (Premise.hyper_res (cl :: history))
+            Clause.make l (Premise.hres (cl :: history))
           in
           Log.debugf debug
             (fun k -> k "(@[simplified_reason@ :from %a@ :to %a@])"
@@ -778,7 +778,7 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
           (fun k->k "(@[analyze_conflict.resolving@ :clause %a@])" Clause.debug clause);
         (* increase activity since [c] participates in a conflict *)
         begin match clause.c_premise with
-          | Hyper_res _ | Resolve _ -> bump_clause_activity env clause
+          | P_hyper_res _ | P_steps _ -> bump_clause_activity env clause
           | Hyp | Local | Simplify _ | Lemma _ -> ()
         end;
         history := clause :: !history;
@@ -885,7 +885,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
         report_unsat env cr.cr_confl
       ) else (
         let uclause =
-          Clause.make_arr cr.cr_learnt (Premise.hyper_res cr.cr_history)
+          Clause.make_arr cr.cr_learnt (Premise.hres cr.cr_history)
         in
         Vec.push env.clauses_learnt uclause;
         Log.debugf debug (fun k->k "(@[learn_clause_0:@ %a@])" Clause.debug uclause);
@@ -895,7 +895,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       )
     | c_learnt ->
       let fuip = c_learnt.(0) in
-      let premise = Premise.hyper_res_or_simplify cr.cr_history in
+      let premise = Premise.hres_or_simplify cr.cr_history in
       let lclause = Clause.make_arr c_learnt premise in
       Vec.push env.clauses_learnt lclause;
       env.n_learnt <- env.n_learnt + 1;
@@ -939,7 +939,7 @@ let[@unrolled 1] rec vec_to_insert_clause_into env c = match c.c_premise with
   | Hyp -> env.clauses_hyps
   | Local -> env.clauses_temp
   | Simplify d -> vec_to_insert_clause_into env d
-  | Lemma _ | Hyper_res _ | Resolve _ -> env.clauses_learnt
+  | Lemma _ | P_hyper_res _ | P_steps _ -> env.clauses_learnt
 
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
@@ -959,7 +959,7 @@ let add_clause (env:t) (init:clause) : unit =
         List.iteri (fun i a -> c.c_atoms.(i) <- a) atoms;
         c
       ) else (
-        Clause.make atoms (Premise.hyper_res (c :: history))
+        Clause.make atoms (Premise.hres (c :: history))
       )
     in
     Log.debugf info (fun k->k "(@{<green>solver.new_clause@}@ %a@])" Clause.debug clause);

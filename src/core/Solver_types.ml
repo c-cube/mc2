@@ -232,14 +232,13 @@ and premise =
   (** The clause is a theory-provided tautology, with the given proof. *)
   | Simplify of clause
   (** Deduplication/sorting of atoms in the clause *)
-  | Resolve of {
-      c1: clause;
-      c2: clause;
-      pivot: term;
-    } (** Resolution step between two clauses *)
-  | Hyper_res of clause list
+  | P_hyper_res of {
+      init: clause;
+      steps: (term * clause) list; (* resolution steps *)
+    }
+  | P_steps of clause list
   (** The clause can be obtained by resolution of the clauses
-      in the list.
+      in the list, left-to-right.
       For a premise [History [a_1 :: ... :: a_n]] ([n >= 2]) the clause
       is obtained by performing resolution of [a_1] with [a_2], and then
       performing a resolution step between the result and [a_3], etc...  Of

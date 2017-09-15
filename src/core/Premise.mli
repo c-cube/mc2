@@ -7,13 +7,12 @@ val prefix : t -> string
 
 val pp : t CCFormat.printer
 
-val hyper_res : clause list -> t
-(** Hyper_res
+val hres : clause list -> t
+(** Hyper resolution, raw form
     precondition: list.length >= 2 *)
 
-val hyper_res_or_simplify : clause list -> t
+val hres_or_simplify : clause list -> t
 (** If singleton list, simplify; else Hyper_res
     precondition: list not empty *)
 
-val resolve : term -> clause -> clause -> t
-(** Simple resolution step *)
+val hyper_res : clause -> (term * clause) list -> t

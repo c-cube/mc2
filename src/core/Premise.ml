@@ -6,22 +6,24 @@ type t = premise
 let prefix p = match p with
   | Hyp -> "H"
   | Lemma _ -> "T"
-  | Simplify _ | Hyper_res _ | Resolve _ -> "L"
+  | Simplify _ | P_hyper_res _ | P_steps _ -> "L"
   | _ -> "C"
 
 let[@inline] pp_clause_name out { c_name=s; c_premise=p; _ } =
   Format.fprintf out "%s%d" (prefix p) s
 
-let[@inline] hyper_res l : t =
+let[@inline] hres l : t =
   assert (match l with []|[_] -> false | _ -> true);
-  Hyper_res l
+  P_steps l
 
-let[@inline] hyper_res_or_simplify = function
+let[@inline] hres_or_simplify = function
   | [] -> assert false
   | [c] -> Simplify c
-  | l -> Hyper_res l
+  | l -> P_steps l
 
-let[@inline] resolve pivot c1 c2 : t = Resolve{c1;c2;pivot}
+let[@inline] hyper_res init steps =
+  assert (steps<>[]);
+  P_hyper_res {init;steps}
 
 let pp out = function
   | Hyp -> Format.fprintf out "hyp"
@@ -29,7 +31,9 @@ let pp out = function
   | Lemma l ->
     Format.fprintf out "th_lemma@ %a" Lemma.pp l
   | Simplify c -> Format.fprintf out "simpl %a" pp_clause_name c
-  | Resolve{c1;c2;_} ->
-    Format.fprintf out "res{@[%a;@,%a@]}" pp_clause_name c1 pp_clause_name c2
-  | Hyper_res v ->
-    Fmt.fprintf out "hres{@[%a@]}" (Util.pp_list ~sep:"," pp_clause_name) v
+  | P_steps v ->
+    Fmt.fprintf out "steps{@[%a@]}" (Util.pp_list ~sep:"," pp_clause_name) v
+  | P_hyper_res {init;steps} ->
+    let pp_step out (_,c) = pp_clause_name out c in
+    Format.fprintf out "hyper_res{@[%a;@,%a@]}"
+      pp_clause_name init (Util.pp_list ~sep:";" pp_step) steps

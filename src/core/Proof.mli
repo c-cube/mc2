@@ -32,13 +32,13 @@ and step =
   | Deduplicate of t * atom list
   (** The conclusion is obtained by eliminating multiple occurrences of the atom in
       the conclusion of the provided proof. *)
-  | Resolution of {
-      premise1: t;
-      premise2: t;
-      pivot: term;
+  | Hyper_res of {
+      init: t;
+      steps: (term * t) list; (* list of pivot+clause *)
     }
-  (** The conclusion can be deduced by performing a resolution between the conclusions
-      of the two given proofs. The atom on which to perform the resolution is also given. *)
+  (** The conclusion can be deduced by performing a series of resolution steps
+      between [init] and, successively, each clause in the list on the
+      corresponding pivot atom. *)
 (** The type of reasoning steps allowed in a proof. *)
 
 val conclusion : node -> clause

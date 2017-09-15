@@ -13,48 +13,6 @@ let merge = List.merge Atom.compare
 let _c = ref 0
 let fresh_pcl_name () = incr _c; "R" ^ (string_of_int !_c)
 
-type sorted_atom_list = atom list
-
-type resolve_res = {
-  resolve_atoms: sorted_atom_list;
-  resolve_pivots: atom list; (* what were the pivot(s) atom(s) *)
-}
-
-(* Compute resolution of 2 clauses, which have been merged into a
-   sorted list. Since atoms have an ordering where [a] and [¬a] are
-   next to each other, it's easy to detect the presence of both in the merge.
-
-   precondition: l is sorted *)
-let resolve (l:sorted_atom_list) : resolve_res =
-  (* pivots: atoms on which resolution was done
-     concl: remaining atoms for the conclusion *)
-  let rec aux pivots concl = function
-    | [] -> pivots, concl
-    | [a] -> pivots, a :: concl
-    | a :: b :: r ->
-      if Atom.equal a b then (
-        aux pivots concl (b::r) (* remove dup *)
-      ) else if Atom.equal (Atom.neg a) b then (
-        let r = CCList.drop_while (Atom.equal b) r in (* remove dups of [b] *)
-        aux (Atom.abs a :: pivots) concl r (* resolve *)
-      ) else (
-        aux pivots (a :: concl) (b :: r) (* add to conclusion *)
-      )
-  in
-  let pivots, new_clause = aux [] [] l in
-  { resolve_pivots=pivots;
-    resolve_atoms=List.rev new_clause;
-  }
-
-(* turn a clause into a sorted list of atoms *)
-let clause_to_list (c:clause) : sorted_atom_list =
-  let cl = List.sort Atom.compare (Array.to_list c.c_atoms) in
-  cl
-
-let[@inline] merge_clauses
-      (l1:sorted_atom_list) (l2:sorted_atom_list): sorted_atom_list =
-  List.merge Atom.compare l1 l2
-
 (* find set of duplicates in [c] *)
 let find_duplicates (c:clause) : atom list =
   let r =
@@ -98,7 +56,7 @@ let rec recompute_update_proof_of_atom (a:atom) : clause =
             []
             c.c_atoms
         in
-        let premise = Premise.hyper_res (c :: premise) in
+        let premise = Premise.hres (c :: premise) in
         let c' = Clause.make [Atom.neg a] premise in
         (* update reason *)
         set_atom_reason a (Bcp c');
@@ -121,7 +79,7 @@ let prove_unsat (conflict:clause) : clause =
            recompute_update_proof_of_atom a :: acc)
         [] conflict.c_atoms
     in
-    let premise = Premise.hyper_res (conflict :: premise) in
+    let premise = Premise.hres (conflict :: premise) in
     let res = Clause.make [] premise in
     Log.debugf 2 (fun k -> k "(@[@{<Green>proof.proof_found@}@ %a@ :premise %a@])"
         Clause.debug res Premise.pp premise);
@@ -146,10 +104,9 @@ and step =
   | Assumption
   | Lemma of lemma
   | Deduplicate of t * atom list
-  | Resolution of {
-      premise1: t;
-      premise2: t;
-      pivot: term;
+  | Hyper_res of {
+      init: t;
+      steps: (term * t) list; (* list of pivot+clause *)
     }
 
 let[@inline] conclusion n = n.conclusion
@@ -162,48 +119,46 @@ let debug_step out (s:step) : unit = match s with
   | Deduplicate (c,l) ->
     Fmt.fprintf out "(@[<hv>dedup@ :from %a@ :on (@[%a@])@])" Clause.debug c
       Clause.debug_atoms l
-  | Resolution {premise1=p1; premise2=p2; pivot} ->
-    Fmt.fprintf out "(@[<hv>res@ :pivot %a@ :c1 %a@ :c2 %a@])"
-      Term.debug pivot Clause.debug p1 Clause.debug p2
-
-type chain_res = {
-  cr_pivot : term; (* pivot atom, on which resolution is done *)
-  cr_clause: atom list; (* clause obtained by res *)
-  cr_premise1 : clause;
-  cr_premise2 : clause;
-} (* result of {!chain_res}, which turns hyper-resolution into mere resolution *)
-
-(* perform resolution between [c] and the remaining list.
-   [cl] is the sorted list version of [c] *)
-let rec chain_res (c:clause) (cl:sorted_atom_list) : clause list -> chain_res = function
-  | d :: r ->
-    let dl = clause_to_list d in
-    let res = resolve (merge_clauses cl dl) in
-    Log.debugf 15 (fun k -> k "(@[<hv>proof.resolve@ :c1 %a@ :c2 %a@ :yield %a@ :pivots %a@])"
-        Clause.debug c Clause.debug d Clause.debug_atoms res.resolve_atoms
-        Clause.debug_atoms res.resolve_pivots);
-    begin match res.resolve_pivots with
-      | [a] ->
-        begin match r with
-          | [] ->
-            {cr_clause=res.resolve_atoms; cr_pivot=Atom.term a;
-             cr_premise1=c; cr_premise2=d}
-          | _ ->
-            let new_clause =
-              Clause.make res.resolve_atoms
-                (Premise.resolve (Atom.term a) c d)
-            in
-            chain_res new_clause res.resolve_atoms r
-        end
-      | pivots ->
-        Util.errorf
-          "(@[<hv>proof: resolution error (0 or multiple pivots)@ :pivots (@[%a@])@ :c1 %a@ :c2 %a@])"
-          (Util.pp_list Atom.debug) pivots Clause.debug c Clause.debug d
-    end
-  | _ ->
-    Util.errorf "proof: resolution error (bad history)@ %a" Clause.pp c
+  | Hyper_res {init;steps} ->
+    let pp_step out (a,c) =
+      Fmt.fprintf out "(@[res@ %a :on %a@])" Clause.debug c Term.debug a
+    in
+    Fmt.fprintf out "(@[<hv>hyper_res@ :init %a@ %a@])"
+      Clause.debug init (Util.pp_list pp_step) steps
 
 let[@inline] mk_node conclusion step = {conclusion; step}
+
+(* find pivots for resolving [l] with [init] *)
+let find_pivots (init:clause) (l:clause list) : (term * clause) list =
+  Array.iter Atom.mark init.c_atoms;
+  let steps =
+    List.map
+      (fun c ->
+         let pivot =
+           match
+             Sequence.of_array c.c_atoms
+             |> Sequence.filter
+               (fun a -> Atom.marked (Atom.neg a))
+             |> Sequence.to_list
+           with
+             | [a] -> a
+             | [] ->
+               Util.errorf "(@[proof.expand.pivot_missing@ %a@])"
+                 Clause.debug c
+             | pivots ->
+               Util.errorf "(@[proof.expand.multiple_pivots@ %a@ :pivots %a@])"
+                 Clause.debug c Clause.debug_atoms pivots
+         in
+         Array.iter Atom.mark c.c_atoms; (* add atoms to result *)
+         Atom.unmark pivot;
+         Atom.unmark (Atom.neg pivot);
+         Atom.term pivot, c)
+      l
+  in
+  (* cleanup *)
+  Array.iter Atom.unmark init.c_atoms;
+  List.iter (fun c -> Array.iter Atom.unmark c.c_atoms) l;
+  steps
 
 let expand (conclusion:clause) : node =
   Log.debugf 15 (fun k -> k "(@[proof.expanding@ %a@])" Clause.debug conclusion);
@@ -211,31 +166,21 @@ let expand (conclusion:clause) : node =
     | Lemma l -> mk_node conclusion (Lemma l)
     | Hyp -> mk_node conclusion Hypothesis
     | Local -> mk_node conclusion Assumption
-    | Resolve {c1;c2;pivot} ->
-      let step = Resolution {
-          premise1=c1;
-          premise2=c2;
-          pivot;
-        }
-      in
+    | P_hyper_res {init;steps} ->
+      let step = Hyper_res {init;steps} in
       mk_node conclusion step
     | Simplify c ->
       let duplicates = find_duplicates c in
       mk_node conclusion (Deduplicate (c, duplicates))
-    | Hyper_res ([] | [_]) ->
+    | P_steps ([] | [_]) ->
       Util.errorf "proof: resolution error (wrong hyperres)@ %a@ :premise %a"
         Clause.debug conclusion Premise.pp conclusion.c_premise
-    | Hyper_res (c::r) ->
-      (* do the hyper-resolution *)
-      let res = chain_res c (clause_to_list c) r in
+    | P_steps (c::r) ->
+      (* find pivots for hyper-resolution *)
+      let steps = find_pivots c r in
       (* update premise to memoize proof *)
-      conclusion.c_premise <-
-        Premise.resolve res.cr_pivot res.cr_premise1 res.cr_premise2;
-      let step = Resolution {
-          premise1=res.cr_premise1;
-          premise2=res.cr_premise2;
-          pivot=res.cr_pivot;
-        } in
+      conclusion.c_premise <- Premise.hyper_res c steps;
+      let step = Hyper_res {init=c; steps} in
       mk_node conclusion step
   end
 
@@ -245,21 +190,21 @@ let is_leaf = function
   | Assumption
   | Lemma _ -> true
   | Deduplicate _
-  | Resolution _ -> false
+  | Hyper_res _ -> false
 
 let parents = function
   | Hypothesis
   | Assumption
   | Lemma _ -> []
   | Deduplicate (p, _) -> [p]
-  | Resolution {premise1=p1; premise2=p2; _} -> [p1;p2]
+  | Hyper_res {init;steps} -> init :: List.map snd steps
 
 let expl = function
   | Hypothesis -> "hypothesis"
   | Assumption -> "assumption"
   | Lemma _ -> "lemma"
   | Deduplicate  _ -> "deduplicate"
-  | Resolution _ -> "resolution"
+  | Hyper_res _ -> "hyper_res"
 
 (* Compute unsat-core *)
 let unsat_core proof =
@@ -276,8 +221,9 @@ let unsat_core proof =
         | Hyp | Local -> k (c :: res) visited
         | Lemma _ -> k res visited (* ignore lemmas *)
         | Simplify d -> aux res (c :: visited) d k
-        | Resolve {c1;c2;_} -> aux_l res (c::visited) [c1;c2] k
-        | Hyper_res h -> aux_l res (c::visited) h k
+        | P_hyper_res {init;steps} ->
+          aux_l res (init::visited) (List.map snd steps) k
+        | P_steps h -> aux_l res (c::visited) h k
       end
     )
   and aux_l res visited l k = match l with
@@ -314,9 +260,9 @@ let rec fold_aux s h f acc =
         begin match node.step with
           | Deduplicate (p1, _) ->
             Stack.push (Enter p1) s
-          | Resolution {premise1=p1; premise2=p2;_} ->
-            Stack.push (Enter p2) s;
-            Stack.push (Enter p1) s
+          | Hyper_res {init;steps} ->
+            Stack.push (Enter init) s;
+            List.iter (fun (_,c) -> Stack.push (Enter c) s) steps;
           | Hypothesis | Assumption | Lemma _ -> ()
         end
       );
@@ -331,24 +277,51 @@ let fold f acc p =
 
 let[@inline] iter f p = fold (fun () x -> f x) () p
 
-let c_to_set c = Sequence.of_list c |> Atom.Set.of_seq
+let[@inline] set_of_c (c:clause): Atom.Set.t =
+  Sequence.of_array c.c_atoms |> Atom.Set.of_seq
 
-let check p =
+let pp_a_set out (a:Atom.Set.t) : unit =
+  Fmt.fprintf out "(@[<hv>%a@])"
+    (Util.pp_seq ~sep:" ∨ " Atom.debug) (Atom.Set.to_seq a)
+
+(* rebuild explicitely clauses by hyper-res;
+   check they are not tautologies;
+   return conclusion *)
+let perform_hyper_res (init:t) (steps:(term * t) list) : Atom.Set.t =
+  let atoms = set_of_c init in
+  List.fold_left
+    (fun atoms (pivot,c) ->
+       (* perform resolution with [c] over [pivot] *)
+       Array.fold_left
+         (fun new_atoms a ->
+            if Term.equal pivot (Atom.term a) then (
+              if not (Atom.Set.mem (Atom.neg a) atoms) then (
+                Util.errorf
+                  "(@[<hv>proof.check_hyper_res.pivot_not_found@ \
+                   :pivot %a@ :c1 %a@ :c2 %a@])"
+                  Term.debug pivot pp_a_set atoms Clause.debug c
+              );
+              Atom.Set.remove (Atom.neg a) new_atoms
+            ) else (
+              Atom.Set.add a new_atoms
+            ))
+         atoms c.c_atoms)
+    atoms steps
+
+let check (p:t) : unit =
   (* compare lists of atoms, ignoring order and duplicates *)
-  let check_same_l ~ctx c d =
-    let s1 = c_to_set c in
-    let s2 = c_to_set d in
-    if not (Atom.Set.equal s1 s2) then (
+  let check_same_set ~ctx c d =
+    if not (Atom.Set.equal c d) then (
       Util.errorf
         "(@[<hv>proof.check.distinct_clauses@ :ctx %s@ \
          :c1 %a@ :c2 %a@ :c1\\c2 %a@ :c2\\c1%a@])"
-        ctx Clause.debug_atoms c Clause.debug_atoms d
-        Clause.debug_atoms (Atom.Set.diff s1 s2 |> Atom.Set.to_list)
-        Clause.debug_atoms (Atom.Set.diff s2 s1 |> Atom.Set.to_list)
+        ctx pp_a_set c pp_a_set d
+        pp_a_set (Atom.Set.diff c d)
+        pp_a_set (Atom.Set.diff d c)
     );
   in
   let check_same_c ~ctx c1 c2 =
-    check_same_l ~ctx (Array.to_list c1.c_atoms) (Array.to_list c2.c_atoms)
+    check_same_set ~ctx (set_of_c c1) (set_of_c c2)
   in
   iter
     (fun n ->
@@ -369,12 +342,21 @@ let check p =
                Clause.debug_atoms dups'
            );
            check_same_c ~ctx:"in-dedup" c concl
-         | Resolution {premise1=p1; premise2=p2; pivot} ->
-           let l =
-             merge_clauses (clause_to_list p1) (clause_to_list p2)
-             |> List.filter (fun a -> not (Atom.term a |> Term.equal pivot))
-           in
-           check_same_l ~ctx:"in-res" l (clause_to_list concl)
+         | Hyper_res {init;steps} ->
+           let atoms = perform_hyper_res init steps in
+           check_same_set ~ctx:"in-res" atoms (set_of_c concl);
+           (* check it's not a tautology *)
+           Atom.Set.iter
+             (fun a ->
+                if Atom.Set.mem (Atom.neg a) atoms then (
+                  Util.errorf
+                    "(@[<hv>proof.check_hyper_res.clause_is_tautology@ \
+                     :clause %a@])"
+                    pp_a_set atoms
+
+                ))
+             atoms;
+           ()
        end)
     p
 

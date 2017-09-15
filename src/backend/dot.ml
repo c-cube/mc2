@@ -63,24 +63,26 @@ module Make(A : Arg with type atom := atom
 
   let print_clause fmt c =
     let v = c.c_atoms in
-    if Array.length v = 0 then
+    if Array.length v = 0 then (
       Format.fprintf fmt "⊥"
-    else
+    ) else (
       let n = Array.length v in
       for i = 0 to n - 1 do
         Format.fprintf fmt "%a" A.print_atom v.(i);
         if i < n - 1 then
           Format.fprintf fmt ", "
       done
+    )
 
   let print_edge fmt i j = Format.fprintf fmt "%s -> %s;@\n" j i
 
   let print_edges fmt n =
-    match n.Proof.step with
-      | Proof.Resolution {premise1=p1; premise2=p2; _} ->
-        print_edge fmt (res_node_id n) (proof_id p1);
-        print_edge fmt (res_node_id n) (proof_id p2)
+    begin match n.Proof.step with
+      | Proof.Hyper_res {init; steps} ->
+        print_edge fmt (res_node_id n) (proof_id init);
+        List.iter (fun (_,p) -> print_edge fmt (res_node_id n) (proof_id p)) steps
       | _ -> ()
+    end
 
   let table_options fmt color =
     Format.fprintf fmt "BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" BGCOLOR=\"%s\"" color
@@ -99,13 +101,14 @@ module Make(A : Arg with type atom := atom
     Format.fprintf fmt "%s [shape=plaintext, label=<<TABLE %a>%a</TABLE>>];@\n"
       id table_options color table (c, rule, rule_color, l)
 
-  let print_dot_res_node fmt id a =
-    Format.fprintf fmt "%s [label=<%a>];@\n" id A.print_atom a
+  let print_dot_res_node fmt id pivots =
+    Format.fprintf fmt "%s [label=<%a>];@\n"
+      id (Util.pp_list ~sep:";" A.print_atom) pivots
 
   let ttify f c = fun fmt () -> f fmt c
 
   let print_contents fmt n =
-    match n.Proof.step with
+    begin match n.Proof.step with
       (* Leafs of the proof tree *)
       | Proof.Hypothesis ->
         let rule, color, l = A.hyp_info Proof.(n.conclusion) in
@@ -126,11 +129,13 @@ module Make(A : Arg with type atom := atom
           ((fun fmt () -> (Format.fprintf fmt "%s" (node_id n))) ::
              List.map (ttify A.print_atom) l);
         print_edge fmt (node_id n) (node_id (Proof.expand p))
-      | Proof.Resolution {pivot=a; _} ->
-        print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Resolution" "GREY"
-          [(fun fmt () -> (Format.fprintf fmt "%s" (node_id n)))];
-        print_dot_res_node fmt (res_node_id n) (Term.Bool.pa a);
-        print_edge fmt (node_id n) (res_node_id n)
+      | Proof.Hyper_res {steps;_} ->
+        print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Hyper_res" "GREY"
+          [(fun fmt () -> Format.fprintf fmt "%s" (node_id n))];
+        let pivots = List.map (fun (t,_) -> Term.Bool.pa t) steps in
+        print_dot_res_node fmt (res_node_id n) pivots;
+        print_edge fmt (node_id n) (res_node_id n);
+    end
 
   let print_node fmt n =
     print_contents fmt n;
