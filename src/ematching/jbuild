@@ -1,0 +1,15 @@
+; vim:ft=lisp:
+
+(jbuild_version 1)
+
+; main binary
+(library
+  ((name mc2_ematching)
+   (public_name mc2.ematching)
+   (synopsis "E-matching module for MC2")
+   (libraries (mc2.core))
+   (flags (:standard -w +a-4-42-44-48-50-58-32-60@8 -color always))
+   (ocamlopt_flags (:standard -O3 -bin-annot
+                    -unbox-closures -unbox-closures-factor 20))
+  ))
+
