@@ -14,6 +14,7 @@ module Key : sig
   type 'a t (** Key for values of type ['a lazy_t] *)
 
   val make : string -> 'a t (** Make a key with given name *)
+  val makef : ('a, Format.formatter, unit, 'b t) format4 -> 'a (** Fmt version of {!make} *)
   val name : _ t -> string (** Name of the key *)
 end
 

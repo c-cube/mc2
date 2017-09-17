@@ -316,5 +316,5 @@ let build p_id Plugin.S_nil : Plugin.t =
   in
   (module P : Plugin.S)
 
-let plugin = Plugin.Factory.make ~priority:10 ~name ~requires:Plugin.K_nil ~build ()
+let plugin = Plugin.Factory.make ~priority:30 ~name ~requires:Plugin.K_nil ~build ()
 

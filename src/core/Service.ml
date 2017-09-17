@@ -22,6 +22,7 @@ module Key = struct
 
   let[@inline] make key_name = {key_name; key=M.Key.create()}
   let[@inline] name k = k.key_name
+  let[@inline] makef fmt = CCFormat.ksprintf ~f:make fmt
 end
 
 type any = Any : 'a Key.t * 'a -> any

@@ -36,5 +36,8 @@ let[@inline] pp out v = match v with
   | V_value {view;tc} -> tc.tcv_pp out view
 let true_ = V_true
 let false_ = V_false
+let[@inline] ty v = match v with
+  | V_true | V_false -> Bool
+  | V_value {view;tc} -> tc.tcv_ty view
 let[@inline] of_bool b = if b then true_ else false_
 let[@inline] make tc view : t = V_value { tc; view }

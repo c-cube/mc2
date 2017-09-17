@@ -52,7 +52,7 @@ type term_view +=
 
 (* extend values with unintepreted sorts *)
 type value_view +=
-  | V_unin of int
+  | V_unin of int * ty
 
 type lemma_view += Transitivity
 
@@ -80,17 +80,20 @@ let pp_c_list out =
 
 (* values for uninterpreted sorts *)
 module V = struct
-  let[@inline] get_v = function V_unin i -> i | _ -> assert false
+  let[@inline] get_v = function V_unin (i,_) -> i | _ -> assert false
   let[@inline] get (v:value): int = get_v (Value.view v)
   let[@inline] tcv_pp out v = Fmt.fprintf out "$v_%d" (get_v v)
   let[@inline] tcv_hash v = CCHash.int (get_v v)
   let[@inline] tcv_equal v1 v2 = match v1, v2 with
-    | V_unin i, V_unin j -> i=j
+    | V_unin (i,ty1), V_unin (j,ty2) -> i=j && Type.equal ty1 ty2
     | _ -> false
+  let[@inline] tcv_ty = function
+    | V_unin (_,ty) -> ty
+    | _ -> assert false
 
-  let tc_value = { tcv_pp; tcv_equal; tcv_hash; }
+  let tc_value = { tcv_pp; tcv_equal; tcv_hash; tcv_ty; }
 
-  let[@inline] mk (i:int) : value = Value.make tc_value (V_unin i)
+  let[@inline] mk (i:int) ty : value = Value.make tc_value (V_unin (i,ty))
 end
 
 let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
@@ -324,9 +327,9 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       )
 
     (* find a value that is authorized by the list of constraints *)
-    let[@inline] find_value (l:constraint_list): value = match l with
+    let[@inline] find_value (ty:ty) (l:constraint_list): value = match l with
       | C_singleton {v;_} -> v
-      | C_nil -> V.mk 0
+      | C_nil -> V.mk 0 ty
       | _ ->
         (* is [i] forbidden by [l]? *)
         let rec forbidden i l = match l with
@@ -339,13 +342,13 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
           |> Sequence.filter (fun i -> not (forbidden i l))
           |> Sequence.head_exn
         in
-        V.mk i
+        V.mk i ty
 
     (* how to make a decision for terms of uninterpreted type *)
     let decide (acts:actions) (t:term) : value =
       begin match Term.var t with
         | Var_semantic {v_decide_state=DS{c_list}; _} ->
-          let v = find_value c_list in
+          let v = find_value (Term.ty t) c_list in
           Log.debugf 5
             (fun k->k "(@[<hv>%s.decide@ :term %a@ :val %a@ :lvl %d@ :c_list %a@])"
                 name Term.debug t Value.pp v (Actions.level acts) pp_c_list c_list);
