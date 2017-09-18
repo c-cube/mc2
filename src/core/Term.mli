@@ -227,3 +227,7 @@ module Term_allocator(T : TERM_ALLOC_OPS) : sig
   val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)
 end
 
+(** {2 Containers} *)
+
+module Map : CCMap.S with type key = term
+

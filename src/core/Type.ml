@@ -102,3 +102,8 @@ module Alloc(Arg : TY_ALLOC_OPS) = struct
     end;
     u
 end
+
+let make_static =
+  let n = ref 0 in
+  fun view tc ->
+    Ty {id=CCRef.incr_then_get n; view; tc}

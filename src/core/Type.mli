@@ -43,3 +43,7 @@ module Alloc(T : TY_ALLOC_OPS) : sig
   val make : view -> tc -> t (** Main constructor *)
 end
 
+val make_static : view -> tc -> t
+(** Static types, directly provided by plugins. This
+    function is generative, i.e. it will yield a different type every
+    time it is called. *)

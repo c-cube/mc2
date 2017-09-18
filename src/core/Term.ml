@@ -400,3 +400,9 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
           n_collected !n_alive);
     n_collected
 end
+
+(** {2 Containers} *)
+
+module As_key = struct type t = term let compare = compare end
+module Map = CCMap.Make(As_key)
+

@@ -107,7 +107,6 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       let hash = function
         | Eq (a,b) -> CCHash.combine3 10 (Term.hash a) (Term.hash b)
         | _ -> assert false
-
     end)
   in
   (* uninterpreted types *)
