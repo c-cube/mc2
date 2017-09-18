@@ -7,9 +7,9 @@ open Solver_types
 module Fmt = CCFormat
 
 let name = "uf"
-let k_const = Service.Key.make "uf.const"
-let k_app = Service.Key.make "uf.app"
-let k_decl = Service.Key.make "uf.decl"
+let k_const = Service_base.k_uf_const
+let k_app = Service_base.k_uf_app
+let k_decl = Service_base.k_uf_decl
 
 type term_view +=
   | Const of {
