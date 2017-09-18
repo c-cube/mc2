@@ -351,6 +351,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
     Log.debugf 5 (fun k->k "(@[<1>term.alloc.delete@ %a@])" debug t);
     t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
     t.t_tc.tct_delete t;
+    t.t_value <- TA_none; (* unassign *)
     assert (plugin_id t = Ops.p_id);
     H.remove tbl (view t);
     ()

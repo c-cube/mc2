@@ -1433,6 +1433,7 @@ let gc_terms (env:t) : unit =
   Stack.iter f_clause env.clauses_to_add;
   Vec.iter f_clause env.clauses_hyps;
   Vec.iter f_clause env.clauses_temp;
+  Vec.iter f_clause env.clauses_learnt;
   (* collect dead terms *)
   CCVector.iter
     (fun (module P : Plugin.S) ->
