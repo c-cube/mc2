@@ -44,26 +44,38 @@ end
 
 type t = (module S)
 
-let[@inline] owns_term (module P : S) (t:term) : bool = Term.plugin_id t = P.id
-let[@inline] name (module P : S) = P.name
+val owns_term : t -> term -> bool
+val name : t -> string
 
 (** {2 Factory} *)
 
-module Factory = struct
+module Factory : sig
   type plugin = t
 
   type t = Factory : {
       name: string;
       priority: int;
+      (** how prioritary this plugin is. The lower, the earlier this plugin
+          is loaded.
+          {b NOTE}: if plugin [b] requires services provided by plugin [a],
+            then we need to ensure [a.priority < b.priority] *)
       requires: 'a service_key_list;
+      (** list of required services *)
       build: plugin_id -> 'a service_list -> plugin
+      (** builder, taking:
+          - the unique ID of the plugin
+          - the list of services required by [requires]
+      *)
     } -> t
+  (** A plugin factory, i.e. the method to build a plugin with a given ID. *)
 
-  let compare (a:t)(b:t) =
-    let Factory {priority=p_a; _} = a in
-    let Factory {priority=p_b; _} = b in
-    CCInt.compare p_a p_b
+  val compare : t -> t -> int
 
-  let make ?(priority=50) ~name ~requires ~build () =
-    Factory { priority; name; requires; build; }
+  val make :
+    ?priority:int ->
+    name:string ->
+    requires:'a service_key_list ->
+    build:(plugin_id -> 'a service_list -> plugin) ->
+    unit ->
+    t
 end

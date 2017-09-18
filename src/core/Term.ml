@@ -334,7 +334,15 @@ module type TERM_ALLOC_OPS = sig
   val hash : view -> int (** Shallow hash of a view of the plugin *)
 end
 
-module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) = struct
+module type TERM_ALLOC = sig
+  val make : view -> Type.t -> tc_term -> t (** Make a term of the theory *)
+  val delete : t -> unit (** Delete a term of the theory *)
+  val iter_terms : term Sequence.t (** All terms *)
+  val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)
+end
+
+
+module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) : TERM_ALLOC = struct
   module H = CCHashtbl.Make(struct
       type t = view
       include Ops

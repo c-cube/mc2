@@ -220,12 +220,14 @@ module type TERM_ALLOC_OPS = sig
   val hash : view -> int (** Shallow hash of a view of the plugin *)
 end
 
-module Term_allocator(T : TERM_ALLOC_OPS) : sig
+module type TERM_ALLOC = sig
   val make : view -> Type.t -> tc_term -> t (** Make a term of the theory *)
   val delete : t -> unit (** Delete a term of the theory *)
   val iter_terms : term Sequence.t (** All terms *)
   val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)
 end
+
+module Term_allocator(T : TERM_ALLOC_OPS) : TERM_ALLOC
 
 (** {2 Containers} *)
 
