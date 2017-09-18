@@ -59,13 +59,16 @@ let[@inline] max_level l1 l2 =
   else max l1 l2
 
 (* max level of arguments *)
-let level_semantic (t:t) : level =
+let[@inline] level_sub_aux ~f (t:t) : level =
   let res = ref 0 in
   iter_subterms t
     (fun u ->
        let lev = level u in
-       res := max_level !res lev);
+       res := f !res lev);
   !res
+
+let[@inline] level_semantic (t:t) : level = level_sub_aux ~f:max_level t
+let[@inline] level_sub (t:t) : level = level_sub_aux ~f:max t
 
 let[@inline] mk_eq (t:t) (u:t) : t = Type.mk_eq (ty t) t u
 

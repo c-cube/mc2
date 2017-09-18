@@ -44,8 +44,11 @@ val is_bool : t -> bool
 val level_semantic : t -> level
 (** maximum level of subterms, or -1 if some subterm is not assigned *)
 
+val level_sub : t -> level
+(** maximum level of subterms, ignoring unassigned subterms *)
+
 val max_level : level -> level -> level
-(** maximum of the levels, or -1 if either is -1 *)
+(** maximum of the levels, or [-1] if either is [-1] *)
 
 val iter_subterms : t -> t Sequence.t
 (** Iteration over subterms.
