@@ -10,4 +10,4 @@ src/util/log.ml
 doc/index.html
 .merlin
 
-msat
+snapshots
