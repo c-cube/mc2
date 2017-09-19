@@ -1044,25 +1044,26 @@ let flush_clauses (env:t) =
 *)
 let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
   let atoms = c.c_atoms in
-  let first = atoms.(0) in
+  assert (Array.length c.c_atoms >= 2);
+  let first = Array.unsafe_get atoms 0 in
   if first == Atom.neg a then (
     (* false lit must be at index 1 *)
-    atoms.(0) <- atoms.(1);
-    atoms.(1) <- first
+    Array.unsafe_set atoms 0 (Array.unsafe_get atoms 1);
+    Array.unsafe_set atoms 1 first;
   ) else (
     assert (Atom.neg a == atoms.(1));
   );
-  let first = atoms.(0) in
+  let first = Array.unsafe_get atoms 0 in
   if Atom.is_true first
   then Watch_keep (* true clause, keep it in watched *)
   else (
     try (* look for another watch lit *)
       for k = 2 to Array.length atoms - 1 do
-        let ak = atoms.(k) in
+        let ak = Array.unsafe_get atoms k in
         if not (Atom.is_false ak) then (
           (* watch lit found: update and exit *)
-          atoms.(1) <- ak;
-          atoms.(k) <- Atom.neg a;
+          Array.unsafe_set atoms 1 ak;
+          Array.unsafe_set atoms k (Atom.neg a);
           (* remove [c] from [a.watched], add it to [ak.neg.watched] *)
           Vec.push (Atom.neg ak).a_watched c;
           raise Exit
