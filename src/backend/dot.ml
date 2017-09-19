@@ -56,10 +56,8 @@ module Make(A : Arg with type atom := atom
                      and type assumption := clause) = struct
 
   let[@inline] node_id n = "n"^string_of_int (Clause.name n.Proof.conclusion)
-
   let[@inline] res_node_id n = node_id n ^ "_res"
-
-  let proof_id p = node_id (Proof.expand p)
+  let[@inline] proof_id p = node_id (Proof.expand p)
 
   let print_clause fmt c =
     let v = c.c_atoms in
@@ -78,9 +76,9 @@ module Make(A : Arg with type atom := atom
 
   let print_edges fmt n =
     begin match n.Proof.step with
-      | Proof.Hyper_res {init; steps} ->
-        print_edge fmt (res_node_id n) (proof_id init);
-        List.iter (fun (_,p) -> print_edge fmt (res_node_id n) (proof_id p)) steps
+      | Proof.Hyper_res _ ->
+        List.iter (fun p -> print_edge fmt (res_node_id n) (proof_id p))
+          (Proof.parents n.Proof.step)
       | _ -> ()
     end
 
@@ -101,9 +99,15 @@ module Make(A : Arg with type atom := atom
     Format.fprintf fmt "%s [shape=plaintext, label=<<TABLE %a>%a</TABLE>>];@\n"
       id table_options color table (c, rule, rule_color, l)
 
-  let print_dot_res_node fmt id pivots =
+  type inf_on =
+    | Inf_pivot of atom
+
+  let pp_inf_on out = function
+    | Inf_pivot a -> A.print_atom out a
+
+  let print_dot_res_node fmt id (inf_on:inf_on list) =
     Format.fprintf fmt "%s [label=<%a>];@\n"
-      id (Util.pp_list ~sep:";" A.print_atom) pivots
+      id (Util.pp_list ~sep:";" pp_inf_on) inf_on
 
   let ttify f c = fun fmt () -> f fmt c
 
@@ -132,7 +136,12 @@ module Make(A : Arg with type atom := atom
       | Proof.Hyper_res {steps;_} ->
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Hyper_res" "GREY"
           [(fun fmt () -> Format.fprintf fmt "%s" (node_id n))];
-        let pivots = List.map (fun (t,_) -> Term.Bool.pa t) steps in
+        let pivots =
+          CCList.flat_map
+            (function
+              | Step_resolve {pivot;_} -> [Inf_pivot (Term.Bool.pa pivot)])
+            steps
+        in
         print_dot_res_node fmt (res_node_id n) pivots;
         print_edge fmt (node_id n) (res_node_id n);
     end

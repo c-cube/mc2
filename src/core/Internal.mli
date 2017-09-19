@@ -52,12 +52,6 @@ val get_service_exn : t -> 'a Service.Key.t -> 'a
 val actions : t -> actions
 (** Actions available to plugins *)
 
-(* FIXME:
-val gc_mark_sub : t -> (Term.t -> unit) -> Term.t -> unit
-(** [gc_mark_sub f t] should call [f] on every subterm of [t]
-    to retain them during GC *)
-*)
-
 val iter_terms : t -> term Sequence.t
 (** Iterate on all terms known to plugins.
     Used for checking all variables to assign, and for garbage collection. *)

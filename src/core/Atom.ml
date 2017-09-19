@@ -5,13 +5,15 @@ type t = atom
 
 let[@inline] equal a b = a.a_id = b.a_id
 let[@inline] compare a b = CCInt.compare a.a_id b.a_id
+let[@inline] hash a = CCHash.int a.a_id
 
 let[@inline] same_term a b = a.a_term == b.a_term
 
-(* negation of the atom *)
 let[@inline] is_pos (a:t) : bool = match a.a_term.t_var with
   | Var_bool { pa; _ } -> a==pa
   | Var_none | Var_semantic _ -> assert false
+
+let[@inline] is_neg (a:t) : bool = not (is_pos a)
 
 (* negation of the atom *)
 let[@inline] neg (a:t) : t = match a.a_term.t_var with
@@ -22,71 +24,55 @@ let[@inline] abs (a:t) : t = match a.a_term.t_var with
   | Var_bool { pa; _ } -> pa
   | Var_none | Var_semantic _ -> assert false
 
-let[@inline] value (a:t) : term_assignment = a.a_term.t_value
-let[@inline] value_exn (a:t) : value = match value a with
-  | TA_none -> assert false
-  | TA_assign {value;_} -> value
+let[@inline] value (a:t): value option =
+  if is_pos a then Term.value a.a_term
+  else CCOpt.map Value.bool_neg (Term.value a.a_term)
 
-let[@inline] value_bool (a:t): bool option = match value a with
-  | TA_none -> None
-  | TA_assign{value=V_true;_} -> Some true
-  | TA_assign{value=V_false;_} -> Some false
-  | _ -> assert false
+let[@inline] is_true (a:t): bool =
+  if is_pos a
+  then Term.has_value a.a_term Value.true_
+  else Term.has_value a.a_term Value.false_
+let[@inline] is_false (a:t): bool =
+  if is_pos a
+  then Term.has_value a.a_term Value.false_
+  else Term.has_value a.a_term Value.true_
+let[@inline] has_some_value (a:t): bool = Term.has_some_value a.a_term
+let[@inline] is_undef (a:t): bool = not (has_some_value a)
 
-let[@inline] value_bool_exn (a:t): bool = match value a with
-  | TA_assign{value=V_true;_} -> true
-  | TA_assign{value=V_false;_} -> false
-  | _ -> assert false
-
-let[@inline] is_true (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
-  | TA_assign{value=V_true; _}, Var_bool{pa;_} when a==pa -> true
-  | TA_assign{value=V_false;_}, Var_bool{na;_} when a==na -> true
-  | _ -> false
-
-let[@inline] is_false (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
-  | TA_assign{value=V_true; _}, Var_bool{na;_} when a==na -> true
-  | TA_assign{value=V_false;_}, Var_bool{pa;_} when a==pa -> true
-  | _ -> false
-
-let[@inline] is_undef (a:t): bool = match value a with
-  | TA_none -> true
-  | _ -> false
-let[@inline] has_value (a:t): bool = match value a with
-  | TA_assign _ -> true
-  | TA_none -> false
-
-let[@inline] reason (a:t) = match a.a_term.t_value with
-  | TA_assign{reason;_} -> Some reason
-  | _ -> None
+let[@inline] reason (a:t) : reason option = Term.reason a.a_term
 
 let[@inline] term (a:t) = a.a_term
 let[@inline] level (a:t) = Term.level a.a_term
 let[@inline] watched (a:t) = a.a_watched
 
-let mark (a:t) =
-  if is_pos a then (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_pos true a.a_term.t_fields
-  ) else (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_neg true a.a_term.t_fields
-  )
+let[@inline] field_ (a:t) : Term_fields.field =
+  if is_pos a then field_t_mark_pos else field_t_mark_neg
 
-let unmark (a:t) =
-  if is_pos a then (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_pos false a.a_term.t_fields
-  ) else (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_neg false a.a_term.t_fields
-  )
+let[@inline] mark (a:t) =
+  a.a_term.t_fields <- Term_fields.set (field_ a) true a.a_term.t_fields
 
-let marked (a:t) : bool =
-  if is_pos a then (
-    Term_fields.get field_t_mark_pos a.a_term.t_fields
-  ) else (
-    Term_fields.get field_t_mark_neg a.a_term.t_fields
-  )
+let[@inline] unmark (a:t) =
+  a.a_term.t_fields <- Term_fields.set (field_ a) false a.a_term.t_fields
+
+let[@inline] marked (a:t) : bool =
+  Term_fields.get (field_ a) a.a_term.t_fields
 
 let pp_level fmt a = Reason.pp_opt fmt (level a, reason a)
+
 let[@inline] mark_neg (a:t) = mark (neg a)
 let[@inline] unmark_neg (a:t) = unmark (neg a)
+
+let[@inline] eval (a:t) : eval_res =
+  begin match Term.eval (term a) with
+    | Eval_unknown -> Eval_unknown
+    | Eval_into (v, subs) ->
+      let v = if is_pos a then v else Value.bool_neg v in
+      Eval_into (v, subs)
+  end
+
+let[@inline] is_absurd (a:t) : bool = match eval a with
+  | Eval_into (V_false,[]) -> true
+  | _ -> false
 
 let pp_value fmt a =
   if is_true a then
@@ -96,14 +82,20 @@ let pp_value fmt a =
 
 let debug out a =
   let sign = if is_pos a then "" else "¬" in
-  Format.fprintf out "%s%a[%a]"
-    sign Term.debug_no_val a.a_term pp_value a
+  let m_sign = if marked a then "[M]" else "" in
+  Format.fprintf out "%s%a[%a]%s"
+    sign Term.debug_no_val a.a_term pp_value a m_sign
 
 let pp out a =
   let sign = if is_pos a then "" else "¬" in
   Format.fprintf out "%s%a" sign Term.pp a.a_term
 
-module Set = CCSet.Make(struct
-    type t = atom
-    let compare = compare
-  end)
+module As_key = struct
+  type t = atom
+  let hash = hash
+  let equal = equal
+  let compare = compare
+end
+
+module Tbl = CCHashtbl.Make(As_key)
+module Set = CCSet.Make(As_key)

@@ -19,3 +19,5 @@ val err_sprintf : ('a, Format.formatter, unit, unit, unit, string) format6 -> 'a
 
 val setup_gc : unit -> unit
 (** Change parameters of the GC *)
+
+module Int_map : CCMap.S with type key = int

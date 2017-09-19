@@ -42,3 +42,5 @@ let () = Printexc.register_printer
     (function
       | Error msg -> Some msg
       | _ -> None)
+
+module Int_map = CCMap.Make(CCInt)

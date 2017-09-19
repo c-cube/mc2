@@ -62,6 +62,7 @@ let pp out c =
 
 let pp_atoms out = Format.fprintf out "(@[<hv>%a@])" (Util.pp_list ~sep:" ∨ " Atom.pp)
 let debug_atoms out = Format.fprintf out "(@[<v>%a@])" (Util.pp_list ~sep:" ∨ " Atom.debug)
+let debug_atoms_a out = Format.fprintf out "(@[<v>%a@])" (Util.pp_array ~sep:" ∨ " Atom.debug)
 
 let debug out ({c_atoms; c_premise=cp; _} as c) =
   let pp_atoms_vec out = Util.pp_array ~sep:" ∨ " Atom.debug out in
@@ -84,8 +85,12 @@ let pp_dimacs fmt { c_atoms; _} =
   in
   Format.fprintf fmt "%a0" aux c_atoms
 
-module Tbl = CCHashtbl.Make(struct
-    type t = clause
-    let hash = hash
-    let equal = equal
-  end)
+module As_key = struct
+  type t = clause
+  let hash = hash
+  let compare = compare
+  let equal = equal
+end
+
+module Tbl = CCHashtbl.Make(As_key)
+module Set = CCSet.Make(As_key)

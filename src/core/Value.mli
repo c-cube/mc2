@@ -18,6 +18,8 @@ val is_false : t -> bool
 val as_bool : t -> bool option
 val as_bool_exn : t -> bool
 
+val bool_neg : t -> t
+
 val view : t -> value_view (** non-bool only *)
 val tc : t -> tc_value (** non-bool only *)
 
@@ -27,3 +29,5 @@ val of_bool : bool -> t
 
 val make : tc_value -> value_view -> t
 (** Main construction for values *)
+
+module Tbl : CCHashtbl.S with type key = t

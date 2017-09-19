@@ -16,9 +16,7 @@ val propagate_bool_eval : t -> term -> bool -> subs:term list -> unit
 
 val propagate_bool_lemma : t -> term -> bool -> atom list -> lemma -> unit
 
-val mark_dirty : t -> term -> unit
-
 val raise_conflict : t -> atom list -> lemma -> 'a
 
-val on_backtrack : t -> level -> (unit -> unit) -> unit
+val on_backtrack : t -> (unit -> unit) -> unit
 

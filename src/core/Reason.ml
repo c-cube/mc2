@@ -9,14 +9,14 @@ let pp out = function
   | n, Decision ->
     Format.fprintf out "@@%d" n
   | n, Bcp c ->
-    Format.fprintf out "$%d@<1>←%s%d" n (Premise.prefix c.c_premise) c.c_name
+    Format.fprintf out "#%d@<1>←%s%d" n (Premise.prefix c.c_premise) c.c_name
   | n, Bcp_lazy c ->
     if Lazy.is_val c
     then (
       let lazy c = c in
-      Format.fprintf out "$%d@<1>←%s%d" n (Premise.prefix c.c_premise) c.c_name
-    ) else Format.fprintf out "$%d@<1>←<lazy>" n
-  | n, Semantic _ ->
+      Format.fprintf out "#%d@<1>←%s%d" n (Premise.prefix c.c_premise) c.c_name
+    ) else Format.fprintf out "#%d@<1>←<lazy>" n
+  | n, Eval _ ->
     Format.fprintf out "$%d" n
 
 let pp_opt out = function

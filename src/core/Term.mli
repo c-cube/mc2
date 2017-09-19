@@ -34,11 +34,12 @@ val marked : t -> bool (** Was {!mark} called on this var? *)
 val is_deleted : t -> bool
 val is_added : t -> bool
 val level : t -> level (** decision/assignment level of the term *)
+val level_for : t -> value -> level (** level for evaluating into this value *)
 val var : t -> var
 val ty : t -> Type.t
 val reason : t -> reason option
 val reason_exn : t -> reason
-val eval_bool : t -> eval_bool_res
+val eval : t -> eval_res
 val is_bool : t -> bool
 
 val level_semantic : t -> level
@@ -60,15 +61,12 @@ val subterms : t -> t list
 val decide_state_exn : t -> decide_state
 (** Obtain decide state, or raises if the variable is not semantic *)
 
-val recompute_state : level -> t -> unit
-(** Recompute internal {!decide_state}, assuming the set of unit
-    constraints changed (typically, after some backtracking) *)
-
 val weight : t -> float (** Heuristic weight *)
 val set_weight : t -> float -> unit
 
-val has_value : t -> bool
-val value : t -> term_assignment
+val has_some_value : t -> bool
+val has_value : t -> value -> bool
+val value : t -> value option
 val value_exn : t -> value
 
 val mk_eq : t -> t -> t
@@ -77,10 +75,6 @@ val mk_eq : t -> t -> t
 val gc_unmark : t -> unit (** Unmark just this term *)
 val gc_marked : t -> bool
 val gc_mark : t -> unit (** Non recursive *)
-
-val dirty : t -> bool
-val dirty_mark : t -> unit
-val dirty_unmark : t -> unit
 
 val field_get : Term_fields.field -> t -> bool
 val field_set : Term_fields.field -> t -> unit
@@ -98,8 +92,8 @@ val tc_mk :
   ?init:(actions -> term -> unit) ->
   ?update_watches:(actions -> term -> watch:term -> watch_res) ->
   ?delete:(term -> unit) ->
-  ?subterms:( term_view -> (term->unit) -> unit) ->
-  ?eval_bool :( term -> eval_bool_res) ->
+  ?subterms:(term_view -> (term->unit) -> unit) ->
+  ?eval:(term -> eval_res) ->
   pp:term_view CCFormat.printer ->
   unit ->
   tc
@@ -237,5 +231,6 @@ module Term_allocator(T : TERM_ALLOC_OPS) : TERM_ALLOC
 
 (** {2 Containers} *)
 
+module Tbl : CCHashtbl.S with type key = term
 module Map : CCMap.S with type key = term
 

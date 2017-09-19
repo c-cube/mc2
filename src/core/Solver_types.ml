@@ -18,6 +18,7 @@ module Term_fields = BitField.Make(struct end)
 module Clause_fields = BitField.Make(struct end)
 
 module Fmt = CCFormat
+module Int_map = Util.Int_map
 
 (** {2 Type definitions} *)
 
@@ -57,7 +58,6 @@ type ty =
 and tc_ty = {
   tcty_decide: actions -> term -> value;
   (** How to make semantic decisions for terms of this type? *)
-  tcty_refresh_state: level -> term -> unit; (** recompute internal {!decide_state} in new level *)
   tcty_eq: term -> term -> term;
   (* how to build equalities between terms of that type *)
   tcty_pp: ty_view CCFormat.printer; (** print types *)
@@ -79,7 +79,7 @@ and term = {
   mutable t_var: var;
   (** The "generalized variable" part, for assignments. *)
   mutable t_watches : term Vec.t lazy_t; (** terms that watch this term *)
-  mutable t_value: term_assignment; (** current assignment *)
+  mutable t_assign: term_assignment; (** current assignment *)
 }
 (** Main term representation. A {!term}, contains almost all information
     necessary to process it, including:
@@ -103,7 +103,7 @@ and tc_term = {
   tct_delete: term -> unit;
   (** called when term is deleted *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
-  tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
+  tct_eval: term -> eval_res; (** Evaluate term *)
 }
 (** type class for terms, packing all operations on terms *)
 
@@ -111,10 +111,10 @@ and watch_res =
   | Watch_keep (** Keep the watch *)
   | Watch_remove (** Remove the watch *)
 
-and eval_bool_res =
+and eval_res =
   | Eval_unknown (** The given formula does not have an evaluation *)
-  | Eval_bool of bool * term list
-  (** The given formula can be evaluated to the given bool.
+  | Eval_into of value * term list
+  (** The given formula can be evaluated to the given value.
       The list of terms to give is the list of terms that were effectively used
       for the evaluation.
   *)
@@ -154,16 +154,13 @@ and value =
 (** The "generalized variable" part of a term, containing the
     current assignment, watched literals/terms, etc. *)
 and var =
-  (** Semantic variable *)
   | Var_semantic of {
       mutable v_decide_state: decide_state; (** used for decisions/assignments *)
-    }
-
-  (** Bool variable *)
+    } (** Semantic variable *)
   | Var_bool of {
       pa : atom; (** Link for the positive atom *)
       na : atom; (** Link for the negative atom *)
-    }
+    } (** Bool variable *)
   | Var_none (** Not a variable yet (not added) *)
 
 and atom = {
@@ -176,13 +173,14 @@ and atom = {
     the variable v points to the positive atom [a] which wraps [f], while
     [a.neg] wraps the theory negation of [f]. *)
 
-(** The value and reason for propagation/decision of the term *)
+(** The value(s) and reason(s) for propagation/decision
+    and evaluation of the term *)
 and term_assignment =
   | TA_none
   | TA_assign of {
-      level : int; (** Decision level of the assignment *)
-      value: value;
-      reason: reason;
+      mutable level : int; (** Decision level of the assignment *)
+      mutable value: value;
+      mutable reason: reason;
     }
 
 and clause = {
@@ -197,6 +195,16 @@ and clause = {
 }
 (** The type of clauses. Each clause generated should be true, i.e. enforced
     by the current problem (for more information, see the cpremise field). *)
+
+and paramod_clause = {
+  pc_lhs: term;
+  pc_rhs: term;
+  pc_guard: atom list;
+  pc_premise: premise;
+  pc_clause: clause lazy_t; (** view as a clause *)
+}
+(** A paramodulation clause, of the form [guard => (lhs = rhs)]. It is
+    used to rewrite [lhs] into [rhs] assuming [guard] holds *)
 
 and tc_value = {
   tcv_pp : value_view CCFormat.printer; (** printer *)
@@ -213,16 +221,10 @@ and reason =
   | Bcp_lazy of clause lazy_t
   (** Same as {!Bcp} but the clause is produced on demand
       (typically, useful for theory propagation) *)
-  | Semantic of term list
-  (** The atom can be evaluated using the terms in the list *)
+  | Eval of term list
+  (** The term can be evaluated using the terms in the list. Each
+      term has a value. *)
 (** Reasons of propagation/decision of atoms/terms. *)
-
-(* TODO?
-  | Consequence of term * lemma lazy_t
-  (** [Consequence (l, p)] means that the formulas in [l] imply the propagated
-      formula [f]. The proof should be a proof of the clause "[l] implies [f]".
-  *)
-   *)
 
 and premise =
   | Hyp (** The clause is a hypothesis, provided by the user. *)
@@ -232,12 +234,12 @@ and premise =
   (** The clause is a theory-provided tautology, with the given proof. *)
   | Simplify of clause
   (** Deduplication/sorting of atoms in the clause *)
-  | P_hyper_res of {
+  | P_steps of {
       init: clause;
-      steps: (term * clause) list; (* resolution steps *)
+      steps: premise_step list; (* resolution steps *)
     }
-  | P_steps of clause list
-  (** The clause can be obtained by resolution of the clauses
+  | P_raw_steps of raw_premise_step list
+  (** The clause can be obtained by resolution or paramodulation of the clauses
       in the list, left-to-right.
       For a premise [History [a_1 :: ... :: a_n]] ([n >= 2]) the clause
       is obtained by performing resolution of [a_1] with [a_2], and then
@@ -253,11 +255,21 @@ and premise =
     with [Resolve]. This update preserves the semantics of proofs
     but acts as a memoization of the proof reconstruction process. *)
 
-and lemma = {
-  lemma_view: lemma_view; (** The lemma content *)
-  lemma_tc: tc_lemma; (** Methods on the lemma *)
-}
-(** A lemma belonging to some plugin. Must be a tautology of the theory. *)
+and raw_premise_step = clause (** init clause/resolution with clause *)
+
+(** Clause or paramodulation, refined form *)
+and premise_step =
+  | Step_resolve of {
+      c: clause; (** clause to resolve with *)
+      pivot: term; (** pivot to remove *)
+    }
+
+and lemma =
+  | Lemma_bool_tauto (** tautology [a ∨ ¬a] *)
+  | Lemma_custom of {
+      view: lemma_view; (** The lemma content *)
+      tc: tc_lemma; (** Methods on the lemma *)
+    } (** A lemma belonging to some plugin. Must be a tautology of the theory. *)
 
 and tc_lemma = {
   tcl_pp : lemma_view CCFormat.printer;
@@ -274,22 +286,17 @@ and actions = {
       relevant (sub)terms [l]
       @param subs subterms used for the propagation *)
   act_propagate_bool_lemma : term -> bool -> atom list -> lemma -> unit;
-  (** [act_propagate_bool_lemma t b ~lvl c] propagates the boolean literal [t]
+  (** [act_propagate_bool_lemma t b c] propagates the boolean literal [t]
       assigned to boolean value [b], explained by a valid theory
       lemma [c].
       Precondition: [c] is a tautology such that [c == (c' ∨ t=b)], where [c']
       is composed of atoms false in current model.
   *)
-  act_mark_dirty : term -> unit;
-  (** Mark the term as dirty because its set of unit constraints has changed.
-      It potentially has to re-compute new information from that
-      (e.g. lower/upper bounds, set of forbidden values, etc.). *)
   act_raise_conflict: 'a. atom list -> lemma -> 'a;
   (** Raise a conflict with the given clause, which must be false
       in the current trail, and with a lemma to explain *)
-  act_on_backtrack : level -> (unit -> unit) -> unit;
-  (** [act_on_backtrack level f] will call [f] when the given [level]
-      is backtracked *)
+  act_on_backtrack : (unit -> unit) -> unit;
+  (** [act_on_backtrack f] will call [f] when we backtrack *)
 }
 (** Actions available to terms/plugins when doing propagation/model building,
     including adding clauses, registering actions to do upon
@@ -302,7 +309,6 @@ let field_t_mark_neg = Term_fields.mk_field() (** negative atom marked? *)
 let field_t_seen = Term_fields.mk_field() (** term seen during some traversal? *)
 let field_t_negated = Term_fields.mk_field() (** negated term? *)
 let field_t_gc_marked = Term_fields.mk_field() (** marked for GC? *)
-let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints? *)
 
 let field_c_attached = Clause_fields.mk_field() (** clause added to state? *)
 let field_c_visited = Clause_fields.mk_field() (** visited during some traversal? *)
@@ -317,7 +323,7 @@ let tct_default : tc_term = {
   tct_update_watches=(fun _ _ ~watch:_ -> Watch_keep);
   tct_delete=(fun _ -> ());
   tct_subterms=(fun _ _ -> ());
-  tct_eval_bool=(fun _ -> Eval_unknown);
+  tct_eval=(fun _ -> Eval_unknown);
 }
 
 let dummy_tct : tc_term = tct_default
@@ -332,7 +338,7 @@ let rec dummy_term : term = {
   t_weight= -1.;
   t_var=Var_none;
   t_watches=lazy (Vec.make_empty dummy_term);
-  t_value=TA_none;
+  t_assign=TA_none;
 }
 
 let dummy_clause : clause = {

@@ -11,32 +11,30 @@ let k_decl_sort = Service.Key.make "unin_sort.decl"
 let k_make = Service.Key.make "unin_sort.make"
 let k_eq = Service.Key.make "unin_sort.eq"
 
-module Int_map = CCMap.Make(CCInt)
+(* reason why [t != v] or [t = v] for some value v *)
+type reason = {
+  other: term;
+  atom: atom; (* t≠other or t=other *)
+  lvl: level;
+}
 
-(* list of unit constraints for a term *)
-type constraint_list =
-  | C_nil
-  | C_singleton of {
-      v:value;
-      other: term;
-      eqn: term; (* t=other *)
-      lvl: level;
-      tail: constraint_list;
-    } (** = this value *)
-  | C_diff of {
-      v:value;
-      other: term;
-      diseqn: term; (* t≠other *)
-      lvl: level;
-      tail: constraint_list;
-    } (** ≠ this value *)
+(* list of unit constraints for a term. Each constraint maps
+   a value to a list of reasons why the term cannot be this value *)
+type unit_constraints =
+  | C_none
+  | C_diseq of {
+      tbl: reason Value.Tbl.t;
+    } (** Term is none of these values *)
+  | C_eq of {
+      value: value;
+      reason: reason;
+    } (** Term equal value *)
 
 (* current knowledge for a value of an uninterpreted type *)
 type decide_state +=
   | DS of {
-      mutable c_list : constraint_list;
-      (* list of constraints on the term.
-         invariant: all the [C_singleton] cases come first *)
+      mutable c_list : unit_constraints;
+      (* constraints on the term. *)
     }
 
 (* uninterpreted types *)
@@ -54,7 +52,8 @@ type term_view +=
 type value_view +=
   | V_unin of int
 
-type lemma_view += Transitivity
+type lemma_view +=
+  | Transitivity
 
 let tc_lemma =
   let tcl_pp out = function
@@ -63,20 +62,24 @@ let tc_lemma =
   in
   { tcl_pp }
 
-let pp_c_list out =
-  let first=ref true in
-  let rec aux out = function
-    | C_nil -> ()
-    | C_singleton {v;eqn;other;tail;lvl} ->
-      if !first then first:=false else Fmt.fprintf out "@ ";
-      Fmt.fprintf out "(@[singleton :v %a@ :lvl %d@ :other %a@ :eqn %a@])%a"
-        Value.pp v lvl Term.debug other Term.debug eqn aux tail
-    | C_diff {v;diseqn;lvl;other;tail} ->
-      if !first then first:=false else Fmt.fprintf out "@ ";
-      Fmt.fprintf out "(@[diff :v %a@ :lvl %d@ :other %a@ :diseqn %a@])%a"
-        Value.pp v lvl Term.debug other Term.debug diseqn aux tail
-  in
-  Fmt.fprintf out "{@[<hv>%a@]}" aux
+let[@inline] c_list_as_seq (tbl:reason Value.Tbl.t) : (value * reason) Sequence.t =
+  Value.Tbl.to_seq tbl
+
+let pp_v_reason_eq out (v,rn): unit =
+  Fmt.fprintf out "(@[eq:v %a@ :lvl %d@ :other %a@ :eqn %a@])"
+    Value.pp v rn.lvl Term.debug rn.other Atom.debug rn.atom
+
+let pp_v_reason_neq out (v,rn): unit =
+  Fmt.fprintf out "(@[diff :v %a@ :lvl %d@ :other %a@ :diseqn %a@])"
+    Value.pp v rn.lvl Term.debug rn.other Atom.debug rn.atom
+
+let pp_c_list out (c_l:unit_constraints) = match c_l with
+  | C_none -> Fmt.string out "ø"
+  | C_eq {value;reason;_} ->
+    Fmt.fprintf out "%a" pp_v_reason_eq(value,reason)
+  | C_diseq {tbl} ->
+    Fmt.fprintf out "{@[<hv>%a@]}"
+      (Util.pp_seq pp_v_reason_neq) (c_list_as_seq tbl)
 
 (* values for uninterpreted sorts *)
 module V = struct
@@ -133,7 +136,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     (* declare a new (parametric) uninterpreted type *)
     let decl_sort id (arity:int) : unit =
       Log.debugf 3
-        (fun k->k "(@[unin_sort.declare-sort %a@ :arity %d@])" ID.pp id arity);
+        (fun k->k "(@[unin_sort.@{<yellow>declare-sort@} %a@ :arity %d@])" ID.pp id arity);
       if ID.Tbl.mem tbl_ id then (
         Util.errorf "sort %a already declared" ID.pp id;
       );
@@ -152,81 +155,99 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | _ -> assert false
 
     (* evaluate equality *)
-    let eval_bool (t:term) : eval_bool_res = match Term.view t with
-      | Eq (a, b) when Term.equal a b -> Eval_bool (true, [])
+    let eval (t:term) : eval_res = match Term.view t with
+      | Eq (a, b) when Term.equal a b -> Eval_into (Value.true_, [])
       | Eq (a, b) ->
         begin match Term.value a, Term.value b with
-          | TA_assign {value=va;_}, TA_assign {value=vb;_} ->
-            Eval_bool (Value.equal va vb, [a;b])
+          | Some va, Some vb ->
+            Eval_into (Value.equal va vb |> Value.of_bool, [a;b])
           | _ -> Eval_unknown
         end
       | _ -> assert false
 
     type conflict_opt =
       | Conflict_none
-      | Conflict_eq_eq of {other:term; eqn:term} (* term is equal to both values *)
-      | Conflict_eq_neq of {other:term; diseqn:term} (* term is equal and disequal to value. arg=Diseq *)
-      | Conflict_neq_eq of {other:term; eqn:term} (* term is equal and disequal to value. arg=Eq *)
+      | Conflict_eq_eq of {other:term; eqn:atom} (* atom is equal to both values *)
+      | Conflict_eq_neq of {other:term; diseqn:atom} (* atom is equal and disequal to value. arg=Diseq *)
+      | Conflict_neq_eq of {other:term; eqn:atom} (* atom is equal and disequal to value. arg=Eq *)
 
     (* find a conflicting constraints in [l] for [t=v] *)
-    let rec find_conflict_eq_ (v:value) (l:constraint_list) : conflict_opt =
+    let find_conflict_eq_ (v:value) (l:unit_constraints) : conflict_opt =
       begin match l with
-        | C_nil -> Conflict_none
-        | C_singleton {v=v';eqn;other;tail;_} ->
-          if Value.equal v v' then find_conflict_eq_ v tail
-          else Conflict_eq_eq {other; eqn}
-        | C_diff {v=v';diseqn;other;tail;_} ->
-          if Value.equal v v' then Conflict_eq_neq {diseqn;other}
-          else find_conflict_eq_ v tail
+        | C_none -> Conflict_none
+        | C_diseq {tbl} ->
+          begin match Value.Tbl.find tbl v with
+            | {atom;other;_} ->
+              assert (Atom.is_neg atom);
+              Conflict_eq_neq {diseqn=atom;other}
+            | exception Not_found -> Conflict_none
+          end
+        | C_eq {value=v2;reason={other;atom;_};_} ->
+          if Value.equal v v2 then (
+            Conflict_none
+          ) else (
+            assert (Atom.is_pos atom);
+            Conflict_eq_eq {eqn=atom;other}
+          )
       end
 
     (* find a conflicting constraints in [l] for [t≠v] *)
-    let rec find_conflict_diseq_ (v:value) (l:constraint_list) : conflict_opt =
+    let find_conflict_diseq_ (v:value) (l:unit_constraints) : conflict_opt =
       begin match l with
-        | C_singleton {v=v';eqn;other;tail;_} ->
-          if Value.equal v v'
-          then Conflict_neq_eq {eqn;other}
-          else find_conflict_diseq_ v tail
-        | C_diff _ | C_nil -> Conflict_none (* no conflict between diseq *)
+        | C_eq {value;reason={atom;other;_};_} ->
+          if Value.equal v value
+          then Conflict_neq_eq {eqn=atom;other}
+          else Conflict_none
+        | C_none | C_diseq _ -> Conflict_none (* no conflict between diseq *)
       end
 
-    (* add constraint [t := v because eqn] *)
+    (* propagate [t := v because eqn] *)
     let add_singleton acts t v ~eqn ~other : unit =
       begin match Term.var t with
         | Var_semantic {v_decide_state=DS ds; _} ->
-          Log.debugf 5
+          Log.debugf 15
             (fun k->k
                 "(@[<hv>%s.add_singleton@ :to %a@ :val %a@ :other %a@ :eqn %a@ :c_list %a@])"
-                name Term.debug t Value.pp v Term.debug other Term.debug eqn pp_c_list ds.c_list);
+                name Term.debug t Value.pp v Term.debug other Atom.debug eqn pp_c_list ds.c_list);
           (* first, check if SAT *)
           begin match find_conflict_eq_ v ds.c_list with
             | Conflict_neq_eq _ -> assert false
             | Conflict_eq_eq {eqn=eqn';other=other'} ->
               (* conflict! two distinct "singleton" *)
-              let neq = Term.mk_eq other other' in
+              let eq_deduce = Term.Bool.mk_eq other other' in
               let conflict =
-                [ Term.Bool.pa neq;
-                  Term.Bool.na eqn;
-                  Term.Bool.na eqn'
+                [ eq_deduce;
+                  Atom.neg eqn;
+                  Atom.neg eqn';
                 ]
               and lemma = Lemma.make Transitivity tc_lemma in
               Actions.raise_conflict acts conflict lemma
             | Conflict_eq_neq {other=other';diseqn} ->
               (* conflict! one singleton, one diff, same value *)
-              let eq_side = Term.mk_eq other other' in
+              let neq_side = Term.Bool.mk_neq other other' in
               let conflict =
-                [ Term.Bool.pa diseqn;
-                  Term.Bool.na eqn;
-                  Term.Bool.na eq_side;
+                [ Atom.neg diseqn;
+                  Atom.neg eqn;
+                  neq_side;
                 ]
               and lemma = Lemma.make Transitivity tc_lemma in
               Actions.raise_conflict acts conflict lemma
             | Conflict_none -> ()
           end;
           (* just add constraint *)
-          let lvl = max (Term.level eqn) (Term.level other) in
-          Actions.on_backtrack acts lvl (fun () -> Actions.mark_dirty acts t);
-          ds.c_list <- C_singleton {v;other;eqn;tail=ds.c_list;lvl};
+          let lvl = max (Atom.level eqn) (Term.level other) in
+          let old_c_list = ds.c_list in
+          Actions.on_backtrack acts (fun () -> ds.c_list <- old_c_list);
+          let r = {other;atom=eqn;lvl} in
+          begin match ds.c_list with
+            | C_none -> ds.c_list <- C_eq {value=v;reason=r};
+            | C_eq _ -> () (* do not change *)
+            | C_diseq _ -> ds.c_list <- C_eq {value=v;reason=r};
+          end;
+          Log.debugf 30
+            (fun k->k
+                "(@[<hv>%s.add_singleton.done@ :to %a@ :c_list %a@])"
+                name Term.debug t pp_c_list ds.c_list);
         | _ -> assert false
       end
 
@@ -234,34 +255,42 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let add_diff acts t v ~diseqn ~other : unit =
       begin match Term.var t with
         | Var_semantic {v_decide_state=DS ds; _} ->
-          Log.debugf 5
+          Log.debugf 15
             (fun k->k "(@[<hv>%s.add_diff@ :to %a@ :val %a@ :other %a@ :diseqn %a@ :c_list %a@])"
-                name Term.debug t Value.pp v Term.debug other Term.debug diseqn pp_c_list ds.c_list);
+                name Term.debug t Value.pp v Term.debug other Atom.debug diseqn pp_c_list ds.c_list);
           (* first, check if SAT *)
           begin match find_conflict_diseq_ v ds.c_list with
             | Conflict_eq_eq _
             | Conflict_eq_neq _ -> assert false
             | Conflict_neq_eq {eqn;other=other'} ->
               (* conflict! one singleton, one diff, same value *)
-              let eq_side = Term.mk_eq other other' in
+              let neq_side = Term.Bool.mk_neq other other' in
               let conflict =
-                [ Term.Bool.pa diseqn;
-                  Term.Bool.na eqn;
-                  Term.Bool.na eq_side;
+                [ Atom.neg diseqn;
+                  Atom.neg eqn;
+                  neq_side;
                 ]
               and lemma = Lemma.make Transitivity tc_lemma in
               Actions.raise_conflict acts conflict lemma
             | Conflict_none -> ()
           end;
-          (* just add constraint *)
-          let lvl = max (Term.level diseqn) (Term.level other) in
-          let rec add_diff_ l = match l with
-            | C_nil | C_diff _ -> C_diff {v;diseqn;other;tail=l;lvl}
-            | C_singleton ({tail;_} as r) ->
-              C_singleton {r with tail=add_diff_ tail}
+          let add_tbl tbl =
+            if not (Value.Tbl.mem tbl v) then (
+              Actions.on_backtrack acts (fun () -> Value.Tbl.remove tbl v);
+              let lvl = max (Atom.level diseqn) (Term.level other) in
+              Value.Tbl.add tbl v {other;atom=diseqn;lvl};
+            )
           in
-          Actions.on_backtrack acts lvl (fun () -> Actions.mark_dirty acts t);
-          ds.c_list <- add_diff_ ds.c_list;
+          (* add constraint *)
+          begin match ds.c_list with
+            | C_eq _ -> ()
+            | C_diseq {tbl} -> add_tbl tbl
+            | C_none ->
+              (* lazy initialization *)
+              let tbl = Value.Tbl.create 6 in
+              ds.c_list <- C_diseq {tbl};
+              add_tbl tbl
+          end
         | _ -> assert false
       end
 
@@ -269,23 +298,20 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let update_watches acts (eqn:term) ~watch:_ = match Term.view eqn with
       | Eq (a,b) ->
         begin match Term.value eqn, Term.value a, Term.value b with
-          | TA_assign{value=V_true;_}, TA_assign{value;_}, TA_none ->
-            (* TODO: propagate *)
-            add_singleton acts b value ~eqn ~other:a
-          | TA_assign{value=V_true;_}, TA_none, TA_assign{value;_} ->
-            (* TODO: propagate *)
-            add_singleton acts a value ~eqn ~other:b
-          | TA_assign{value=V_false;_}, TA_assign{value;_}, TA_none ->
-            add_diff acts b value ~diseqn:eqn ~other:a
-          | TA_assign{value=V_false;_}, TA_none, TA_assign{value;_} ->
-            add_diff acts a value ~diseqn:eqn ~other:b
-          | _, TA_assign _, TA_assign _ ->
+          | Some V_true, Some value, None ->
+            add_singleton acts b value ~eqn:(Term.Bool.pa eqn) ~other:a
+          | Some V_true, None, Some value ->
+            add_singleton acts a value ~eqn:(Term.Bool.pa eqn) ~other:b
+          | Some V_false, Some value, None ->
+            add_diff acts b value ~diseqn:(Term.Bool.na eqn) ~other:a
+          | Some V_false, None, Some value ->
+            add_diff acts a value ~diseqn:(Term.Bool.na eqn) ~other:b
+          | _, Some _, Some _ ->
             (* semantic propagation *)
-            (* FIXME: if term already assigned to *wrong* value, trigger
-               conflict somehow? *)
-            begin match eval_bool eqn with
+            begin match eval eqn with
               | Eval_unknown -> assert false
-              | Eval_bool (b, subs) ->
+              | Eval_into (v, subs) ->
+                let b = Value.as_bool_exn v in
                 Actions.propagate_bool_eval acts eqn b ~subs
             end
           | _ -> ()
@@ -302,7 +328,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | _ -> assert false
 
     let tc_term : tc_term =
-      Term.tc_mk ~pp ~subterms ~update_watches ~init ~eval_bool ()
+      Term.tc_mk ~pp ~subterms ~update_watches ~init ~eval ()
 
     (* make an equality literal *)
     let mk_eq (t:term) (u:term): term =
@@ -323,22 +349,19 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       )
 
     (* find a value that is authorized by the list of constraints *)
-    let[@inline] find_value (l:constraint_list): value = match l with
-      | C_singleton {v;_} -> v
-      | C_nil -> V.mk 0
-      | _ ->
+    let[@inline] find_value (l:unit_constraints): value = match l with
+      | C_none -> V.mk 0
+      | C_eq {value;_} -> value
+      | C_diseq {tbl} ->
         (* is [i] forbidden by [l]? *)
-        let rec forbidden i l = match l with
-          | C_nil -> false
-          | C_singleton _ -> assert false
-          | C_diff {v;tail;_} -> V.get v=i || forbidden i tail
-        in
-        let i =
+        let[@inline] forbidden v = Value.Tbl.mem tbl v in
+        let v =
           Sequence.(0 -- max_int)
-          |> Sequence.filter (fun i -> not (forbidden i l))
+          |> Sequence.map (fun i -> V.mk i)
+          |> Sequence.filter (fun v -> not (forbidden v))
           |> Sequence.head_exn
         in
-        V.mk i
+        v
 
     (* how to make a decision for terms of uninterpreted type *)
     let decide (acts:actions) (t:term) : value =
@@ -346,7 +369,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         | Var_semantic {v_decide_state=DS{c_list}; _} ->
           let v = find_value c_list in
           Log.debugf 5
-            (fun k->k "(@[<hv>%s.decide@ :term %a@ :val %a@ :lvl %d@ :c_list %a@])"
+            (fun k->k "(@[<hv>%s.@{<yellow>decide@}@ :term %a@ :val %a@ :lvl %d@ :c_list %a@])"
                 name Term.debug t Value.pp v (Actions.level acts) pp_c_list c_list);
           v
         | _ -> assert false
@@ -359,32 +382,10 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | _ -> assert false
 
     (* new state: empty list of constraints *)
-    let[@inline] mk_state () = DS {c_list=C_nil}
-
-    (* filter constraints of level bigger than [lvl] *)
-    let rec filter_lvl_ lvl (l:constraint_list) : constraint_list =
-      begin match l with
-        | C_nil -> C_nil
-        | C_singleton ({lvl=l';tail;_} as r) ->
-          let tail = filter_lvl_ lvl tail in
-          if l' > lvl then tail else C_singleton {r with tail}
-        | C_diff ({lvl=l';tail;_} as r) ->
-          let tail = filter_lvl_ lvl tail in
-          if l' > lvl then tail else C_diff {r with tail}
-      end
-
-    (* refresh the state of terms whose type is uninterpreted *)
-    let refresh_state (lvl:level) (t:term) : unit =
-      begin match t.t_var with
-        | Var_semantic {v_decide_state=DS ds; _} ->
-          ds.c_list <- filter_lvl_ lvl ds.c_list;
-          Log.debugf 15 (fun k->k"(@[%s.refresh_state :lvl %d@ %a@ :clist %a@])"
-              name lvl Term.debug t pp_c_list ds.c_list);
-        | _ -> assert false
-      end
+    let[@inline] mk_state () = DS {c_list=C_none}
 
     let tc_ty : tc_ty =
-      Type.tc_mk ~refresh_state ~pp:pp_ty ~decide ~mk_state ~eq:mk_eq ()
+      Type.tc_mk ~pp:pp_ty ~decide ~mk_state ~eq:mk_eq ()
 
     (* make a concrete instance of the type *)
     let make_sort (id:ID.t) (args:Type.t list) : Type.t =

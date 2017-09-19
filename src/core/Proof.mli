@@ -34,7 +34,7 @@ and step =
       the conclusion of the provided proof. *)
   | Hyper_res of {
       init: t;
-      steps: (term * t) list; (* list of pivot+clause *)
+      steps: premise_step list; (* list of steps to apply to [init] *)
     }
   (** The conclusion can be deduced by performing a series of resolution steps
       between [init] and, successively, each clause in the list on the
@@ -57,7 +57,6 @@ val prove_unsat : clause -> t
 val prove_atom : atom -> t option
 (** Given an atom [a], returns a proof of the clause [\[a\]] if [a] is true at level 0 *)
 
-
 (** {3 Proof Nodes} *)
 
 val is_leaf : step -> bool
@@ -72,7 +71,6 @@ val expl : step -> string
 
 val parents : step -> t list
 (** Returns the parents of a proof node. *)
-
 
 (** {3 Proof Manipulation} *)
 

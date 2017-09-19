@@ -43,11 +43,14 @@ let build p_id Plugin.S_nil : Plugin.t =
         Actions.push_clause acts c
       | _ -> assert false
 
-    let[@inline] eval_bool (t:term) : eval_bool_res =
-      assert (is_builtin t);
-      Eval_unknown
+    let[@inline] eval (t:term) : eval_res =
+      begin match Term.view t with
+        | True -> Eval_into (Value.true_,[])
+        | False -> Eval_into (Value.false_,[])
+        | _ -> assert false
+      end
 
-    let tc : tc_term = Term.tc_mk ~eval_bool ~init ~pp ()
+    let tc : tc_term = Term.tc_mk ~eval ~init ~pp ()
 
     (* the main "true" term *)
     let t_true : term = Term.Unsafe.make_term p_id True Type.bool tc
