@@ -202,7 +202,6 @@ and tc_value = {
   tcv_pp : value_view CCFormat.printer; (** printer *)
   tcv_equal : value_view -> value_view -> bool; (** equality *)
   tcv_hash : value_view -> int; (** hash function *)
-  tcv_ty: value_view -> ty; (** Type of the value *)
 }
 (** Methods for values *)
 

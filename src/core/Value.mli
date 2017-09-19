@@ -20,7 +20,6 @@ val as_bool_exn : t -> bool
 
 val view : t -> value_view (** non-bool only *)
 val tc : t -> tc_value (** non-bool only *)
-val ty : t -> ty (** type *)
 
 val true_ : t
 val false_ : t
