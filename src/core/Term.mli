@@ -57,6 +57,9 @@ val iter_subterms : t -> t Sequence.t
 
 val subterms : t -> t list
 
+val decide_state_exn : t -> decide_state
+(** Obtain decide state, or raises if the variable is not semantic *)
+
 val recompute_state : level -> t -> unit
 (** Recompute internal {!decide_state}, assuming the set of unit
     constraints changed (typically, after some backtracking) *)

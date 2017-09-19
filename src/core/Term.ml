@@ -83,6 +83,10 @@ let[@inline] reason t = match value t with
 let[@inline] recompute_state (lvl:level) (t:t) : unit =
   Type.refresh_state (ty t) lvl t
 
+let[@inline] decide_state_exn (t:t) : decide_state = match var t with
+  | Var_semantic {v_decide_state=s;_} -> s
+  | _ -> assert false
+
 (** {2 Assignment view} *)
 
 let[@inline] assigned (t:term): bool = match t.t_value with
