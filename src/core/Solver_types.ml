@@ -18,6 +18,7 @@ module Term_fields = BitField.Make(struct end)
 module Clause_fields = BitField.Make(struct end)
 
 module Fmt = CCFormat
+module Int_map = Util.Int_map
 
 (** {2 Type definitions} *)
 
@@ -104,8 +105,12 @@ and tc_term = {
   (** called when term is deleted *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
+  mutable tct_apply_subst : term -> term_subst -> term; (** Substitute immediate args *)
 }
 (** type class for terms, packing all operations on terms *)
+
+and term_subst = term Int_map.t
+(** Finite substitution over terms *)
 
 and watch_res =
   | Watch_keep (** Keep the watch *)
@@ -213,16 +218,25 @@ and reason =
   | Bcp_lazy of clause lazy_t
   (** Same as {!Bcp} but the clause is produced on demand
       (typically, useful for theory propagation) *)
+  | Propagate_value of {
+      rw_into: term; (** Term to rewrite into *)
+      guard: atom list; (** Condition for rewriting to be valid *)
+      lemma: lemma; (** justification *)
+    }
+  (** [t -> v] explained by [guard => (t = rewrite_into)] *)
   | Semantic of term list
-  (** The atom can be evaluated using the terms in the list *)
+  (** The term can be evaluated using the terms in the list *)
 (** Reasons of propagation/decision of atoms/terms. *)
 
-(* TODO?
-  | Consequence of term * lemma lazy_t
-  (** [Consequence (l, p)] means that the formulas in [l] imply the propagated
-      formula [f]. The proof should be a proof of the clause "[l] implies [f]".
-  *)
-   *)
+and paramod_info =
+  | Paramod_none
+  | Paramod_some of {
+      subst: term_subst;
+      pivots: atom list; (* eval to false *)
+    } (** Atoms in [pivots] can be reduced to [false] by applying
+          the substitution to them. *)
+(** Information for paramodulation, which is used for conflict resolution
+    when terms of non-boolean type can take part in propagation *)
 
 and premise =
   | Hyp (** The clause is a hypothesis, provided by the user. *)
@@ -235,10 +249,15 @@ and premise =
   | P_hyper_res of {
       init: clause;
       steps: (term * clause) list; (* resolution steps *)
+      paramod: paramod_info;
     }
-  | P_steps of clause list
+  | P_steps of {
+      cs: clause list;
+      paramod: paramod_info;
+    }
   (** The clause can be obtained by resolution of the clauses
-      in the list, left-to-right.
+      in the list, left-to-right, and by paramodulating away
+      the atoms {!paramod_false}.
       For a premise [History [a_1 :: ... :: a_n]] ([n >= 2]) the clause
       is obtained by performing resolution of [a_1] with [a_2], and then
       performing a resolution step between the result and [a_3], etc...  Of
@@ -274,11 +293,23 @@ and actions = {
       relevant (sub)terms [l]
       @param subs subterms used for the propagation *)
   act_propagate_bool_lemma : term -> bool -> atom list -> lemma -> unit;
-  (** [act_propagate_bool_lemma t b ~lvl c] propagates the boolean literal [t]
+  (** [act_propagate_bool_lemma t b c] propagates the boolean literal [t]
       assigned to boolean value [b], explained by a valid theory
       lemma [c].
       Precondition: [c] is a tautology such that [c == (c' ∨ t=b)], where [c']
       is composed of atoms false in current model.
+  *)
+  act_propagate_val_eval : term -> value -> subs:term list -> unit;
+  (** [act_propagate_val_eval t v l] propagates the term [t]
+      assigned to value [v], explained by evaluation with
+      relevant (sub)terms [l]
+      @param subs subterms used for the propagation *)
+  act_propagate_val_lemma : term -> value -> rw_into:term -> atom list -> lemma -> unit;
+  (** [act_propagate_val_lemma t v ~rw_into c l]
+      propagates the term [t] assigned to value [v],
+      explained by a valid theory lemma [c => (t = rw_into)].
+      It is necessary that [rw_into] evaluates to [v] in the current model.
+      Precondition: [c] is a list of true atoms such that [c => (t = rw_into)].
   *)
   act_mark_dirty : term -> unit;
   (** Mark the term as dirty because its set of unit constraints has changed.
@@ -318,6 +349,7 @@ let tct_default : tc_term = {
   tct_delete=(fun _ -> ());
   tct_subterms=(fun _ _ -> ());
   tct_eval_bool=(fun _ -> Eval_unknown);
+  tct_apply_subst=(fun t _ -> t);
 }
 
 let dummy_tct : tc_term = tct_default

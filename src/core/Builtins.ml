@@ -44,8 +44,11 @@ let build p_id Plugin.S_nil : Plugin.t =
       | _ -> assert false
 
     let[@inline] eval_bool (t:term) : eval_bool_res =
-      assert (is_builtin t);
-      Eval_unknown
+      begin match Term.view t with
+        | True -> Eval_bool (true,[])
+        | False -> Eval_bool (false,[])
+        | _ -> assert false
+      end
 
     let tc : tc_term = Term.tc_mk ~eval_bool ~init ~pp ()
 

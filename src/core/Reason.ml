@@ -16,6 +16,8 @@ let pp out = function
       let lazy c = c in
       Format.fprintf out "$%d@<1>←%s%d" n (Premise.prefix c.c_premise) c.c_name
     ) else Format.fprintf out "$%d@<1>←<lazy>" n
+  | n, Propagate_value {rw_into;_} ->
+    Format.fprintf out "$%d@<1>←%a" n Term.debug rw_into
   | n, Semantic _ ->
     Format.fprintf out "$%d" n
 

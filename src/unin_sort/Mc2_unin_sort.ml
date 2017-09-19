@@ -11,8 +11,6 @@ let k_decl_sort = Service.Key.make "unin_sort.decl"
 let k_make = Service.Key.make "unin_sort.make"
 let k_eq = Service.Key.make "unin_sort.eq"
 
-module Int_map = CCMap.Make(CCInt)
-
 (* list of unit constraints for a term *)
 type constraint_list =
   | C_nil
@@ -321,6 +319,16 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         let view = if Term.id t < Term.id u then Eq (t,u) else Eq (u,t) in
         Term_alloc.make view Type.bool tc_term
       )
+
+    let apply_subst t subst = match Term.view t with
+      | Eq (a,b) ->
+        let a' = Term.Subst.lookup_rec subst a in
+        let b' = Term.Subst.lookup_rec subst b in
+        if a==a' && b==b' then t else mk_eq a' b'
+      | _ -> assert false
+
+    let () =
+      tc_term.tct_apply_subst <- apply_subst
 
     (* find a value that is authorized by the list of constraints *)
     let[@inline] find_value (l:constraint_list): value = match l with

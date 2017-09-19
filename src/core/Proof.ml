@@ -108,6 +108,11 @@ and step =
       init: t;
       steps: (term * t) list; (* list of pivot+clause *)
     }
+  | Paramod_false of {
+      from: t;
+      pivots: atom list;
+      subst: term_subst;
+    }
 
 let[@inline] conclusion n = n.conclusion
 let[@inline] step n = n.step
@@ -125,6 +130,9 @@ let debug_step out (s:step) : unit = match s with
     in
     Fmt.fprintf out "(@[<hv>hyper_res@ :init %a@ %a@])"
       Clause.debug init (Util.pp_list pp_step) steps
+  | Paramod_false {from;pivots;_} ->
+    Fmt.fprintf out "(@[<hv>paramod_false@ :pivots (@[%a@])@ :from %a@])"
+      (Util.pp_list Atom.debug) pivots Clause.debug from
 
 let[@inline] mk_node conclusion step = {conclusion; step}
 
@@ -160,27 +168,61 @@ let find_pivots (init:clause) (l:clause list) : (term * clause) list =
   List.iter (fun c -> Array.iter Atom.unmark c.c_atoms) l;
   steps
 
+(* introduce intermediate clause from paramodulation only *)
+let remove_pivots (c:clause) pivots paramod : clause =
+  assert (pivots <> []);
+  let atoms =
+    Sequence.of_array c.c_atoms
+    |> Atom.Set.of_seq
+    |> List.fold_right Atom.Set.remove pivots
+    |> Atom.Set.to_list
+  in
+  Clause.make atoms (Premise.hres ~paramod [c])
+
 let expand (conclusion:clause) : node =
   Log.debugf 15 (fun k -> k "(@[proof.expanding@ %a@])" Clause.debug conclusion);
   begin match conclusion.c_premise with
     | Lemma l -> mk_node conclusion (Lemma l)
     | Hyp -> mk_node conclusion Hypothesis
     | Local -> mk_node conclusion Assumption
-    | P_hyper_res {init;steps} ->
+    | P_hyper_res {init;steps;paramod=Paramod_none} ->
       let step = Hyper_res {init;steps} in
+      mk_node conclusion step
+    | P_hyper_res {init;steps;paramod=(Paramod_some{pivots;_} as param)} ->
+      (* introduce intermediate clause from paramodulation only *)
+      let c' = remove_pivots init pivots param in
+      conclusion.c_premise <- Premise.hyper_res c' steps;
+      let step = Hyper_res {init=c';steps} in
       mk_node conclusion step
     | Simplify c ->
       let duplicates = find_duplicates c in
       mk_node conclusion (Deduplicate (c, duplicates))
-    | P_steps ([] | [_]) ->
+    | P_steps {cs=[];_} ->
+      Util.errorf "proof: resolution error (no premise)@ %a@ :premise %a"
+        Clause.debug conclusion Premise.pp conclusion.c_premise
+    | P_steps {cs=[c];paramod=Paramod_some {pivots;subst}} ->
+      (* pure paramod *)
+      let step = Paramod_false {from=c;pivots;subst} in
+      mk_node conclusion step
+    | P_steps {cs=[_];paramod=Paramod_none} ->
       Util.errorf "proof: resolution error (wrong hyperres)@ %a@ :premise %a"
         Clause.debug conclusion Premise.pp conclusion.c_premise
-    | P_steps (c::r) ->
+    | P_steps {cs=c::r; paramod=Paramod_none} ->
       (* find pivots for hyper-resolution *)
       let steps = find_pivots c r in
       (* update premise to memoize proof *)
       conclusion.c_premise <- Premise.hyper_res c steps;
       let step = Hyper_res {init=c; steps} in
+      mk_node conclusion step
+    | P_steps {cs=c::r;paramod=(Paramod_some {pivots;_} as param)} ->
+      (* introduce intermediate clause from paramodulation only *)
+      let c' = remove_pivots c pivots param in
+      conclusion.c_premise <- Premise.hres (c'::r);
+      (* find pivots for hyper-resolution *)
+      let steps = find_pivots c' r in
+      (* update premise to memoize proof *)
+      conclusion.c_premise <- Premise.hyper_res c' steps;
+      let step = Hyper_res {init=c'; steps} in
       mk_node conclusion step
   end
 
@@ -189,8 +231,7 @@ let is_leaf = function
   | Hypothesis
   | Assumption
   | Lemma _ -> true
-  | Deduplicate _
-  | Hyper_res _ -> false
+  | Deduplicate _ | Hyper_res _ | Paramod_false _ -> false
 
 let parents = function
   | Hypothesis
@@ -198,6 +239,7 @@ let parents = function
   | Lemma _ -> []
   | Deduplicate (p, _) -> [p]
   | Hyper_res {init;steps} -> init :: List.map snd steps
+  | Paramod_false {from;_} -> [from]
 
 let expl = function
   | Hypothesis -> "hypothesis"
@@ -205,6 +247,7 @@ let expl = function
   | Lemma _ -> "lemma"
   | Deduplicate  _ -> "deduplicate"
   | Hyper_res _ -> "hyper_res"
+  | Paramod_false _ -> "paramod_false"
 
 (* Compute unsat-core *)
 let unsat_core proof =
@@ -221,9 +264,9 @@ let unsat_core proof =
         | Hyp | Local -> k (c :: res) visited
         | Lemma _ -> k res visited (* ignore lemmas *)
         | Simplify d -> aux res (c :: visited) d k
-        | P_hyper_res {init;steps} ->
+        | P_hyper_res {init;steps;_} ->
           aux_l res (init::visited) (List.map snd steps) k
-        | P_steps h -> aux_l res (c::visited) h k
+        | P_steps {cs=h;_} -> aux_l res (c::visited) h k
       end
     )
   and aux_l res visited l k = match l with
@@ -263,6 +306,7 @@ let rec fold_aux s h f acc =
           | Hyper_res {init;steps} ->
             Stack.push (Enter init) s;
             List.iter (fun (_,c) -> Stack.push (Enter c) s) steps;
+          | Paramod_false {from;_} -> Stack.push (Enter from) s;
           | Hypothesis | Assumption | Lemma _ -> ()
         end
       );
@@ -357,6 +401,30 @@ let check (p:t) : unit =
                 ))
              atoms;
            ()
+         | Paramod_false {pivots;subst;from} ->
+           (* check that concl=from \ pivot *)
+           let atoms =
+             Sequence.of_array from.c_atoms
+             |> Atom.Set.of_seq
+             |> List.fold_right Atom.Set.remove pivots
+           in
+           check_same_set ~ctx:"in-paramod-false" atoms (set_of_c concl);
+           (* check that [subst(pivot) --> false] for each pivot *)
+           List.iter
+             (fun pivot ->
+                let sign = Atom.is_pos pivot in
+                let t_pivot = Term.Subst.apply_args subst (Atom.term pivot) in
+                begin match Term.eval_bool t_pivot, sign with
+                  | Eval_bool (true, _), false
+                  | Eval_bool (false, _), true -> () (* ok *)
+                  | Eval_unknown, _
+                  | Eval_bool (true, _), true
+                  | Eval_bool (false, _), false ->
+                    Util.errorf
+                      "(@[<hv>proof.check.expected_false@ :pivot %a@ :eval-to %a@])"
+                      Atom.debug pivot Term.debug t_pivot
+                end)
+             pivots
        end)
     p
 

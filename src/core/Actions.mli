@@ -16,6 +16,10 @@ val propagate_bool_eval : t -> term -> bool -> subs:term list -> unit
 
 val propagate_bool_lemma : t -> term -> bool -> atom list -> lemma -> unit
 
+val propagate_val_eval : t -> term -> value -> subs:term list -> unit
+
+val propagate_val_lemma : t -> term -> value -> rw_into:term -> atom list -> lemma -> unit
+
 val mark_dirty : t -> term -> unit
 
 val raise_conflict : t -> atom list -> lemma -> 'a

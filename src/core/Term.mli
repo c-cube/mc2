@@ -98,8 +98,9 @@ val tc_mk :
   ?init:(actions -> term -> unit) ->
   ?update_watches:(actions -> term -> watch:term -> watch_res) ->
   ?delete:(term -> unit) ->
-  ?subterms:( term_view -> (term->unit) -> unit) ->
-  ?eval_bool :( term -> eval_bool_res) ->
+  ?subterms:(term_view -> (term->unit) -> unit) ->
+  ?eval_bool:(term -> eval_bool_res) ->
+  ?apply_subst:(term -> term_subst -> term) ->
   pp:term_view CCFormat.printer ->
   unit ->
   tc
@@ -202,6 +203,28 @@ end
 
 val assigned : t -> bool
 val assignment : t -> assignment_view option (** Current assignment of this term *)
+
+(** {2 Subst} *)
+
+module Subst : sig
+  type t = term_subst
+
+  val empty : t
+
+  val add : t -> term -> term -> t
+
+  val mem : t -> term -> bool
+
+  val apply_args : t -> term -> term
+  (** Apply substitution to the term's arguments using its typeclass *)
+
+  val lookup_rec : t -> term -> term
+  (** Look up [t] in substitution. If it is not in, return [t].
+      Otherwise call [apply_subst_args] on the new term.
+      To apply a substitution in a custom term [t],
+      one should call {!lookup_subst} on every immediate subterm,
+      and rebuild the term [t] around the new subterms. *)
+end
 
 (** {2 Low Level constructors. Use at your own risks.} *)
 (**/**)

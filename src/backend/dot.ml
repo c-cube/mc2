@@ -135,6 +135,11 @@ module Make(A : Arg with type atom := atom
         let pivots = List.map (fun (t,_) -> Term.Bool.pa t) steps in
         print_dot_res_node fmt (res_node_id n) pivots;
         print_edge fmt (node_id n) (res_node_id n);
+      | Proof.Paramod_false {from;pivots;_} ->
+        print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Paramod_false" "GREY"
+          ((fun fmt () -> Format.fprintf fmt "%s" (node_id n)) ::
+             List.map (ttify A.print_atom) pivots);
+        print_edge fmt (node_id n) (node_id (Proof.expand from))
     end
 
   let print_node fmt n =

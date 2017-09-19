@@ -163,6 +163,7 @@ let tc_mk
     ?(delete=fun _ -> ())
     ?(subterms=fun _ _ -> ())
     ?(eval_bool=fun _ -> Eval_unknown)
+    ?(apply_subst=fun t _ -> t)
     ~pp
     () : tc =
   { tct_init=init;
@@ -171,6 +172,7 @@ let tc_mk
     tct_subterms=subterms;
     tct_pp=pp;
     tct_eval_bool=eval_bool;
+    tct_apply_subst=apply_subst;
   }
 
 let marked t = Term_fields.get field_t_seen t.t_fields
@@ -331,6 +333,29 @@ module Watch2 = struct
       add_watch w.(1) t;
       Watch_remove
     )
+end
+
+(** {2 Subst} *)
+
+module Subst = struct
+  type t = term_subst
+
+  let empty = Int_map.empty
+
+  let[@inline] add s t u =
+    assert (not (Int_map.mem t.t_id s));
+    Int_map.add t.t_id u s
+
+  let[@inline] mem s t = Int_map.mem t.t_id s
+
+  let[@inline] apply_args (subst:term_subst) (t:term) : term =
+    t.t_tc.tct_apply_subst t subst
+
+  let[@inline] lookup_rec (subst:term_subst) (t:term) : term =
+    begin match Int_map.get t.t_id subst with
+      | None -> t
+      | Some u -> apply_args subst u
+    end
 end
 
 (** {2 Hashconsing of a Theory Terms} *)

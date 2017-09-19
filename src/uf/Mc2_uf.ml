@@ -253,8 +253,7 @@ let build p_id Plugin.S_nil : Plugin.t =
 
     let tc : tc_term =
       Term.tc_mk
-        ~pp ~update_watches ~init ~subterms
-        ~eval_bool ()
+        ~pp ~update_watches ~init ~subterms ~eval_bool ()
 
     let check_if_sat _ = Sat
     let gc_all = T_alloc.gc_all
@@ -306,6 +305,16 @@ let build p_id Plugin.S_nil : Plugin.t =
         let args = Array.of_list l in
         let watches = Term.Watch1.dummy in
         T_alloc.make (App {id;ty;args;watches}) ty tc
+
+    let apply_subst t subst = match Term.view t with
+      | Const _ -> t
+      | App {id;args;_} ->
+        let args' = Array.map (Term.Subst.lookup_rec subst) args in
+        if CCArray.equal Term.equal args args' then t
+        else app id (Array.to_list args')
+      | _ -> assert false
+
+    let () = tc.tct_apply_subst <- apply_subst
 
     let provided_services =
       [ Service.Any (k_app, app);
