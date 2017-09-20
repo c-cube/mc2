@@ -532,7 +532,6 @@ let cancel_until (env:t) (lvl:int) : unit =
         Vec.set env.trail !head t;
         head := !head + 1;
       ) else (
-        t.t_level <- -1;
         t.t_value <- TA_none;
         schedule_decision_term env t;
       )
@@ -603,25 +602,24 @@ let simpl_reason_level_0 : reason -> reason = function
 
 (* Boolean propagation.
    Wrapper function for adding a new propagated formula. *)
-let enqueue_bool (env:t) (a:atom) ~level:lvl (reason:reason) : unit =
+let enqueue_bool (env:t) (a:atom) ~level:level (reason:reason) : unit =
   if Atom.is_false a then (
     Util.errorf "Trying to enqueue a false literal:@ %a" Atom.debug a
   );
   assert (not (Atom.is_true a) && Atom.level a < 0 &&
-          Atom.reason a = None && lvl >= 0);
+          Atom.reason a = None && level >= 0);
   (* simplify reason *)
   let reason =
-    if lvl > 0 then reason
+    if level > 0 then reason
     else simpl_reason_level_0 reason
   in
   (* assign term *)
   let value = Value.of_bool (Atom.is_pos a) in
-  a.a_term.t_value <- TA_assign{value;reason};
-  a.a_term.t_level <- lvl;
+  a.a_term.t_value <- TA_assign{value;reason;level};
   Vec.push env.trail a.a_term;
   Log.debugf debug
     (fun k->k "(@[solver.enqueue_bool (%d/%d)@ %a@ :reason %a@])"
-        (Vec.size env.trail)(decision_level env) Atom.debug a Reason.pp (lvl,reason));
+        (Vec.size env.trail)(decision_level env) Atom.debug a Reason.pp (level,reason));
   ()
 
 (* atom [a] evaluates to [true] because of [terms] *)
@@ -632,8 +630,9 @@ let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
     (* level of propagations is [max_{t in terms} t.level] *)
     let lvl =
       List.fold_left
-        (fun acc {t_level; _} ->
-           assert (t_level > 0); max acc t_level)
+        (fun acc t ->
+           let t_lvl = Term.level t in
+           assert (t_lvl > 0); max acc t_lvl)
         0 terms
     in
     env.propagations <- env.propagations + 1;
@@ -651,15 +650,14 @@ let enqueue_bool_theory_propagate (env:t) (a:atom)
   )
 
 (* MCsat semantic assignment *)
-let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) (lvl:int) : unit =
+let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) (level:int) : unit =
   if Term.has_value t then (
     Log.debugf error
       (fun k -> k "Trying to assign an already assigned literal: %a" Term.debug t);
     assert false
   );
-  assert (t.t_level < 0);
-  t.t_value <- TA_assign {value;reason};
-  t.t_level <- lvl;
+  assert (t.t_value = TA_none);
+  t.t_value <- TA_assign {value;reason;level};
   Vec.push env.trail t;
   Log.debugf debug
     (fun k->k "(@[solver.enqueue_semantic (%d/%d)@ %a@])"
@@ -1285,7 +1283,7 @@ let create () : t =
 (* Decide on a new literal, and enqueue it into the trail *)
 let rec pick_branch_aux (env:t) (atom:atom) : unit =
   let t = atom.a_term in
-  if t.t_level >= 0 then (
+  if Term.has_value t then (
     assert (not (Atom.is_undef atom));
     pick_branch_lit env
   ) else (
@@ -1327,7 +1325,7 @@ and pick_branch_lit (env:t) : unit =
             pick_branch_aux env pa
           | Var_semantic _ ->
             (* semantic decision, delegate to plugin *)
-            if t.t_level >= 0 then (
+            if Term.has_value t then (
               pick_branch_lit env (* assigned already *)
             ) else (
               let value = decide_term env t in

@@ -32,7 +32,7 @@ let[@inline] set_atom_reason (a:atom) (r:reason) : unit =
   begin match a.a_term.t_value with
     | TA_none -> assert false
     | TA_assign{value;_} ->
-      a.a_term.t_value <- TA_assign{value;reason=r}
+      a.a_term.t_value <- TA_assign{value;reason=r;level=0}
   end
 
 (* update proof of atom [a] with additional information at level 0 *)

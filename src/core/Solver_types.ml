@@ -76,7 +76,6 @@ and term = {
   mutable t_weight : float; (** Weight (for the heap), tracking activity *)
   mutable t_fields: Term_fields.t;
   (** bitfield for storing various info *)
-  mutable t_level : int; (** Decision level of the assignment *)
   mutable t_var: var;
   (** The "generalized variable" part, for assignments. *)
   mutable t_watches : term Vec.t lazy_t; (** terms that watch this term *)
@@ -181,6 +180,7 @@ and atom = {
 and term_assignment =
   | TA_none
   | TA_assign of {
+      level : int; (** Decision level of the assignment *)
       value: value;
       reason: reason;
     }
@@ -330,7 +330,6 @@ let rec dummy_term : term = {
   t_ty=Bool;
   t_fields= Term_fields.empty;
   t_weight= -1.;
-  t_level= -1;
   t_var=Var_none;
   t_watches=lazy (Vec.make_empty dummy_term);
   t_value=TA_none;

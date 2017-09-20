@@ -29,7 +29,6 @@ let[@inline] plugin_id t : int = id t land p_mask
 let[@inline] plugin_specific_id t : int = id t lsr plugin_id_width
 let[@inline] weight t = t.t_weight
 let[@inline] set_weight t f = t.t_weight <- f
-let[@inline] level t = t.t_level
 let[@inline] is_deleted t = field_get field_t_is_deleted t
 let[@inline] is_added t = field_get field_t_is_added t
 let[@inline] var t = t.t_var
@@ -37,6 +36,9 @@ let[@inline] ty t = t.t_ty
 let[@inline] iter_subterms (t:term): term Sequence.t = t.t_tc.tct_subterms t.t_view
 let[@inline] is_bool t = Type.is_bool t.t_ty
 let[@inline] subterms t : t list = iter_subterms t |> Sequence.to_list
+let[@inline] level t = match t.t_value with
+  | TA_none -> -1
+  | TA_assign {level;_} -> level
 
 let[@inline] gc_marked (t:t) : bool = field_get field_t_gc_marked t
 let[@inline] gc_unmark (t:t) : unit = field_clear field_t_gc_marked t
@@ -112,11 +114,10 @@ module Unsafe = struct
   (* build a fresh term *)
   let[@inline never] make_term t_id t_view t_ty t_tc : t =
     let t_fields = Fields.empty in
-    let t_level = -1 in
     let t_weight = 0. in
     let t_idx = ~-1 in
     let t_watches = lazy (Vec.make_empty dummy_term) in
-    { t_id; t_view; t_ty; t_fields; t_level; t_weight; t_idx;
+    { t_id; t_view; t_ty; t_fields; t_weight; t_idx;
       t_var=Var_none; t_value=TA_none; t_watches; t_tc; }
 end
 
@@ -228,8 +229,8 @@ let debug_no_val out t : unit =
 let debug out t : unit =
   let pp_val out = function
     | TA_none -> ()
-    | TA_assign {value;_} ->
-      Format.fprintf out "[@@%d@<1>→%a]" t.t_level Value.pp value
+    | TA_assign {value;level;_} ->
+      Format.fprintf out "[@@%d@<1>→%a]" level Value.pp value
   in
   debug_no_val out t;
   pp_val out (value t)

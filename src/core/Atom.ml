@@ -60,7 +60,7 @@ let[@inline] reason (a:t) = match a.a_term.t_value with
   | _ -> None
 
 let[@inline] term (a:t) = a.a_term
-let[@inline] level (a:t) = a.a_term.t_level
+let[@inline] level (a:t) = Term.level a.a_term
 let[@inline] watched (a:t) = a.a_watched
 
 let mark (a:t) =
@@ -84,7 +84,9 @@ let marked (a:t) : bool =
     Term_fields.get field_t_mark_neg a.a_term.t_fields
   )
 
-let pp_level fmt a = Reason.pp_opt fmt (a.a_term.t_level, reason a)
+let pp_level fmt a = Reason.pp_opt fmt (level a, reason a)
+let[@inline] mark_neg (a:t) = mark (neg a)
+let[@inline] unmark_neg (a:t) = unmark (neg a)
 
 let pp_value fmt a =
   if is_true a then
