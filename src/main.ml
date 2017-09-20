@@ -124,40 +124,41 @@ let main () =
         ]
     in
     Solver.create ~plugins ()
-    in
-    let res = match syn with
-      | Smtlib ->
-        (* parse pb *)
-        Mc2_smtlib.Ast.parse !file >>= fun input ->
-        (* TODO: parse list of plugins on CLI *)
-        (* process statements *)
-        begin try
-            let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
-            E.fold_l
-              (fun () ->
-                 Process_smtlib.process_stmt
-                   ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
-                   ~time:!time_limit ~memory:!size_limit
-                   ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
-                   solver)
-              () input
-          with Exit ->
-            E.return()
-        end
-      | Dimacs ->
-        Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
-        Mc2_dimacs.Process.process
-          ~pp_model:!p_model ~gc:!gc ~restarts:!restarts ~check:!check
-          ~time:!time_limit ~memory:!size_limit ~progress:!p_progress
-          solver pb
-    in
-    if !p_stat then (
-      Format.printf "%a@." Solver.pp_stats solver;
-    );
-    if !p_gc_stat then (
-      Printf.printf "(gc_stats\n%t)\n" Gc.print_stat;
-    );
-    res
+  in
+  let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
+  let res = match syn with
+    | Smtlib ->
+      (* parse pb *)
+      Mc2_smtlib.Ast.parse !file >>= fun input ->
+      (* TODO: parse list of plugins on CLI *)
+      (* process statements *)
+      begin
+        try
+          E.fold_l
+            (fun () ->
+               Process_smtlib.process_stmt
+                 ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
+                 ~time:!time_limit ~memory:!size_limit
+                 ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
+                 solver)
+            () input
+        with Exit ->
+          E.return()
+      end
+    | Dimacs ->
+      Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
+      Mc2_dimacs.Process.process
+        ~pp_model:!p_model ~gc:!gc ?dot_proof ~restarts:!restarts ~check:!check
+        ~time:!time_limit ~memory:!size_limit ~progress:!p_progress
+        solver pb
+  in
+  if !p_stat then (
+    Format.printf "%a@." Solver.pp_stats solver;
+  );
+  if !p_gc_stat then (
+    Printf.printf "(gc_stats\n%t)\n" Gc.print_stat;
+  );
+  res
 
 let () = match main() with
   | E.Ok () -> ()

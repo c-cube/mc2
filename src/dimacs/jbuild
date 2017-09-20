@@ -7,7 +7,7 @@
   ((name mc2_dimacs)
    (public_name mc2.dimacs)
    (optional) ; only if deps present
-   (libraries (containers mc2.core))
+   (libraries (containers mc2.core mc2.backend))
    (flags (:standard -w +a-4-42-44-48-50-58-32-60@8))
    (ocamlopt_flags (:standard -O3 -color always -bin-annot
                     -unbox-closures -unbox-closures-factor 20))

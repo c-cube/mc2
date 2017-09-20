@@ -13,6 +13,7 @@ val solve : Solver.t -> Solver.res or_error
 val process :
   ?gc:bool ->
   ?restarts:bool ->
+  ?dot_proof:string ->
   ?pp_model:bool ->
   ?check:bool ->
   ?time:float ->
