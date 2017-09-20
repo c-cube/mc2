@@ -319,8 +319,6 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             add_diff acts a value ~diseqn:(Term.Bool.na eqn) ~other:b
           | _, TA_assign _, TA_assign _ ->
             (* semantic propagation *)
-            (* FIXME: if term already assigned to *wrong* value, trigger
-               conflict somehow? *)
             begin match eval_bool eqn with
               | Eval_unknown -> assert false
               | Eval_bool (b, subs) ->

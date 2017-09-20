@@ -400,7 +400,7 @@ module Subst = struct
     else (
       let pp_bind out (t,u) = Fmt.fprintf out "@[%a@ @<1>→ %a@]" pp_t t pp_t u in
       Fmt.fprintf out "{@[<hv>%a@]}"
-        (Util.pp_seq ~sep:" , " pp_bind) (Int_map.values s)
+        (Util.pp_seq ~sep:";" pp_bind) (Int_map.values s)
     )
 
   let[@inline] pp out s = pp_ pp out s
