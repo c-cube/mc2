@@ -990,6 +990,10 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
           (* boolean atom -> paramodulate it and maybe learn it *)
           let p = Term.Bool.assigned_atom_exn t |> Atom.neg in
           atoms_to_paramod := p :: !atoms_to_paramod;
+          Log.debugf 30
+            (fun k->k"(@[<hv>conflict_analyze.add_term_to_param@ %a@ \
+                      :subs (@[<v>%a@])@])"
+                Atom.debug p (Util.pp_list Term.debug) subs);
         );
         to_analyze := Analyze_none;
       | _, (Bcp cl | Bcp_lazy (lazy cl))->
@@ -1397,7 +1401,7 @@ let mk_actions (env:t) : actions =
   and act_propagate_bool_eval t (b:bool) ~(subs:term list) : unit =
     (* TODO: check again levels… *)
     Log.debugf debug
-      (fun k->k "(@[<hv>solver.semantic_propagate_bool@ %a@ :val %B@ :subs (@[<hv>%a@])@])"
+      (fun k->k "(@[<hv>solver.semantic_propagate_bool@ %a@ :val %B@ :subs (@[<v>%a@])@])"
         Term.debug t b (Util.pp_list Term.debug) subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     if Atom.is_false a then (
@@ -1424,7 +1428,7 @@ let mk_actions (env:t) : actions =
     enqueue_bool_theory_propagate env a ~lvl atoms lemma
   and act_propagate_val_eval t (v:value) ~(subs:term list) : unit =
     Log.debugf debug
-      (fun k->k "(@[<hv>solver.semantic_propagate_val@ %a@ :val %a@ :subs (@[<hv>%a@])@])"
+      (fun k->k "(@[<hv>solver.semantic_propagate_val@ %a@ :val %a@ :subs (@[<v>%a@])@])"
         Term.debug t Value.pp v (Util.pp_list Term.debug) subs);
     enqueue_semantic_eval env t v subs
   and act_propagate_val_lemma t (v:value) ~rw_into atoms lemma : unit =
