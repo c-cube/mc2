@@ -289,11 +289,12 @@ and premise_step =
   (** atom to rewrite. [init] should rewrite to [learn], which is to to be kept *)
   | Step_paramod_with of paramod_clause (** Use this clause for paramodulation *)
 
-and lemma = {
-  lemma_view: lemma_view; (** The lemma content *)
-  lemma_tc: tc_lemma; (** Methods on the lemma *)
-}
-(** A lemma belonging to some plugin. Must be a tautology of the theory. *)
+and lemma =
+  | Lemma_bool_tauto (** tautology [a ∨ ¬a] *)
+  | Lemma_custom of {
+      view: lemma_view; (** The lemma content *)
+      tc: tc_lemma; (** Methods on the lemma *)
+    } (** A lemma belonging to some plugin. Must be a tautology of the theory. *)
 
 and tc_lemma = {
   tcl_pp : lemma_view CCFormat.printer;

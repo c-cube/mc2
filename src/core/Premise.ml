@@ -57,7 +57,7 @@ let pp out = function
   | Hyp -> Format.fprintf out "hyp"
   | Local -> Format.fprintf out "local"
   | Lemma l ->
-    Format.fprintf out "th_lemma@ %a" Lemma.pp l
+    Format.fprintf out "@[th_lemma@ %a@]" Lemma.pp l
   | Simplify c -> Format.fprintf out "simpl %a" pp_clause_name c
   | P_raw_steps l ->
     Fmt.fprintf out "steps{@[%a@]}"

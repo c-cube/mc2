@@ -42,6 +42,7 @@ val debug : t CCFormat.printer (** very verbose printer *)
 
 val pp_atoms : atom list CCFormat.printer
 val debug_atoms : atom list CCFormat.printer
+val debug_atoms_a : atom array CCFormat.printer
 
 val pp_dimacs : t CCFormat.printer
 
