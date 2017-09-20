@@ -20,12 +20,20 @@ val mark : t -> unit (** Mark the atom as seen, using fields in the variable. *)
 val marked : t -> bool (** Returns wether the atom has been marked as seen. *)
 val unmark : t -> unit
 
+val mark_neg : t -> unit (** Mark negation of the atom *)
+val unmark_neg : t -> unit (** Unmark negation of the atom *)
+
 val level : t -> int (** decision level of the variable *)
 val reason : t -> reason option
 val is_true : t -> bool (** True in current model? *)
 val is_false : t -> bool
 val is_undef : t -> bool
 val has_value : t -> bool
+
+val paramod : term_subst -> t -> t (** Rewrite inside the atom's term *)
+
+val eval_bool : t -> eval_bool_res (** Semantically evaluate atom *)
+val is_absurd : t -> bool
 
 val term : t -> term
 val watched : t -> clause Vec.t

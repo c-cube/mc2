@@ -5,16 +5,16 @@ type t = premise
 
 val prefix : t -> string
 
-val pp : t CCFormat.printer
-
-val empty_paramod : paramod_info
-
-val hres : ?paramod:paramod_info -> clause list -> t
-(** Hyper resolution, raw form
+val raw_steps : raw_premise_step list -> t
+(** Hyper resolution/paramod, raw form
     precondition: list.length >= 2 *)
 
-val hres_or_simplify : ?paramod:paramod_info -> clause list -> t
-(** If singleton list, simplify; else Hyper_res
-    precondition: list not empty *)
+val raw_steps_or_simplify : raw_premise_step list -> t
+(** If singleton list, simplify; else Raw_steps
+    precondition: list not empty, first item is a clause *)
 
-val hyper_res : ?paramod:paramod_info -> clause -> (term * clause) list -> t
+val steps : clause -> premise_step list -> t
+
+val pp_raw_premise_step : raw_premise_step Fmt.printer
+val pp_premise_step : premise_step Fmt.printer
+val pp : t Fmt.printer

@@ -342,9 +342,11 @@ module Subst = struct
 
   let empty = Int_map.empty
 
+  let is_empty = Int_map.is_empty
+
   let[@inline] add s t u =
     assert (not (Int_map.mem t.t_id s));
-    Int_map.add t.t_id u s
+    Int_map.add t.t_id (t,u) s
 
   let[@inline] mem s t = Int_map.mem t.t_id s
 
@@ -354,8 +356,19 @@ module Subst = struct
   let[@inline] lookup_rec (subst:term_subst) (t:term) : term =
     begin match Int_map.get t.t_id subst with
       | None -> t
-      | Some u -> apply_args subst u
+      | Some (_,u) -> apply_args subst u
     end
+
+  let pp_ pp_t out (s:t) =
+    if is_empty s then ()
+    else (
+      let pp_bind out (t,u) = Fmt.fprintf out "@[%a@ @<1>→ %a@]" pp_t t pp_t u in
+      Fmt.fprintf out "{@[<hv>%a@]}"
+        (Util.pp_seq ~sep:" , " pp_bind) (Int_map.values s)
+    )
+
+  let[@inline] pp out s = pp_ pp out s
+  let[@inline] debug out s = pp_ debug out s
 end
 
 (** {2 Hashconsing of a Theory Terms} *)

@@ -34,16 +34,11 @@ and step =
       the conclusion of the provided proof. *)
   | Hyper_res of {
       init: t;
-      steps: (term * t) list; (* list of pivot+clause *)
+      steps: premise_step list; (* list of steps to apply to [init] *)
     }
   (** The conclusion can be deduced by performing a series of resolution steps
       between [init] and, successively, each clause in the list on the
       corresponding pivot atom. *)
-  | Paramod_false of {
-      from: t;
-      pivots: atom list; (* terms reduced to false *)
-      subst: term_subst; (* substitution to apply to pivot *)
-    } (** [subst(pivot)] is absurd, [from = concl ∨ pivot1 ∨ … ∨ pivotn] *)
 (** The type of reasoning steps allowed in a proof. *)
 
 val conclusion : node -> clause

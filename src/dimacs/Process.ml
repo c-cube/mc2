@@ -36,10 +36,9 @@ let check_model cs state : bool =
              (fun k -> k "(@[check.atom@ %a@])" Term.debug (Atom.term a));
          let b = Solver.Sat_state.eval state a in
          (* check consistency with eval_bool *)
-         begin match Term.eval_bool (Atom.term a) with
+         begin match Atom.eval_bool a with
            | Eval_unknown -> ()
-           | Eval_bool (b', _) ->
-             assert (b = (if Atom.is_pos a then b' else not b'));
+           | Eval_bool (b', _) -> assert (b=b')
          end;
          b)
         c

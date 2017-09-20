@@ -8,7 +8,6 @@ let[@inline] compare a b = CCInt.compare a.a_id b.a_id
 
 let[@inline] same_term a b = a.a_term == b.a_term
 
-(* negation of the atom *)
 let[@inline] is_pos (a:t) : bool = match a.a_term.t_var with
   | Var_bool { pa; _ } -> a==pa
   | Var_none | Var_semantic _ -> assert false
@@ -85,8 +84,27 @@ let marked (a:t) : bool =
   )
 
 let pp_level fmt a = Reason.pp_opt fmt (level a, reason a)
+
 let[@inline] mark_neg (a:t) = mark (neg a)
 let[@inline] unmark_neg (a:t) = unmark (neg a)
+
+(* paramodulate inside atom *)
+let[@inline] paramod (subst:term_subst) (a:t) : t =
+  let t = Term.Subst.apply_args subst (term a) in
+  assert (Term.is_bool t);
+  if is_pos a then Term.Bool.pa t else Term.Bool.na t
+
+let[@inline] eval_bool (a:t) : eval_bool_res =
+  begin match Term.eval_bool (term a) with
+    | Eval_unknown -> Eval_unknown
+    | Eval_bool (v, subs) ->
+      let v = if is_pos a then v else not v in
+      Eval_bool (v, subs)
+  end
+
+let[@inline] is_absurd (a:t) : bool = match eval_bool a with
+  | Eval_bool (false,[]) -> true
+  | _ -> false
 
 let pp_value fmt a =
   if is_true a then

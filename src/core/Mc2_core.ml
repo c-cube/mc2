@@ -15,6 +15,7 @@ module Plugin = Plugin
 module Tseitin = Tseitin
 module ID = ID
 module Lemma = Lemma
+module Paramod_clause = Paramod_clause
 
 
 (**/**)

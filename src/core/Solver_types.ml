@@ -109,7 +109,7 @@ and tc_term = {
 }
 (** type class for terms, packing all operations on terms *)
 
-and term_subst = term Int_map.t
+and term_subst = (term * term) Int_map.t
 (** Finite substitution over terms *)
 
 and watch_res =
@@ -203,6 +203,15 @@ and clause = {
 (** The type of clauses. Each clause generated should be true, i.e. enforced
     by the current problem (for more information, see the cpremise field). *)
 
+and paramod_clause = {
+  pc_lhs: term;
+  pc_rhs: term;
+  pc_guard: atom list;
+  pc_premise: premise;
+}
+(** A paramodulation clause, of the form [guard => (lhs = rhs)]. It is
+    used to rewrite [lhs] into [rhs] assuming [guard] holds *)
+
 and tc_value = {
   tcv_pp : value_view CCFormat.printer; (** printer *)
   tcv_equal : value_view -> value_view -> bool; (** equality *)
@@ -228,16 +237,6 @@ and reason =
   (** The term can be evaluated using the terms in the list *)
 (** Reasons of propagation/decision of atoms/terms. *)
 
-and paramod_info =
-  | Paramod_none
-  | Paramod_some of {
-      subst: term_subst;
-      pivots: atom list; (* eval to false *)
-    } (** Atoms in [pivots] can be reduced to [false] by applying
-          the substitution to them. *)
-(** Information for paramodulation, which is used for conflict resolution
-    when terms of non-boolean type can take part in propagation *)
-
 and premise =
   | Hyp (** The clause is a hypothesis, provided by the user. *)
   | Local
@@ -246,18 +245,13 @@ and premise =
   (** The clause is a theory-provided tautology, with the given proof. *)
   | Simplify of clause
   (** Deduplication/sorting of atoms in the clause *)
-  | P_hyper_res of {
-      init: clause;
-      steps: (term * clause) list; (* resolution steps *)
-      paramod: paramod_info;
-    }
   | P_steps of {
-      cs: clause list;
-      paramod: paramod_info;
+      init: clause;
+      steps: premise_step list; (* resolution steps *)
     }
-  (** The clause can be obtained by resolution of the clauses
-      in the list, left-to-right, and by paramodulating away
-      the atoms {!paramod_false}.
+  | P_raw_steps of raw_premise_step list
+  (** The clause can be obtained by resolution or paramodulation of the clauses
+      in the list, left-to-right.
       For a premise [History [a_1 :: ... :: a_n]] ([n >= 2]) the clause
       is obtained by performing resolution of [a_1] with [a_2], and then
       performing a resolution step between the result and [a_3], etc...  Of
@@ -271,6 +265,31 @@ and premise =
     going from [Hyper_res l] towards explicit steps of resolution
     with [Resolve]. This update preserves the semantics of proofs
     but acts as a memoization of the proof reconstruction process. *)
+
+(** Clause or paramodulation, raw form *)
+and raw_premise_step =
+  | RP_resolve of clause (** resolution with clause *)
+  | RP_paramod_away of atom (** atom to rewrite. atom -> false *)
+  | RP_paramod_learn of {
+      init: atom;
+      learn: atom;
+    }
+  (** atom to rewrite. [init] should rewrite to [learn], which is to to be kept *)
+  | RP_paramod_with of paramod_clause (** Use this clause for paramodulation *)
+
+(** Clause or paramodulation, refined form *)
+and premise_step =
+  | Step_resolve of {
+      c: clause; (** clause to resolve with *)
+      pivot: term; (** pivot to remove *)
+    }
+  | Step_paramod_away of atom (** atom to rewrite. atom->false *)
+  | Step_paramod_learn of {
+      init: atom;
+      learn: atom;
+    }
+  (** atom to rewrite. [init] should rewrite to [learn], which is to to be kept *)
+  | Step_paramod_with of paramod_clause (** Use this clause for paramodulation *)
 
 and lemma = {
   lemma_view: lemma_view; (** The lemma content *)

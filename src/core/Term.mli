@@ -211,6 +211,8 @@ module Subst : sig
 
   val empty : t
 
+  val is_empty : t -> bool
+
   val add : t -> term -> term -> t
 
   val mem : t -> term -> bool
@@ -224,6 +226,9 @@ module Subst : sig
       To apply a substitution in a custom term [t],
       one should call {!lookup_subst} on every immediate subterm,
       and rebuild the term [t] around the new subterms. *)
+
+  val pp : t Fmt.printer
+  val debug : t Fmt.printer
 end
 
 (** {2 Low Level constructors. Use at your own risks.} *)

@@ -78,9 +78,10 @@ module Make(A : Arg with type atom := atom
 
   let print_edges fmt n =
     begin match n.Proof.step with
-      | Proof.Hyper_res {init; steps} ->
+      | Proof.Hyper_res {init;_} ->
         print_edge fmt (res_node_id n) (proof_id init);
-        List.iter (fun (_,p) -> print_edge fmt (res_node_id n) (proof_id p)) steps
+        List.iter (fun p -> print_edge fmt (res_node_id n) (proof_id p))
+          (Proof.parents n.Proof.step)
       | _ -> ()
     end
 
@@ -132,14 +133,18 @@ module Make(A : Arg with type atom := atom
       | Proof.Hyper_res {steps;_} ->
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Hyper_res" "GREY"
           [(fun fmt () -> Format.fprintf fmt "%s" (node_id n))];
-        let pivots = List.map (fun (t,_) -> Term.Bool.pa t) steps in
+        let pivots =
+          CCList.filter_map
+            (function Step_resolve {pivot;_} -> Some (Term.Bool.pa pivot) | _ -> None) steps in
         print_dot_res_node fmt (res_node_id n) pivots;
         print_edge fmt (node_id n) (res_node_id n);
+        (* FIXME: also print this in Hyper_res case
       | Proof.Paramod_false {from;pivots;_} ->
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Paramod_false" "GREY"
           ((fun fmt () -> Format.fprintf fmt "%s" (node_id n)) ::
              List.map (ttify A.print_atom) pivots);
         print_edge fmt (node_id n) (node_id (Proof.expand from))
+           *)
     end
 
   let print_node fmt n =
