@@ -707,15 +707,24 @@ let debug_eval_bool out = function
 (* [a] is part of a conflict/learnt clause, but might not be evaluated yet.
    Evaluate it, save its value, and ensure it is indeed false. *)
 let eval_atom_to_false (env:t) (a:atom): unit =
-  if Atom.has_value a then (
-    assert (Atom.is_false a);
+  if Atom.is_false a then (
+    ()
   ) else (
     let v = Atom.eval_bool a in
     Log.debugf debug (fun k->k "(@[atom_must_be_false@ %a@ :eval_to %a@])"
         Atom.debug a debug_eval_bool v);
     begin match v with
       | Eval_bool (false, subs) ->
-        enqueue_semantic_bool_eval env (Atom.neg a) subs
+        if Atom.is_true a then (
+          (* replace! *)
+          Log.debugf debug (fun k->k "(@[atom_must_be_false.replace@ %a@])"
+              Atom.debug a);
+          let value = if Atom.is_pos a then Value.false_ else Value.true_ in
+          let level = List.fold_left (fun m t -> max m (Term.level t)) 0 subs in
+          a.a_term.t_value <- TA_assign{value;reason=Semantic subs;level}
+        ) else (
+          enqueue_semantic_bool_eval env (Atom.neg a) subs
+        )
       | _ -> assert false
     end
   )
