@@ -1388,7 +1388,7 @@ let mk_actions (env:t) : actions =
     let lvl = List.fold_left
       (fun lvl b ->
         add_atom env b;
-        eval_atom_to_false env b;
+        eval_atom_to_false env (Atom.neg b);
         max lvl (Atom.level b))
       0 atoms
     in

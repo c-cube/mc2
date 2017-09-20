@@ -28,6 +28,7 @@ type constraint_list =
   | C_eq of {
       value: value;
       mutable l: reason list;
+      diseq_tbl: reason list Value.Tbl.t lazy_t;
     } (** Term equal value *)
 
 (* current knowledge for a value of an uninterpreted type *)
@@ -81,8 +82,8 @@ let pp_v_reason_neq out (v,rn): unit =
     Value.pp v rn.lvl Term.debug rn.other Atom.debug rn.atom
 
 let pp_c_list out (c_l:constraint_list) = match c_l with
-  | C_none -> ()
-  | C_eq {value;l} ->
+  | C_none -> Fmt.string out "ø"
+  | C_eq {value;l;_} ->
     let l = Sequence.of_list l |> Sequence.map (CCPair.make value) in
     Fmt.fprintf out "{@[<hv>%a@]}" (Util.pp_seq pp_v_reason_eq) l
   | C_diseq {tbl} ->
@@ -187,12 +188,12 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
           begin match Value.Tbl.find tbl v with
             | [] -> assert false
             | {atom;other;_} :: _ ->
-              assert (Atom.is_pos atom);
+              assert (Atom.is_neg atom);
               Conflict_eq_neq {diseqn=atom;other}
             | exception Not_found -> Conflict_none
           end
         | C_eq {l=[];_} -> assert false
-        | C_eq {value=v2;l={other;atom;_}::_} ->
+        | C_eq {value=v2;l={other;atom;_}::_;_} ->
           if Value.equal v v2 then (
             Conflict_none
           ) else (
@@ -205,7 +206,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let find_conflict_diseq_ (v:value) (l:constraint_list) : conflict_opt =
       begin match l with
         | C_eq {l=[];_} -> assert false
-        | C_eq {value;l={atom;other;_}::_} ->
+        | C_eq {value;l={atom;other;_}::_;_} ->
           if Value.equal v value
           then Conflict_neq_eq {eqn=atom;other}
           else Conflict_none
@@ -225,9 +226,9 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             | Conflict_neq_eq _ -> assert false
             | Conflict_eq_eq {eqn=eqn';other=other'} ->
               (* conflict! two distinct "singleton" *)
-              let neq = Term.mk_eq other other' in
+              let eq_deduce = Term.Bool.mk_eq other other' in
               let conflict =
-                [ Term.Bool.pa neq;
+                [ eq_deduce;
                   Atom.neg eqn;
                   Atom.neg eqn';
                 ]
@@ -237,7 +238,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
               (* conflict! one singleton, one diff, same value *)
               let neq_side = Term.Bool.mk_neq other other' in
               let conflict =
-                [ diseqn;
+                [ Atom.neg diseqn;
                   Atom.neg eqn;
                   neq_side;
                 ]
@@ -251,13 +252,16 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
           let r = {other;atom=eqn;lvl} in
           begin match ds.c_list with
             | C_none ->
-              ds.c_list <- C_eq {value=v;l=[r]};
-              (* also, propagate! *)
-              let lemma = Lemma.make Equality tc_lemma in
-              Actions.propagate_val_lemma acts t v ~rw_into:other [eqn] lemma;
+              ds.c_list <- C_eq {value=v;l=[r];diseq_tbl=lazy (Value.Tbl.create 5)};
             | C_eq eq -> eq.l <- r :: eq.l
-            | C_diseq _ -> assert false
-          end
+            | C_diseq {tbl} ->
+              ds.c_list <- C_eq {value=v;l=[r];diseq_tbl=Lazy.from_val tbl};
+          end;
+          (* also, propagate, if not assigned yet ! *)
+          if not (Term.has_value t) then (
+            let lemma = Lemma.make Equality tc_lemma in
+            Actions.propagate_val_lemma acts t v ~rw_into:other [eqn] lemma;
+          )
         | _ -> assert false
       end
 
@@ -406,12 +410,17 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       CCList.filter (fun {lvl;_} -> lvl <= level)
 
     (* filter constraints of level bigger than [lvl] *)
-    let filter_lvl_ lvl (l:constraint_list) : constraint_list =
+    let rec filter_lvl_ lvl (l:constraint_list) : constraint_list =
       begin match l with
         | C_none -> C_none
-        | C_eq {value;l} ->
+        | C_eq {value;l;diseq_tbl} ->
           let l = filter_r_list lvl l in
-          if CCList.is_empty l then C_none else C_eq {value;l}
+          if CCList.is_empty l then (
+            (* no equality anymore, fallback to diseq *)
+            if Lazy.is_val diseq_tbl then
+              filter_lvl_ lvl (C_diseq {tbl=Lazy.force diseq_tbl})
+            else C_none
+          ) else C_eq {value;l;diseq_tbl}
         | C_diseq {tbl} ->
           Value.Tbl.iter
             (fun v l ->
