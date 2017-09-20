@@ -15,5 +15,3 @@ let[@inline] on_backtrack acts lvl f = acts.act_on_backtrack lvl f
 let[@inline] propagate_bool_lemma acts t b c l =
   acts.act_propagate_bool_lemma t b c l
 
-let[@inline] mark_dirty_on_backtrack acts t =
-  on_backtrack acts (level acts) (fun () -> mark_dirty acts t)

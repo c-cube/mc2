@@ -224,8 +224,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             | Conflict_none -> ()
           end;
           (* just add constraint *)
-          Actions.mark_dirty_on_backtrack acts t;
           let lvl = max (Term.level eqn) (Term.level other) in
+          Actions.on_backtrack acts lvl (fun () -> Actions.mark_dirty acts t);
           ds.c_list <- C_singleton {v;other;eqn;tail=ds.c_list;lvl};
         | _ -> assert false
       end
@@ -260,7 +260,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             | C_singleton ({tail;_} as r) ->
               C_singleton {r with tail=add_diff_ tail}
           in
-          Actions.mark_dirty_on_backtrack acts t;
+          Actions.on_backtrack acts lvl (fun () -> Actions.mark_dirty acts t);
           ds.c_list <- add_diff_ ds.c_list;
         | _ -> assert false
       end
