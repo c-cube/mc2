@@ -988,7 +988,7 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
         List.iter mark_term_for_analysis subs;
         if Term.is_bool t then (
           (* boolean atom -> paramodulate it and maybe learn it *)
-          let p = Term.Bool.assigned_atom_exn t in
+          let p = Term.Bool.assigned_atom_exn t |> Atom.neg in
           atoms_to_paramod := p :: !atoms_to_paramod;
         );
         to_analyze := Analyze_none;
