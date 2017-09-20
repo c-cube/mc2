@@ -1840,22 +1840,22 @@ let assume env ?tag (cnf:atom list list) =
 
 (* create a factice decision level for local assumptions *)
 let push (env:t) : unit =
-  Log.debug debug "Pushing a new user level";
+  Log.debug debug "(solver.push)";
   cancel_until env (base_level env);
-  Log.debugf debug
-    (fun k -> k "@[<v>Status:@,@[<hov 2>trail: %d - %d@,%a@]"
-        env.elt_head env.th_head (Vec.print ~sep:"" Term.debug) env.trail);
+  Log.debugf 30
+    (fun k->k"(@[solver.push.status@ :prop_head %d@ :trail (@[<hv>%a@])@])"
+        env.propagate_head (Vec.print ~sep:"" Term.debug) env.trail);
   begin match propagate env with
     | Some (Conflict_clause c) ->
       report_unsat env c
     | Some (Conflict_eval _) -> assert false (* FIXME *)
     | None ->
-      Log.debugf debug
-        (fun k -> k "@[<v>Current trail:@,@[<hov>%a@]@]"
+      Log.debugf 30
+        (fun k -> k "(@[<v>solver.current_trail@ (@[<hv>%a@])@])"
             (Vec.print ~sep:"" Term.debug) env.trail);
       new_decision_level env;
       Log.debugf info
-        (fun k->k"Creating new user level (cur_level %d)" (decision_level env));
+        (fun k->k"(@[<hv>solver.create_new_user_level@ :cur-level %d@])" (decision_level env));
       Vec.push env.user_levels (Vec.size env.clauses_temp);
       assert (decision_level env = base_level env)
   end
@@ -1865,7 +1865,7 @@ let pop (env:t) : unit =
   if base_level env = 0 then (
     Log.debug warn "Cannot pop (already at level 0)";
   ) else (
-    Log.debug info "Popping user level";
+    Log.debug info "(solver.pop)";
     assert (base_level env > 0);
     env.unsat_conflict <- None;
     let n = Vec.last env.user_levels in
