@@ -38,3 +38,9 @@ let true_ = V_true
 let false_ = V_false
 let[@inline] of_bool b = if b then true_ else false_
 let[@inline] make tc view : t = V_value { tc; view }
+
+module Tbl = CCHashtbl.Make(struct
+    type t = value
+    let equal = equal
+    let hash = hash
+  end)

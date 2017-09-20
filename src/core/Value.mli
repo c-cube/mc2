@@ -27,3 +27,5 @@ val of_bool : bool -> t
 
 val make : tc_value -> value_view -> t
 (** Main construction for values *)
+
+module Tbl : CCHashtbl.S with type key = t

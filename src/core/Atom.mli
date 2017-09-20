@@ -9,6 +9,7 @@ val compare : t -> t -> int
 val same_term : t -> t -> bool (** same term, ignoring sign? *)
 
 val is_pos : t -> bool (** Positive atom? *)
+val is_neg : t -> bool (** Negative atom? *)
 val neg : t -> t (** Negation *)
 val abs : t -> t (** Positive version *)
 val value : t -> term_assignment

@@ -12,6 +12,8 @@ let[@inline] is_pos (a:t) : bool = match a.a_term.t_var with
   | Var_bool { pa; _ } -> a==pa
   | Var_none | Var_semantic _ -> assert false
 
+let[@inline] is_neg (a:t) : bool = not (is_pos a)
+
 (* negation of the atom *)
 let[@inline] neg (a:t) : t = match a.a_term.t_var with
   | Var_bool { pa; na; _ } -> if a==pa then na else pa
