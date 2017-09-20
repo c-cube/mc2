@@ -898,7 +898,7 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
      with the clause that propagated it. Note that there cannot be two decision
      terms above the conflict_level.
 
-     [pathC] is used to count how many literals are on top level and is
+     [n_terms_above_lvl] is used to count how many literals are on top level and is
      therefore central for termination.
   *)
   while !continue do
@@ -960,12 +960,14 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
     done;
     (* now, [t] is the next term to analyze. *)
     let t = Vec.get env.trail !tr_ind in
-    (* [t] will not be part of the learnt clause, let's decrease [pathC] *)
+    (* [t] will not be part of the learnt clause,
+       let's decrease [n_terms_above_lvl] *)
     decr n_terms_above_lvl;
     decr tr_ind;
     let reason = Term.reason_exn t in
     Log.debugf 30
-      (fun k->k"(@[<hv>conflict_analyze.check_cause_of@ %a@ :pathC %d@ :reason %a@])"
+      (fun k->k"(@[<hv>conflict_analyze.check_cause_of@ %a@ \
+                :n_terms_above_lvl %d@ :reason %a@])"
           Term.debug t !n_terms_above_lvl Reason.pp (Term.level t,reason));
     assert (!n_terms_above_lvl >= 0);
     begin match !n_terms_above_lvl, reason with
