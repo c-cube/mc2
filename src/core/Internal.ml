@@ -608,6 +608,8 @@ let enqueue_bool (env:t) (a:atom) ~level:level (reason:reason) : unit =
     Util.errorf "(@[solver.enqueue_bool.atom_if_false@ %a@])" Atom.debug a
   ) else if Atom.is_true a then (
     Log.debugf 15 (fun k->k "(@[solver.enqueue_bool.already_true@ %a@])" Atom.debug a);
+    (* TODO: if level is lower than current reason for [a], re-assign,
+       for this propagation would be backtracked at a lower level *)
   ) else (
     assert (Atom.reason a = None && level >= 0);
     (* simplify reason *)
@@ -735,13 +737,13 @@ let eval_atom_to_false (env:t) (a:atom): unit =
    and a boolean stating whether it is a UIP ("Unique Implication Point")
    precondition: the atoms with highest decision level are first in the array *)
 let backtrack_lvl (env:t) (a:atom array) : int * bool =
-  eval_atom_to_false env a.(0);
-  eval_atom_to_false env a.(1);
   if Array.length a <= 1 then (
     0, true (* unit or empty clause *)
   ) else (
-    assert (Atom.level a.(0) > base_level env);
-    assert (Atom.level a.(1) > base_level env);
+    eval_atom_to_false env a.(0);
+    eval_atom_to_false env a.(1);
+    assert (Atom.level a.(0) >= base_level env);
+    assert (Atom.level a.(1) >= base_level env);
     if Atom.level a.(0) > Atom.level a.(1) then (
       (* backtrack below [a], so we can propagate [not a] *)
       Atom.level a.(1), true
