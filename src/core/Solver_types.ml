@@ -205,6 +205,7 @@ and paramod_clause = {
   pc_rhs: term;
   pc_guard: atom list;
   pc_premise: premise;
+  pc_clause: clause lazy_t; (** view as a clause *)
 }
 (** A paramodulation clause, of the form [guard => (lhs = rhs)]. It is
     used to rewrite [lhs] into [rhs] assuming [guard] holds *)

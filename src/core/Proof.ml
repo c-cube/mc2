@@ -232,6 +232,7 @@ let[@inline] parents_steps l : t list =
   CCList.filter_map
     (function
       | Step_resolve {c;_} -> Some c
+      | Step_paramod_with pc -> Some (Paramod_clause.to_clause pc)
       | _ -> None)
     l
 

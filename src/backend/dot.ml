@@ -78,8 +78,7 @@ module Make(A : Arg with type atom := atom
 
   let print_edges fmt n =
     begin match n.Proof.step with
-      | Proof.Hyper_res {init;_} ->
-        print_edge fmt (res_node_id n) (proof_id init);
+      | Proof.Hyper_res _ ->
         List.iter (fun p -> print_edge fmt (res_node_id n) (proof_id p))
           (Proof.parents n.Proof.step)
       | _ -> ()
@@ -102,9 +101,23 @@ module Make(A : Arg with type atom := atom
     Format.fprintf fmt "%s [shape=plaintext, label=<<TABLE %a>%a</TABLE>>];@\n"
       id table_options color table (c, rule, rule_color, l)
 
-  let print_dot_res_node fmt id pivots =
+  type inf_on =
+    | Inf_pivot of atom
+    | Inf_paramod_away of atom
+    | Inf_paramod_into of atom * atom
+    | Inf_subst of term * term
+
+  let pp_inf_on out = function
+    | Inf_pivot a -> A.print_atom out a
+    | Inf_paramod_away a -> Fmt.fprintf out "rw(@[%a→⊥@])" A.print_atom a
+    | Inf_paramod_into(a,b) ->
+      Fmt.fprintf out "rw(@[%a@,→%a@])" A.print_atom a A.print_atom b
+    | Inf_subst (t,u) ->
+      Fmt.fprintf out "{@[%a@,:=%a@]}" Term.pp t Term.pp u
+
+  let print_dot_res_node fmt id (inf_on:inf_on list) =
     Format.fprintf fmt "%s [label=<%a>];@\n"
-      id (Util.pp_list ~sep:";" A.print_atom) pivots
+      id (Util.pp_list ~sep:";" pp_inf_on) inf_on
 
   let ttify f c = fun fmt () -> f fmt c
 
@@ -134,17 +147,17 @@ module Make(A : Arg with type atom := atom
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Hyper_res" "GREY"
           [(fun fmt () -> Format.fprintf fmt "%s" (node_id n))];
         let pivots =
-          CCList.filter_map
-            (function Step_resolve {pivot;_} -> Some (Term.Bool.pa pivot) | _ -> None) steps in
+          List.map
+            (function
+              | Step_resolve {pivot;_} -> Inf_pivot (Term.Bool.pa pivot)
+              | Step_paramod_away a -> Inf_paramod_away a
+              | Step_paramod_learn {init;learn} -> Inf_paramod_into(init,learn)
+              | Step_paramod_with c ->
+                Inf_subst (Paramod_clause.lhs c, Paramod_clause.rhs c))
+            steps
+        in
         print_dot_res_node fmt (res_node_id n) pivots;
         print_edge fmt (node_id n) (res_node_id n);
-        (* FIXME: also print this in Hyper_res case
-      | Proof.Paramod_false {from;pivots;_} ->
-        print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Paramod_false" "GREY"
-          ((fun fmt () -> Format.fprintf fmt "%s" (node_id n)) ::
-             List.map (ttify A.print_atom) pivots);
-        print_edge fmt (node_id n) (node_id (Proof.expand from))
-           *)
     end
 
   let print_node fmt n =

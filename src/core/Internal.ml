@@ -980,6 +980,9 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
          if absurd then (
            history := RP_paramod_away a0 :: !history;
            None
+         ) else if Atom.equal a a0 then (
+           (* trivial rewriting, ignore *)
+           Some a
          ) else (
            history := RP_paramod_learn {init=a0;learn=a} :: !history;
            Some a
