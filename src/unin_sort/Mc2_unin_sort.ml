@@ -320,15 +320,15 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         Term_alloc.make view Type.bool tc_term
       )
 
-    let apply_subst t subst = match Term.view t with
+    let map t f = match Term.view t with
       | Eq (a,b) ->
-        let a' = Term.Subst.lookup_rec subst a in
-        let b' = Term.Subst.lookup_rec subst b in
+        let a' = f a in
+        let b' = f b in
         if a==a' && b==b' then t else mk_eq a' b'
       | _ -> assert false
 
     let () =
-      tc_term.tct_apply_subst <- apply_subst
+      tc_term.tct_map <- map
 
     (* find a value that is authorized by the list of constraints *)
     let[@inline] find_value (l:constraint_list): value = match l with

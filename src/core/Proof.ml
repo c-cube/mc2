@@ -384,7 +384,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
            |> Atom.Set.add_seq atoms
          | Step_paramod_away a0 ->
            (* check that [subst(atom) -> false] *)
-           let a = Atom.paramod subst a0 in
+           let a = Atom.Subst.apply subst a0 in
            if not (Atom.is_absurd a) then (
              Util.errorf
                "(@[<hv>proof.check_paramod_away.atom_not_false@ \
@@ -394,7 +394,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
            atoms (* same atoms *)
          | Step_paramod_learn {init;learn} ->
            (* learn [subst(atom)] *)
-           let a = Atom.paramod subst init in
+           let a = Atom.Subst.apply subst init in
            if not (Atom.equal a learn) then (
              Util.errorf
                "(@[<hv>proof.check_paramod.wrong_atom@ \

@@ -88,11 +88,16 @@ let pp_level fmt a = Reason.pp_opt fmt (level a, reason a)
 let[@inline] mark_neg (a:t) = mark (neg a)
 let[@inline] unmark_neg (a:t) = unmark (neg a)
 
-(* paramodulate inside atom *)
-let[@inline] paramod (subst:term_subst) (a:t) : t =
-  let t = Term.Subst.apply_args subst (term a) in
-  assert (Term.is_bool t);
-  if is_pos a then Term.Bool.pa t else Term.Bool.na t
+module Subst = struct
+  type t = term_subst
+  type cache = Term.Subst.rw_cache
+
+  (* paramodulate inside atom *)
+  let[@inline] apply ?(cache=Term.Subst.mk_cache()) (subst:term_subst) (a:atom) : atom =
+    let t = Term.Subst.apply ~cache subst (term a) in
+    assert (Term.is_bool t);
+    if is_pos a then Term.Bool.pa t else Term.Bool.na t
+end
 
 let[@inline] eval_bool (a:t) : eval_bool_res =
   begin match Term.eval_bool (term a) with

@@ -30,7 +30,12 @@ val is_false : t -> bool
 val is_undef : t -> bool
 val has_value : t -> bool
 
-val paramod : term_subst -> t -> t (** Rewrite inside the atom's term *)
+module Subst : sig
+  type t = term_subst
+  type cache = Term.Subst.rw_cache
+
+  val apply : ?cache:cache -> t -> atom -> atom (** Rewrite inside the atom's term *)
+end
 
 val eval_bool : t -> eval_bool_res (** Semantically evaluate atom *)
 val is_absurd : t -> bool

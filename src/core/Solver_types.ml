@@ -105,7 +105,7 @@ and tc_term = {
   (** called when term is deleted *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
   tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
-  mutable tct_apply_subst : term -> term_subst -> term; (** Substitute immediate args *)
+  mutable tct_map : term -> (term -> term) -> term; (** Map function to subterms *)
 }
 (** type class for terms, packing all operations on terms *)
 
@@ -159,16 +159,13 @@ and value =
 (** The "generalized variable" part of a term, containing the
     current assignment, watched literals/terms, etc. *)
 and var =
-  (** Semantic variable *)
   | Var_semantic of {
       mutable v_decide_state: decide_state; (** used for decisions/assignments *)
-    }
-
-  (** Bool variable *)
+    } (** Semantic variable *)
   | Var_bool of {
       pa : atom; (** Link for the positive atom *)
       na : atom; (** Link for the negative atom *)
-    }
+    } (** Bool variable *)
   | Var_none (** Not a variable yet (not added) *)
 
 and atom = {
@@ -368,7 +365,7 @@ let tct_default : tc_term = {
   tct_delete=(fun _ -> ());
   tct_subterms=(fun _ _ -> ());
   tct_eval_bool=(fun _ -> Eval_unknown);
-  tct_apply_subst=(fun t _ -> t);
+  tct_map=(fun t _ -> t);
 }
 
 let dummy_tct : tc_term = tct_default

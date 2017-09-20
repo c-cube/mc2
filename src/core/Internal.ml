@@ -969,9 +969,10 @@ let analyze_conflict (env:t) (c_clause:clause) : conflict_res =
   Vec.clear env.seen_tmp;
   (* paramodulate some atoms, either away or to other atoms to be kept *)
   let param_learn =
+    let cache = Term.Subst.mk_cache() in
     CCList.filter_map
       (fun a0 ->
-         let a = Atom.paramod !subst a0 in
+         let a = Atom.Subst.apply ~cache !subst a0 in
          let absurd = Atom.is_absurd a in
          Log.debugf 30
            (fun k -> k "(@[conflict_analyze.param@ %a@ :into %a@ :absurd %B@])"

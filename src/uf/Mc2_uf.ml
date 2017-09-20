@@ -306,15 +306,15 @@ let build p_id Plugin.S_nil : Plugin.t =
         let watches = Term.Watch1.dummy in
         T_alloc.make (App {id;ty;args;watches}) ty tc
 
-    let apply_subst t subst = match Term.view t with
+    let map t f = match Term.view t with
       | Const _ -> t
       | App {id;args;_} ->
-        let args' = Array.map (Term.Subst.lookup_rec subst) args in
+        let args' = Array.map f args in
         if CCArray.equal Term.equal args args' then t
         else app id (Array.to_list args')
       | _ -> assert false
 
-    let () = tc.tct_apply_subst <- apply_subst
+    let () = tc.tct_map <- map
 
     let provided_services =
       [ Service.Any (k_app, app);

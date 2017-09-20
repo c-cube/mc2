@@ -101,6 +101,17 @@ let[@inline] assignment (t:term) = match value t with
   | TA_assign {value;_} -> Some (A_semantic (t,value))
   | TA_none -> None
 
+(** {2 Containers} *)
+
+module As_key = struct
+  type t = term
+  let compare = compare
+  let equal = equal
+  let hash = hash
+end
+module Map = CCMap.Make(As_key)
+module Tbl = CCHashtbl.Make(As_key)
+
 (** {2 Low Level constructors. Use at your own risks.} *)
 module Unsafe = struct
   let max_plugin_id = (1 lsl plugin_id_width) - 1
@@ -163,7 +174,7 @@ let tc_mk
     ?(delete=fun _ -> ())
     ?(subterms=fun _ _ -> ())
     ?(eval_bool=fun _ -> Eval_unknown)
-    ?(apply_subst=fun t _ -> t)
+    ?(map=fun t _ -> t)
     ~pp
     () : tc =
   { tct_init=init;
@@ -172,7 +183,7 @@ let tc_mk
     tct_subterms=subterms;
     tct_pp=pp;
     tct_eval_bool=eval_bool;
-    tct_apply_subst=apply_subst;
+    tct_map=map;
   }
 
 let marked t = Term_fields.get field_t_seen t.t_fields
@@ -350,14 +361,38 @@ module Subst = struct
 
   let[@inline] mem s t = Int_map.mem t.t_id s
 
-  let[@inline] apply_args (subst:term_subst) (t:term) : term =
-    t.t_tc.tct_apply_subst t subst
+  let[@inline] find s t : term = Int_map.find t.t_id s |> snd
 
-  let[@inline] lookup_rec (subst:term_subst) (t:term) : term =
-    begin match Int_map.get t.t_id subst with
-      | None -> t
-      | Some (_,u) -> apply_args subst u
-    end
+  (* TODO: investigate in storing normal form in a pointer in the term
+     instead;
+     rw_cache would then just be a vector of terms for which to clean
+     the normal form *)
+
+  type rw_cache = term Tbl.t lazy_t (* Maps terms to their normal form *)
+
+  let mk_cache () : rw_cache = lazy (Tbl.create 32)
+
+  (* applying a substitution to a term.
+     Since terms in the codomain of the substitution are not normalized,
+     we have to apply the substitution to them, too *)
+  let apply ?(cache=mk_cache()) (subst:term_subst) (t:term) : term =
+    if is_empty subst then t
+    else (
+      (* evaluate as a DAG *)
+      let lazy cache = cache in
+      let rec aux (t:term) : term = match Tbl.find cache t with
+        | u -> u
+        | exception Not_found ->
+          let u = match find subst t with
+            | u -> aux u
+            | exception Not_found ->
+              t.t_tc.tct_map t aux (* rewrite subterms *)
+          in
+          Tbl.add cache t u;
+          u
+      in
+      aux t
+    )
 
   let pp_ pp_t out (s:t) =
     if is_empty s then ()
@@ -455,9 +490,4 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) : TERM_ALLOC = struct
           n_collected !n_alive);
     n_collected
 end
-
-(** {2 Containers} *)
-
-module As_key = struct type t = term let compare = compare end
-module Map = CCMap.Make(As_key)
 
