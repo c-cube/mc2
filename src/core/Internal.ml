@@ -882,10 +882,10 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
     | Conflict_clause c ->
       to_analyze := Analyze_clause c;
     | Conflict_eval {c;atom;subs;_} ->
-      history := [RP_resolve c];
-      mark_atom_for_analysis (Atom.neg atom); (* resolve? *)
+      history := [RP_resolve c]; (* proof will start from this tautology *)
+      mark_atom_for_analysis (Atom.neg atom); (* resolve ¬a *)
       List.iter mark_term_for_analysis subs; (* build substitution for paramod *)
-      atoms_to_paramod := [atom]; (* paramodulate *)
+      atoms_to_paramod := [atom]; (* paramodulate a *)
   end;
 (* now loop until there is either:
    - the clause is empty (found unsat)
@@ -1364,14 +1364,16 @@ let propagate (env:t) : conflict option =
   assert (env.propagate_head <= Vec.size env.trail);
   propagate_rec env
 
+let[@inline] on_backtrack (env:t) (lev:level) (f:unit->unit) : unit =
+  if lev=0 then () (* never do it *)
+  else if lev > decision_level env then f() (* do it immediately *)
+  else (
+    Vec.push (Vec.get env.backtrack_stack (lev-1)) f
+  )
+
 (* build the "actions" available to the plugins *)
 let mk_actions (env:t) : actions =
-  let act_on_backtrack lev f : unit =
-    if lev=0 then () (* never do it *)
-    else if lev > decision_level env then f()
-    else (
-      Vec.push (Vec.get env.backtrack_stack (lev-1)) f
-    )
+  let act_on_backtrack lev f : unit = on_backtrack env lev f
   and act_level (): level = decision_level env
   and act_push_clause (c:clause) : unit =
     Log.debugf debug (fun k->k "(@[solver.push_clause@ %a@])" Clause.debug c);
@@ -1391,6 +1393,7 @@ let mk_actions (env:t) : actions =
     let c = Clause.make atoms (Lemma lemma) in
     raise (Conflict (Conflict_clause c))
   and act_propagate_bool_eval t (b:bool) ~(subs:term list) : unit =
+    (* TODO: check again levels… *)
     Log.debugf debug
       (fun k->k "(@[<hv>solver.semantic_propagate_bool@ %a@ :val %B@ :subs (@[<hv>%a@])@])"
         Term.debug t b (Util.pp_list Term.debug) subs);
