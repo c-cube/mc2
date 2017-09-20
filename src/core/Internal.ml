@@ -832,7 +832,7 @@ let level_conflict (e:conflict) : level = match e with
    information for proof reconstruction.
 *)
 let analyze_conflict (env:t) (confl:conflict) : conflict_res =
-  let pathC = ref 0 in (* number of literals >= conflict level. *) (* TODO: rename *)
+  let n_terms_above_lvl = ref 0 in (* number of terms >= conflict level. *)
   let learnt = ref [] in (* the resulting clause to be learnt *)
   let to_analyze = ref Analyze_none in (* current clause to do (hyper)resolution/paramod on *)
   let continue = ref true in (* used for termination of loop *)
@@ -855,7 +855,7 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
       if Term.level t > 0 then (
         bump_term_activity env t;
         if Term.level t >= conflict_level then (
-          incr pathC;
+          incr n_terms_above_lvl;
         );
       );
     )
@@ -882,7 +882,7 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
       if Atom.level a > 0 then (
         bump_term_activity env a.a_term;
         if Atom.level a >= conflict_level then (
-          incr pathC;
+          incr n_terms_above_lvl;
         ) else (
           (* [a] will be part of the learnt clause *)
           learnt := a :: !learnt;
@@ -974,14 +974,14 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
     (* now, [t] is the next term to analyze. *)
     let t = Vec.get env.trail !tr_ind in
     (* [t] will not be part of the learnt clause, let's decrease [pathC] *)
-    decr pathC;
+    decr n_terms_above_lvl;
     decr tr_ind;
     let reason = Term.reason_exn t in
     Log.debugf 30
       (fun k->k"(@[<hv>conflict_analyze.check_cause_of@ %a@ :pathC %d@ :reason %a@])"
-          Term.debug t !pathC Reason.pp (Term.level t,reason));
-    assert (!pathC >= 0);
-    begin match !pathC, reason with
+          Term.debug t !n_terms_above_lvl Reason.pp (Term.level t,reason));
+    assert (!n_terms_above_lvl >= 0);
+    begin match !n_terms_above_lvl, reason with
       | 0, _ ->
         (* [t] is the UIP, or we have a semantic split *)
         continue := false;
