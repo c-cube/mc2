@@ -91,30 +91,20 @@ type t = {
   (* set of terms made dirty by backtracking, whose [decide_state]
      must potentially be updated *)
 
-  mutable elt_head : int;
+  mutable propagate_head : int;
   (* Start offset in the queue {!trail} of
      unit facts to propagate, within the trail.
-     The slice between {!elt_head} and the end of {!trail} has not yet been
-     boolean-propagated. *)
-
-  mutable th_head : int;
-  (* Start offset in the queue {!trail} of
-     unit facts not yet seen by the theory.
-     The slice between {!th_head} and the end of {!trail} has not yet
-     been seen by the plugins *)
+     The slice between {!propagate_head} and the end of {!trail} has not yet been
+     propagated. *)
 
   (* invariant:
-     - elt_head <= length trail
-     - th_eval <= length trail
-     - propagation does a block of BCP, then a block of theory,
-       alternatively. Full BCP/theory propagation occurs before yielding
-       control to the other.
+     - propagate_head <= length trail
      - theory propagation is done by calling terms' [update_watches]
        functions for every term on the trail after {!th_head},
        until {!th_head} can catch up with length of {!trail}
      - this is repeated until a fixpoint is reached;
      - before a decision (and after the fixpoint),
-       th_head = elt_head = length trail
+       propagate_head = length trail
   *)
 
   term_heap : H.t;
@@ -331,8 +321,7 @@ let create_real (actions:actions lazy_t) : t = {
   clauses_root = Stack.create ();
   clauses_to_add = Stack.create ();
 
-  th_head = 0;
-  elt_head = 0;
+  propagate_head = 0;
 
   trail = Vec.make 601 dummy_term;
   backtrack_stack = Vec.make 601 (Vec.make_empty (fun () -> assert false));
@@ -479,8 +468,7 @@ let partition_atoms (atoms:atom array) : atom list * raw_premise_step list =
 
 (* no propagation needed *)
 let[@inline] fully_propagated (env:t) : bool =
-  env.th_head = Vec.size env.trail &&
-  env.elt_head = Vec.size env.trail
+  env.propagate_head = Vec.size env.trail
 
 (* Making a decision.
    Before actually creatig a new decision level, we check that all propagations
@@ -520,7 +508,7 @@ let cancel_until (env:t) (lvl:int) : unit =
     let top = Vec.get env.decision_levels lvl in
     let head = ref top in
     (* Now we need to cleanup the vars that are not valid anymore
-       (i.e to the right of elt_head in the queue).
+       (i.e to the right of propagate_head in the queue).
        We do it left-to-right because that makes it easier to move
        elements whose level is actually lower than [lvl], by just
        moving them to [!head]. *)
@@ -538,8 +526,7 @@ let cancel_until (env:t) (lvl:int) : unit =
       )
     done;
     (* elements we kept are already propagated, update pointers accordingly *)
-    env.elt_head <- !head;
-    env.th_head <- !head;
+    env.propagate_head <- !head;
     (* Resize the vectors according to their new size. *)
     Vec.shrink env.trail !head;
     Vec.shrink env.decision_levels lvl;
@@ -1273,7 +1260,7 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
       (* no watch lit found *)
       if Atom.is_false first then (
         (* clause is false *)
-        env.elt_head <- Vec.size env.trail;
+        env.propagate_head <- Vec.size env.trail;
         raise (Conflict (Conflict_clause c))
       ) else (
         begin match th_eval env first with
@@ -1282,7 +1269,7 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
             enqueue_bool env first ~level:(decision_level env) (Bcp c)
           | Some true -> ()
           | Some false ->
-            env.elt_head <- Vec.size env.trail;
+            env.propagate_head <- Vec.size env.trail;
             raise (Conflict (Conflict_clause c))
         end
       );
@@ -1335,59 +1322,49 @@ let propagate_term (env:t) (t:term): unit =
   done
 
 (* some terms were decided/propagated. Now we
-   need to inform the plugins about these assignments, so they can do their job.
+   need to inform the plugins about these assignments, so they can do their job,
+   and we also do boolean propagation
    @return the conflict clause, if a plugin detects unsatisfiability *)
-let rec theory_propagate (env:t) : conflict option =
-  assert (env.elt_head <= Vec.size env.trail);
-  if env.th_head = Vec.size env.trail then (
-    if env.elt_head = Vec.size env.trail then (
-      None (* fixpoint reached for both theory propagation and BCP *)
-    ) else (
-      propagate env (* need to do BCP *)
-    )
+let rec propagate_rec (env:t) : conflict option =
+  assert (env.propagate_head <= Vec.size env.trail);
+  if env.propagate_head = Vec.size env.trail then (
+    None (* fixpoint reached *)
   ) else (
     (* consider one element *)
-    let t = Vec.get env.trail env.th_head in
-    env.th_head <- env.th_head + 1;
-    (* notify all terms watching [t] to perform semantic propagation *)
-    begin match propagate_term env t with
-      | () -> theory_propagate env (* next propagation *)
-      | exception (Conflict e) -> Some e (* conflict *)
-    end
-  )
-
-(* Boolean propagation.
-   @return a conflict clause, if any *)
-and bool_propagate (env:t) : conflict option =
-  if env.elt_head = Vec.size env.trail then (
-    theory_propagate env (* BCP done, now notify plugins *)
-  ) else (
-    let t = Vec.get env.trail env.elt_head in
-    env.elt_head <- env.elt_head + 1;
+    let t = Vec.get env.trail env.propagate_head in
+    env.propagate_head <- env.propagate_head + 1;
+    env.propagations <- env.propagations + 1;
     (* propagate [t], if boolean *)
     begin match t.t_var with
       | Var_none -> assert false
-      | Var_semantic _ -> bool_propagate env
+      | Var_semantic _ ->
+        (* only do theory propagation *)
+        begin match propagate_term env t with
+          | () -> propagate_rec env (* next propagation *)
+          | exception (Conflict e) -> Some e (* conflict *)
+        end
       | Var_bool _ ->
-        env.propagations <- env.propagations + 1;
-        (* propagate the atom that has been assigned to [true] *)
+        (* propagate the atom that has been assigned to [true],
+           and also do theory propagation *)
         let a = Term.Bool.assigned_atom_exn t in
-        begin match propagate_atom env a with
-          | () -> bool_propagate env (* next propagation *)
-          | exception Conflict e -> Some e (* conflict *)
+        begin match
+            propagate_term env t;
+            propagate_atom env a;
+          with
+            | () -> propagate_rec env (* next propagation *)
+            | exception Conflict e -> Some e (* conflict *)
         end
     end
   )
 
 (* Fixpoint between boolean propagation and theory propagation.
-   Does BCP first.
    @return a conflict clause, if any *)
-and propagate (env:t) : conflict option =
+let propagate (env:t) : conflict option =
   (* First, treat the stack of lemmas added by the theory, if any *)
   flush_clauses env;
   (* Now, check that the situation is sane *)
-  assert (env.elt_head <= Vec.size env.trail);
-  bool_propagate env
+  assert (env.propagate_head <= Vec.size env.trail);
+  propagate_rec env
 
 (* build the "actions" available to the plugins *)
 let mk_actions (env:t) : actions =
@@ -1405,7 +1382,7 @@ let mk_actions (env:t) : actions =
     Log.debugf debug (fun k->k
         "(@[<hv>raise_conflict@ :clause %a@ :lemma %a@])"
         Clause.debug_atoms atoms Lemma.pp lemma);
-    env.elt_head <- Vec.size env.trail;
+    env.propagate_head <- Vec.size env.trail;
     let atoms = Atom.Set.of_list atoms |> Atom.Set.to_list in
     (* add atoms, also evaluate them if not already false *)
     List.iter
@@ -1680,8 +1657,7 @@ let search (env:t) ~gc ~time ~memory ~progress n_of_conflicts : unit =
         add_conflict env confl
       | None ->
         (* No conflict after propagation *)
-        assert (env.elt_head = Vec.size env.trail);
-        assert (env.elt_head = env.th_head);
+        assert (env.propagate_head = Vec.size env.trail);
         if H.is_empty env.term_heap then (
           Log.debugf 3 (fun k->k"@{<yellow>found SAT@}");
           raise Sat;
