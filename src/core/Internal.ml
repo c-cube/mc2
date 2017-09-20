@@ -1494,7 +1494,9 @@ let search (env:t) ~gc ~time ~memory ~progress n_of_conflicts : unit =
           check_limits ~time ~memory ();
           
           (* GC terms from time to time *)
-          if gc && env.conflicts = ((env.conflicts lsr 13) lsl 13) then (
+          if gc &&
+             env.conflicts > 0 &&
+             env.conflicts = ((env.conflicts lsr 13) lsl 13) then (
             gc_terms env;
           )
         );
