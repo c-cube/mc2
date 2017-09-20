@@ -884,8 +884,8 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
     | Conflict_eval {c;atom;subs;_} ->
       history := [RP_resolve c];
       mark_atom_for_analysis (Atom.neg atom); (* resolve? *)
-      List.iter mark_term_for_analysis subs; (* paramodulate *)
-      atoms_to_paramod := [Atom.neg atom]
+      List.iter mark_term_for_analysis subs; (* build substitution for paramod *)
+      atoms_to_paramod := [atom]; (* paramodulate *)
   end;
 (* now loop until there is either:
    - the clause is empty (found unsat)
@@ -924,7 +924,7 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
         done
       | Analyze_pclause pc ->
         Log.debugf debug
-          (fun k->k "(@[analyze_conflict.paramod@ :pc %a@])"
+          (fun k->k "(@[analyze_conflict.paramod_with@ :pc %a@])"
               Paramod_clause.debug pc);
         history := RP_paramod_with pc :: !history;
         (* visit predecessors for the guard *)
@@ -1049,11 +1049,9 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
     List.rev_append param_learn !learnt |> Array.of_list
   in
   Log.debugf 30
-    (fun k-> k"(@[conflict_analyze.learnt_a:@ %a@])" Clause.debug_atoms_a learnt_a);
+    (fun k-> k"(@[conflict_analyze.learnt_a@ %a@])" Clause.debug_atoms_a learnt_a);
   (* put high level atoms first *)
   put_high_level_atoms_first learnt_a;
-  Log.debugf 30
-    (fun k->k"(@[conflict_analyze.final_learnt@ %a@])" Clause.debug_atoms_a learnt_a);
   let level, is_uip = backtrack_lvl env learnt_a in
   { cr_backtrack_lvl = level;
     cr_learnt = learnt_a;
