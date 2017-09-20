@@ -242,8 +242,9 @@ let debug_no_val out t : unit =
 let debug out t : unit =
   let pp_val out = function
     | TA_none -> ()
-    | TA_assign {value;level;_} ->
-      Format.fprintf out "[@@%d@<1>→%a]" level Value.pp value
+    | TA_assign {value;level;reason} ->
+      let prefix = match reason with Decision -> "@" | _ -> "$" in
+      Format.fprintf out "[%s%d@<1>→%a]" prefix level Value.pp value
   in
   debug_no_val out t;
   pp_val out (value t)

@@ -662,8 +662,9 @@ let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) ~(level:int) :
   t.t_value <- TA_assign {value;reason;level};
   Vec.push env.trail t;
   Log.debugf debug
-    (fun k->k "(@[solver.enqueue_semantic (%d/%d)@ %a@])"
-        (Vec.size env.trail)(decision_level env) Term.debug t);
+    (fun k->k "(@[solver.enqueue_semantic (%d/%d)@ %a@ :reason %a@])"
+        (Vec.size env.trail) (decision_level env)
+        Term.debug t Reason.pp (level,reason));
   ()
 
 (* term [t] evaluates to [v] because of [subs] *)
