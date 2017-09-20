@@ -1426,12 +1426,13 @@ let mk_actions (env:t) : actions =
         Term.debug t Value.pp v (Util.pp_list Term.debug) subs);
     enqueue_semantic_eval env t v subs
   and act_propagate_val_lemma t (v:value) ~rw_into atoms lemma : unit =
+    (* compute level for this propagation *)
     let lvl = List.fold_left
       (fun lvl b ->
         add_atom env b;
         eval_atom_to_false env (Atom.neg b);
         max lvl (Atom.level b))
-      0 atoms
+      (Term.level rw_into) atoms
     in
     Log.debugf debug
       (fun k->k "(@[<hv>solver.theory_propagate_val@ %a@ :val %a@ :rw-into %a@ :lvl %d@ :clause %a@])"
