@@ -1384,7 +1384,7 @@ let mk_actions (env:t) : actions =
   let act_on_backtrack lev f : unit = on_backtrack env lev f
   and act_level (): level = decision_level env
   and act_push_clause (c:clause) : unit =
-    Log.debugf debug (fun k->k "(@[solver.push_clause@ %a@])" Clause.debug c);
+    Log.debugf debug (fun k->k "(@[solver.@{<yellow>push_clause@}@ %a@])" Clause.debug c);
     Stack.push c env.clauses_to_add
   and act_raise_conflict (type a) (atoms:atom list) (lemma:lemma): a =
     Log.debugf debug (fun k->k
@@ -1402,8 +1402,8 @@ let mk_actions (env:t) : actions =
     raise (Conflict (Conflict_clause c))
   and act_propagate_bool_eval t (b:bool) ~(subs:term list) : unit =
     (* TODO: check again levels… *)
-    Log.debugf debug
-      (fun k->k "(@[<hv>solver.semantic_propagate_bool@ %a@ :val %B@ :subs (@[<v>%a@])@])"
+    Log.debugf 5
+      (fun k->k "(@[<hv>solver.@{<yellow>semantic_propagate_bool@}@ %a@ :val %B@ :subs (@[<v>%a@])@])"
         Term.debug t b (Util.pp_list Term.debug) subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     if Atom.is_false a then (
@@ -1424,13 +1424,13 @@ let mk_actions (env:t) : actions =
          ) else lvl)
       0 atoms
     in
-    Log.debugf debug
-      (fun k->k "(@[<hv>solver.theory_propagate_bool@ %a@ :val %B@ :lvl %d@ :clause %a@])"
+    Log.debugf 5
+      (fun k->k "(@[<hv>solver.@{<yellow>theory_propagate_bool@}@ %a@ :val %B@ :lvl %d@ :clause %a@])"
         Term.debug t v lvl Clause.debug_atoms atoms);
     enqueue_bool_theory_propagate env a ~lvl atoms lemma
   and act_propagate_val_eval t (v:value) ~(subs:term list) : unit =
-    Log.debugf debug
-      (fun k->k "(@[<hv>solver.semantic_propagate_val@ %a@ :val %a@ :subs (@[<v>%a@])@])"
+    Log.debugf 5
+      (fun k->k "(@[<hv>solver.@{<yellow>semantic_propagate_val@}@ %a@ :val %a@ :subs (@[<v>%a@])@])"
         Term.debug t Value.pp v (Util.pp_list Term.debug) subs);
     enqueue_semantic_eval env t v subs
   and act_propagate_val_lemma t (v:value) ~rw_into atoms lemma : unit =
@@ -1442,8 +1442,9 @@ let mk_actions (env:t) : actions =
         max lvl (Atom.level b))
       (Term.level rw_into) atoms
     in
-    Log.debugf debug
-      (fun k->k "(@[<hv>solver.theory_propagate_val@ %a@ :val %a@ :rw-into %a@ :lvl %d@ :clause %a@])"
+    Log.debugf 5
+      (fun k->k
+          "(@[<hv>solver.@{<yellow>theory_propagate_val@}@ %a@ :val %a@ :rw-into %a@ :lvl %d@ :clause %a@])"
         Term.debug t Value.pp v Term.debug rw_into lvl Clause.debug_atoms atoms);
     enqueue_val_theory_propagate env t v ~rw_into ~lvl atoms lemma
   and act_mark_dirty (t:term): unit =

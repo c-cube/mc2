@@ -145,7 +145,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     (* declare a new (parametric) uninterpreted type *)
     let decl_sort id (arity:int) : unit =
       Log.debugf 3
-        (fun k->k "(@[unin_sort.declare-sort %a@ :arity %d@])" ID.pp id arity);
+        (fun k->k "(@[unin_sort.@{<yellow>declare-sort@} %a@ :arity %d@])" ID.pp id arity);
       if ID.Tbl.mem tbl_ id then (
         Util.errorf "sort %a already declared" ID.pp id;
       );
@@ -217,7 +217,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let add_singleton acts t v ~eqn ~other : unit =
       begin match Term.var t with
         | Var_semantic {v_decide_state=DS ds; _} ->
-          Log.debugf 5
+          Log.debugf 15
             (fun k->k
                 "(@[<hv>%s.add_singleton@ :to %a@ :val %a@ :other %a@ :eqn %a@ :c_list %a@])"
                 name Term.debug t Value.pp v Term.debug other Atom.debug eqn pp_c_list ds.c_list);
@@ -257,6 +257,10 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             | C_diseq {tbl} ->
               ds.c_list <- C_eq {value=v;l=[r];diseq_tbl=Lazy.from_val tbl};
           end;
+          Log.debugf 30
+            (fun k->k
+                "(@[<hv>%s.add_singleton.done@ :to %a@ :c_list %a@])"
+                name Term.debug t pp_c_list ds.c_list);
           (* also, propagate, if not assigned yet ! *)
           if not (Term.has_value t) then (
             let lemma = Lemma.make Equality tc_lemma in
@@ -269,7 +273,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let add_diff acts t v ~diseqn ~other : unit =
       begin match Term.var t with
         | Var_semantic {v_decide_state=DS ds; _} ->
-          Log.debugf 5
+          Log.debugf 15
             (fun k->k "(@[<hv>%s.add_diff@ :to %a@ :val %a@ :other %a@ :diseqn %a@ :c_list %a@])"
                 name Term.debug t Value.pp v Term.debug other Atom.debug diseqn pp_c_list ds.c_list);
           (* first, check if SAT *)
@@ -389,7 +393,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         | Var_semantic {v_decide_state=DS{c_list}; _} ->
           let v = find_value c_list in
           Log.debugf 5
-            (fun k->k "(@[<hv>%s.decide@ :term %a@ :val %a@ :lvl %d@ :c_list %a@])"
+            (fun k->k "(@[<hv>%s.@{<yellow>decide@}@ :term %a@ :val %a@ :lvl %d@ :c_list %a@])"
                 name Term.debug t Value.pp v (Actions.level acts) pp_c_list c_list);
           v
         | _ -> assert false
