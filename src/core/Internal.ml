@@ -1076,6 +1076,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
         Clause.make_arr cr.cr_learnt (Premise.raw_steps_or_simplify cr.cr_history)
         |> simplify_clause
       in
+      add_atom env fuip;
       if Atom.is_false fuip then (
         assert (Atom.level fuip = 0);
         report_unsat env uclause
@@ -1091,6 +1092,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       let premise = Premise.raw_steps_or_simplify cr.cr_history in
       let lclause = Clause.make_arr c_learnt premise |> simplify_clause in
       Vec.push env.clauses_learnt lclause;
+      Array.iter (add_atom env) lclause.c_atoms;
       env.n_learnt <- env.n_learnt + 1;
       Log.debugf debug
         (fun k->k "(@[learn_clause:@ %a@ :backtrack-lvl %d@])"
@@ -1143,7 +1145,7 @@ let add_clause (env:t) (init:clause) : unit =
   Log.debugf debug (fun k -> k "(@[solver.add_clause@ %a@])" Clause.debug init);
   (* Insertion of new lits is done before simplification. Indeed, else a lit in a
      trivial clause could end up being not decided on, which is a bug. *)
-  Array.iter (fun a -> add_term env a.a_term) init.c_atoms;
+  Array.iter (add_atom env) init.c_atoms;
   let vec = vec_to_insert_clause_into env init in
   try
     let c = simplify_clause init in
