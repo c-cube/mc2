@@ -727,8 +727,6 @@ let backtrack_lvl (env:t) (a:atom array) : int * bool =
   if Array.length a <= 1 then (
     0, true (* unit or empty clause *)
   ) else (
-    eval_atom_to_false env a.(0);
-    eval_atom_to_false env a.(1);
     assert (Atom.level a.(0) >= base_level env);
     assert (Atom.level a.(1) >= base_level env);
     if Atom.level a.(0) > Atom.level a.(1) then (
@@ -739,8 +737,9 @@ let backtrack_lvl (env:t) (a:atom array) : int * bool =
          we might also want to backtrack at [a.(0).level-1] but still
          propagate [¬a.(0)] at a lower level? That would save current decisions *)
     ) else (
-      (* semantic split *)
-      assert (Atom.level a.(0) = Atom.level a.(1));
+      (* NOTE: clauses can be deduced that are not semantic splits
+         nor regular conflict clause, thanks to paramodulation *)
+      assert (Atom.level a.(0) >= Atom.level a.(1));
       assert (Atom.level a.(0) >= base_level env);
       max (Atom.level a.(0) - 1) (base_level env), false
     )
@@ -1056,6 +1055,8 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
   in
   Log.debugf 30
     (fun k-> k"(@[conflict_analyze.learnt_a@ %a@])" Clause.debug_atoms_a learnt_a);
+  (* check that all learnt literals can eval to false *)
+  Array.iter (eval_atom_to_false env) learnt_a;
   (* put high level atoms first *)
   put_high_level_atoms_first learnt_a;
   let level, is_uip = backtrack_lvl env learnt_a in
