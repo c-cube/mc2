@@ -64,26 +64,17 @@ let[@inline] term (a:t) = a.a_term
 let[@inline] level (a:t) = Term.level a.a_term
 let[@inline] watched (a:t) = a.a_watched
 
-let mark (a:t) =
-  if is_pos a then (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_pos true a.a_term.t_fields
-  ) else (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_neg true a.a_term.t_fields
-  )
+let[@inline] field_ (a:t) : Term_fields.field =
+  if is_pos a then field_t_mark_pos else field_t_mark_neg
 
-let unmark (a:t) =
-  if is_pos a then (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_pos false a.a_term.t_fields
-  ) else (
-    a.a_term.t_fields <- Term_fields.set field_t_mark_neg false a.a_term.t_fields
-  )
+let[@inline] mark (a:t) =
+  a.a_term.t_fields <- Term_fields.set (field_ a) true a.a_term.t_fields
 
-let marked (a:t) : bool =
-  if is_pos a then (
-    Term_fields.get field_t_mark_pos a.a_term.t_fields
-  ) else (
-    Term_fields.get field_t_mark_neg a.a_term.t_fields
-  )
+let[@inline] unmark (a:t) =
+  a.a_term.t_fields <- Term_fields.set (field_ a) false a.a_term.t_fields
+
+let[@inline] marked (a:t) : bool =
+  Term_fields.get (field_ a) a.a_term.t_fields
 
 let pp_level fmt a = Reason.pp_opt fmt (level a, reason a)
 

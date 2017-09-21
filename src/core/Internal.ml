@@ -389,7 +389,7 @@ let eliminate_duplicates (clause:clause) : clause * bool =
   let trivial =
     List.exists (fun a -> Term.Bool.both_atoms_marked a.a_term) !res
   in
-  List.iter Atom.unmark !res;
+  Array.iter Atom.unmark clause.c_atoms;
   if trivial then (
     raise Trivial
   ) else if !duplicates = [] then (
