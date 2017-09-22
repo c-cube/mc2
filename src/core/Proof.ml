@@ -178,19 +178,6 @@ let find_pivots (init:clause) (l:raw_premise_step list) : premise_step list =
     l;
   steps
 
-(* FIXME
-(* introduce intermediate clause from paramodulation only *)
-let remove_pivots (c:clause) pivots : clause =
-  assert (pivots <> []);
-  let atoms =
-    Sequence.of_array c.c_atoms
-    |> Atom.Set.of_seq
-    |> List.fold_right Atom.Set.remove pivots
-    |> Atom.Set.to_list
-  in
-  Clause.make atoms (Premise.steps [c])
-   *)
-
 let expand (conclusion:clause) : node =
   Log.debugf 15 (fun k -> k "(@[proof.expanding@ %a@])" Clause.debug conclusion);
   begin match conclusion.c_premise with

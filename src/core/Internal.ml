@@ -881,6 +881,7 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
     | Conflict_clause c ->
       to_analyze := Analyze_clause c;
     | Conflict_eval {c;atom;subs;_} ->
+      assert (Atom.is_true atom);
       history := [RP_resolve c]; (* proof will start from this tautology *)
       mark_atom_for_analysis (Atom.neg atom); (* resolve ¬a *)
       List.iter mark_term_for_analysis subs; (* build substitution for paramod *)
@@ -971,37 +972,37 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
                 :n_terms_above_lvl %d@ :reason %a@])"
           Term.debug t !n_terms_above_lvl Reason.pp (Term.level t,reason));
     assert (!n_terms_above_lvl >= 0);
-    begin match !n_terms_above_lvl, reason with
-      | 0, _ ->
-        (* [t] is the UIP, or we have a semantic split *)
-        continue := false;
-        if Term.is_bool t then (
-          let p = Term.Bool.assigned_atom_exn t in
-          learnt := Atom.neg p :: !learnt
-        )
-      | _, Propagate_value {rw_into;guard;lemma} ->
+    begin match reason with
+      | Propagate_value {rw_into;guard;lemma} ->
         (* perform paramodulation [t == rw_into] *)
         subst := Term.Subst.add !subst t rw_into;
         let pc = Paramod_clause.make t rw_into guard (Lemma lemma) in
         to_analyze := Analyze_pclause pc
-      | _, Semantic subs ->
+      | Semantic subs ->
         (* mark sub-terms for conflict analysis *)
         List.iter mark_term_for_analysis subs;
         if Term.is_bool t then (
           (* boolean atom -> paramodulate it and maybe learn it *)
-          let p = Term.Bool.assigned_atom_exn t |> Atom.neg in
+          let p = Term.Bool.assigned_atom_exn t in
           atoms_to_paramod := p :: !atoms_to_paramod;
           Log.debugf 30
-            (fun k->k"(@[<hv>conflict_analyze.add_term_to_param@ %a@ \
+            (fun k->k"(@[<hv>conflict_analyze.add_atom_to_param@ %a@ \
                       :subs (@[<v>%a@])@])"
                 Atom.debug p (Util.pp_list Term.debug) subs);
         );
         to_analyze := Analyze_none;
-      | _, (Bcp cl | Bcp_lazy (lazy cl))->
+      | (Bcp cl | Bcp_lazy (lazy cl))->
         assert (Term.level t >= conflict_level);
         to_analyze := Analyze_clause cl
-      | _, Decision -> () (* simply skip decisions *)
-    end
+      | Decision -> () (* simply skip decisions *)
+    end;
+    if !n_terms_above_lvl = 0 then (
+      continue := false;
+      if Term.is_bool t then (
+        let p = Term.Bool.assigned_atom_exn t in
+        learnt := Atom.neg p :: !learnt
+      )
+    )
   done;
   Log.debugf 30
     (fun k-> k"(@[conflict_analyze.learnt_before_param:@ %a@])"
