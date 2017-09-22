@@ -403,7 +403,7 @@ let eliminate_duplicates (clause:clause) : clause * bool =
 let simplify_clause (c:clause) : clause =
   let c', has_dedup = eliminate_duplicates c in
   if has_dedup then (
-    Log.debugf debug
+    Log.debugf 15
       (fun k -> k "(@[solver.deduplicate@ :into %a@ :from %a@])"
           Clause.debug c' Clause.debug c);
   );
@@ -886,7 +886,7 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
       List.iter mark_term_for_analysis subs; (* build substitution for paramod *)
       atoms_to_paramod := [atom]; (* paramodulate a *)
   end;
-(* now loop until there is either:
+  (* now loop until there is either:
    - the clause is empty (found unsat)
    - one decision term with level strictly greater than the other
      terms level (the UIP)

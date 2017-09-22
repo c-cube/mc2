@@ -396,7 +396,7 @@ module Subst = struct
     )
 
   let pp_ pp_t out (s:t) =
-    if is_empty s then ()
+    if is_empty s then Fmt.string out "{}"
     else (
       let pp_bind out (t,u) = Fmt.fprintf out "@[%a@ @<1>→ %a@]" pp_t t pp_t u in
       Fmt.fprintf out "{@[<hv>%a@]}"
