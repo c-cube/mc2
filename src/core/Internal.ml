@@ -926,6 +926,8 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
           (fun k->k "(@[analyze_conflict.paramod_with@ :pc %a@])"
               Paramod_clause.debug pc);
         history := RP_paramod_with pc :: !history;
+        (* visit RHS *)
+        mark_term_for_analysis (Paramod_clause.rhs pc);
         (* visit predecessors for the guard *)
         List.iter
           (fun a ->
