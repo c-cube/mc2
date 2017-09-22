@@ -666,7 +666,8 @@ let enqueue_semantic_eval (env:t) (t:term) (v:value) (subs:term list) : unit =
     (* level of propagations is [max_{t in terms} t.level] *)
     let lvl =
       List.fold_left
-        (fun acc {t_level; _} ->
+        (fun acc t ->
+           let t_level = Term.level t in
            assert (t_level > 0); max acc t_level)
         0 subs
     in
