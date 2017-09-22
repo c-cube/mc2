@@ -1009,48 +1009,56 @@ let analyze_conflict (env:t) (confl:conflict) : conflict_res =
   (* cleanup *)
   Vec.iter Term.unmark seen;
   Vec.clear seen;
-  (* mark learn atoms to avoid duplicates *)
-  let mark_for_dup_ a =
-    if not (Term.marked a.a_term) then (
-      Term.mark a.a_term;
-      Vec.push seen a.a_term;
-    )
-  in
-  List.iter mark_for_dup_ !learnt;
   (* paramodulate some atoms, either away or to other atoms to be kept *)
   let param_learn =
-    let cache = Term.Subst.mk_cache() in
-    CCList.filter_map
-      (fun a0 ->
-         let a = Atom.Subst.apply ~cache !subst a0 in
-         let absurd = Atom.is_absurd a in
-         Log.debugf 30
-           (fun k ->
-              k"(@[conflict_analyze.param_term@ %a@ :into %a@ :absurd %B@ :subst %a@])"
-               Atom.debug a0 Atom.debug a absurd Term.Subst.debug !subst);
-         if absurd then (
-           history := RP_paramod_away a0 :: !history;
-           None
-         ) else if Term.marked a.a_term then (
-           (* already in conflict clause or resolved away, just ignore it *)
+    if !atoms_to_paramod = [] then (
+      assert (Term.Subst.is_empty !subst);
+      []
+    ) else (
+      let a_seen = Vec.make_empty dummy_atom in
+      (* mark atoms to avoid duplicates *)
+      let mark_for_dup_ a =
+        if not (Atom.marked a) then (
+          Atom.mark a;
+          Vec.push a_seen a;
+        )
+      in
+      List.iter mark_for_dup_ !learnt;
+      let cache = Term.Subst.mk_cache() in
+      let l = CCList.filter_map
+        (fun a0 ->
+           let a = Atom.Subst.apply ~cache !subst a0 in
+           let absurd = Atom.is_absurd a in
            Log.debugf 30
-             (fun k->k"(@[conflict_analyze.skip_duplicate_param@ :atom %a@])"
-                 Atom.debug a);
-           None
-         ) else if Atom.equal a a0 then (
-           (* trivial rewriting, ignore *)
-           mark_for_dup_ a;
-           Some a
-         ) else (
-           history := RP_paramod_learn {init=a0;learn=a} :: !history;
-           mark_for_dup_ a;
-           Some a
-         ))
-      !atoms_to_paramod
+             (fun k ->
+                k"(@[conflict_analyze.param_term@ %a@ :into %a@ :absurd %B@ :subst %a@])"
+                  Atom.debug a0 Atom.debug a absurd Term.Subst.debug !subst);
+           if absurd then (
+             history := RP_paramod_away a0 :: !history;
+             None
+           ) else if Atom.marked a then (
+             (* already in conflict clause or resolved away, just ignore it *)
+             Log.debugf 30
+               (fun k->k"(@[conflict_analyze.skip_duplicate_param@ :atom %a@])"
+                   Atom.debug a);
+             None
+           ) else if Atom.equal a a0 then (
+             (* trivial rewriting, ignore *)
+             mark_for_dup_ a;
+             Some a
+           ) else (
+             history := RP_paramod_learn {init=a0;learn=a} :: !history;
+             mark_for_dup_ a;
+             Some a
+           ))
+        !atoms_to_paramod
+      in
+      (* cleanup atoms *)
+      Vec.iter Atom.unmark a_seen;
+      Vec.clear a_seen;
+      l
+    )
   in
-  (* cleanup again *)
-  Vec.iter Term.unmark seen;
-  Vec.clear seen;
   (* build final set of learnt atoms *)
   let learnt_a =
     List.rev_append param_learn !learnt |> Array.of_list
