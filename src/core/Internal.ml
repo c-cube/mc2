@@ -1051,20 +1051,24 @@ let conflict_do_paramod (env:t) (st:conflict_state) : atom list =
                (fun k->k"(@[conflict_analyze.skip_duplicate_param@ :atom %a@])"
                    Atom.debug a);
              None
-           ) else if Atom.level a = 0 then (
-             Log.debugf 30
-               (fun k->k"(@[conflict_analyze.param_remove_atom0@ :atom %a@])"
-                   Atom.debug a);
-             conflict_remove_atom0 st a;
-             None
            ) else if Atom.equal a a0 then (
              (* trivial rewriting, ignore *)
              mark_for_dup_ a;
              Some a
            ) else (
+             (* learn [a] *)
              st.cs_history <- RP_paramod_learn {init=a0;learn=a} :: st.cs_history;
              mark_for_dup_ a;
-             Some a
+             if Atom.level a = 0 then (
+               (* remove [a] by resolution at level 0 *)
+               Log.debugf 30
+                 (fun k->k"(@[conflict_analyze.param_remove_atom0@ :atom %a@])"
+                     Atom.debug a);
+               conflict_remove_atom0 st a;
+               None
+             ) else (
+               Some a
+             )
            ))
         st.cs_atoms_to_paramod
     in
