@@ -698,7 +698,7 @@ let enqueue_val_theory_propagate (env:t) (t:term) (v:value)
 let th_eval (env:t) (a:atom) : bool option =
   if Atom.is_true a || Atom.is_false a then None
   else (
-    begin match Term.eval_bool a.a_term with
+    begin match Atom.eval_bool a with
       | Eval_unknown -> None
       | Eval_bool (b, l) ->
         let atom = if b then a else Atom.neg a in
@@ -943,7 +943,8 @@ let conflict_analyze_atom env st (a:atom) : unit =
          Don't do it for the initial atom which is valued to true
          but evaluates to false. *)
       if Term.field_get field_t_inconsistent a.a_term then (
-        Term.field_clear field_t_inconsistent a.a_term;
+        Log.debugf 30
+          (fun k->k "(@[conflict_analyze.skip_inconsistent_atom@ %a@])" Atom.debug a);
       ) else (
         let p = Atom.neg a in
         conflict_add_to_paramod st p subs;
@@ -1119,6 +1120,11 @@ let conflict_analyze (env:t) (confl:conflict) : conflict_res =
   (* cleanup *)
   Vec.iter Term.unmark st.cs_t_seen;
   Vec.clear st.cs_t_seen;
+  begin match confl with
+    | Conflict_clause _ -> ()
+    | Conflict_eval{atom;_} ->
+      Term.field_clear field_t_inconsistent atom.a_term;
+  end;
   (* paramodulate some atoms, either away or to other atoms to be kept *)
   let param_learn = conflict_do_paramod env st in
   (* build final set of learnt atoms *)
@@ -1348,6 +1354,9 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
         begin match th_eval env first with
           | None -> (* clause is unit, keep the same watches, but propagate *)
             env.propagations <- env.propagations + 1;
+            Log.debugf 30
+              (fun k->k "(@[<hv>solver.propagate_bool@ %a@ :clause %a@])"
+                  Atom.debug first Clause.debug c);
             enqueue_bool env first ~level:(decision_level env) (Bcp c)
           | Some true -> ()
           | Some false ->
@@ -1565,7 +1574,7 @@ let rec pick_branch_aux (env:t) (atom:atom) : unit =
         (* do a decision *)
         env.decisions <- env.decisions + 1;
         new_decision_level env;
-        Log.debugf debug (fun k->k "(@[bool_decide@ %a@])" Atom.debug atom);
+        Log.debugf debug (fun k->k "(@[solver.bool_decide@ %a@])" Atom.debug atom);
         let current_level = decision_level env in
         enqueue_bool env atom ~level:current_level Decision
       | Eval_bool (b, l) ->
