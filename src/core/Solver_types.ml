@@ -352,6 +352,7 @@ let field_t_seen = Term_fields.mk_field() (** term seen during some traversal? *
 let field_t_negated = Term_fields.mk_field() (** negated term? *)
 let field_t_gc_marked = Term_fields.mk_field() (** marked for GC? *)
 let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints? *)
+let field_t_inconsistent = Term_fields.mk_field() (** assignment is inconsistent (BCP/eval). At most one per conflict *)
 
 let field_c_attached = Clause_fields.mk_field() (** clause added to state? *)
 let field_c_visited = Clause_fields.mk_field() (** visited during some traversal? *)
