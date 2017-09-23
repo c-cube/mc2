@@ -1040,16 +1040,18 @@ let conflict_do_paramod (env:t) (st:conflict_state) : atom list =
            let absurd = Atom.is_absurd a in
            Log.debugf 30
              (fun k ->
-                k"(@[conflict_analyze.param_term@ %a@ :into %a@ :absurd %B@ :subst %a@])"
+                k"(@[<hv>conflict_analyze.param_term@ %a@ :into %a@ :absurd %B@ :subst %a@])"
                   Atom.debug a0 Atom.debug a absurd Term.Subst.debug st.cs_subst);
            if absurd then (
              st.cs_history <- RP_paramod_away a0 :: st.cs_history;
              None
            ) else if Atom.marked a then (
-             (* already in conflict clause or resolved away, just ignore it *)
+             (* already in conflict clause or resolved away; still, need to
+                remove a0 (and ignore the duplicate a) *)
+             st.cs_history <- RP_paramod_learn {init=a0;learn=a} :: st.cs_history;
              Log.debugf 30
-               (fun k->k"(@[conflict_analyze.skip_duplicate_param@ :atom %a@])"
-                   Atom.debug a);
+               (fun k->k"(@[conflict_analyze.duplicate_param_term@ :atom %a@ :into %a@])"
+                   Atom.debug a0 Atom.debug a);
              None
            ) else if Atom.equal a a0 then (
              (* trivial rewriting, ignore *)
@@ -1058,6 +1060,7 @@ let conflict_do_paramod (env:t) (st:conflict_state) : atom list =
            ) else (
              (* learn [a] *)
              st.cs_history <- RP_paramod_learn {init=a0;learn=a} :: st.cs_history;
+             mark_for_dup_ a0;
              mark_for_dup_ a;
              if Atom.level a = 0 then (
                (* remove [a] by resolution at level 0 *)
