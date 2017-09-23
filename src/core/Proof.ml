@@ -141,8 +141,13 @@ let find_pivots (init:clause) (l:raw_premise_step list) : premise_step list =
   let steps =
     List.map
       (function
-        | RP_paramod_away a -> Step_paramod_away a
-        | RP_paramod_learn {init;learn} -> Step_paramod_learn {init;learn}
+        | RP_paramod_away a ->
+          Atom.unmark a;
+          Step_paramod_away a
+        | RP_paramod_learn {init;learn} ->
+          Atom.unmark init;
+          Atom.mark learn;
+          Step_paramod_learn {init;learn}
         | RP_paramod_with pc ->
           List.iter Atom.mark_neg pc.pc_guard;
           Step_paramod_with pc
@@ -174,9 +179,23 @@ let find_pivots (init:clause) (l:raw_premise_step list) : premise_step list =
     (function
       | RP_resolve c -> Array.iter Atom.unmark c.c_atoms
       | RP_paramod_with pc -> List.iter Atom.unmark_neg pc.pc_guard
-      | RP_paramod_away _ | RP_paramod_learn _ -> ())
+      | RP_paramod_away _ -> ()
+      | RP_paramod_learn {learn;_} -> Atom.unmark learn)
     l;
   steps
+
+(* debug raw premise, verbose *)
+let debug_raw_premise_step out = function
+  | RP_resolve c -> Fmt.fprintf out "(@[resolve %a@])" Clause.debug c
+  | RP_paramod_away atom ->
+    Fmt.fprintf out "(@[paramod_away %a→⊥@])" Atom.debug atom
+  | RP_paramod_learn {init;learn} ->
+    Fmt.fprintf out "(@[paramod %a@ → %a@])" Atom.debug init Atom.debug learn
+  | RP_paramod_with c ->
+    Fmt.fprintf out "(@[<hv>paramod_with@ @[<2>%a@ := %a@]@ :guard %a@])"
+      Term.debug c.pc_lhs
+      Term.debug c.pc_rhs
+      (Util.pp_list ~sep:" ∧ " Atom.pp) c.pc_guard
 
 let expand (conclusion:clause) : node =
   Log.debugf 15 (fun k -> k "(@[proof.expanding@ %a@])" Clause.debug conclusion);
@@ -196,7 +215,9 @@ let expand (conclusion:clause) : node =
     | P_raw_steps [_] ->
       Util.errorf "proof: resolution error (wrong hyperres)@ %a@ :premise %a"
         Clause.debug conclusion Premise.pp conclusion.c_premise
-    | P_raw_steps (RP_resolve c::r) ->
+    | P_raw_steps ((RP_resolve c::r) as l) ->
+      Log.debugf 30 (fun k->k"(@[<hv>proof.expanding.raw@ %a@])"
+          (Util.pp_list debug_raw_premise_step) l);
       (* find pivots for hyper-resolution *)
       let steps = find_pivots c r in
       (* update premise to memoize proof *)
@@ -379,7 +400,14 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                 :atom %a@ :rw_into %a@ :subst %a@])"
                Atom.debug a0 Atom.debug a Term.Subst.debug subst
            );
-           atoms (* same atoms *)
+           if not (Atom.Set.mem a atoms) then (
+             Util.errorf
+               "(@[<hv>proof.check_paramod_away.atom_not_present@ \
+                :atom %a@ :clause %a@])"
+               Atom.debug a0 pp_a_set atoms
+           );
+           (* remove the atom *)
+           Atom.Set.remove a0 atoms
          | Step_paramod_learn {init;learn} ->
            (* learn [subst(atom)] *)
            let a = Atom.Subst.apply subst init in
@@ -389,7 +417,14 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                 :atom %a@ :expect %a@ :got %a@ :subst %a@])"
                Atom.debug init Atom.debug learn Atom.debug a Term.Subst.debug subst
            );
-           Atom.Set.add a atoms
+           if not (Atom.Set.mem init atoms) then (
+             Util.errorf
+               "(@[<hv>proof.check_paramod_learn.atom_not_present@ \
+                :atom %a@ :clause %a@])"
+               Atom.debug init pp_a_set atoms
+           );
+           (* remove old atom, add new one *)
+           atoms |> Atom.Set.remove init |> Atom.Set.add a
        end)
     atoms steps
 
