@@ -400,7 +400,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                 :atom %a@ :rw_into %a@ :subst %a@])"
                Atom.debug a0 Atom.debug a Term.Subst.debug subst
            );
-           if not (Atom.Set.mem a atoms) then (
+           if not (Atom.Set.mem a0 atoms) then (
              Util.errorf
                "(@[<hv>proof.check_paramod_away.atom_not_present@ \
                 :atom %a@ :clause %a@])"
@@ -409,7 +409,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
            (* remove the atom *)
            Atom.Set.remove a0 atoms
          | Step_paramod_learn {init;learn} ->
-           (* learn [subst(atom)] *)
+           (* learn [subst(init)] and remove [init] *)
            let a = Atom.Subst.apply subst init in
            if not (Atom.equal a learn) then (
              Util.errorf
