@@ -1034,6 +1034,9 @@ let conflict_do_paramod (env:t) (st:conflict_state) : atom list =
       )
     in
     List.iter mark_for_dup_ st.cs_learnt;
+    Log.debugf 30
+      (fun k ->
+         k"(@[<hv>conflict_analyze.param_subst@ %a@])" Term.Subst.debug st.cs_subst);
     let cache = Term.Subst.mk_cache() in
     let l = CCList.filter_map
         (fun a0 ->
