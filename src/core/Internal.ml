@@ -1076,9 +1076,10 @@ let conflict_do_paramod (env:t) (st:conflict_state) : atom list =
            ))
         st.cs_atoms_to_paramod
     in
-    (* cleanup atoms *)
+    (* cleanup *)
     Vec.iter Atom.unmark a_seen;
     Vec.clear a_seen;
+    Term.Subst.clean_cache cache;
     l
   )
 

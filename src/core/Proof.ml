@@ -410,6 +410,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
            Atom.Set.remove a0 atoms
          | Step_paramod_learn {init;learn} ->
            (* learn [subst(init)] and remove [init] *)
+           assert (init.a_term.t_nf=None);
            let a = Atom.Subst.apply subst init in
            if not (Atom.equal a learn) then (
              Util.errorf

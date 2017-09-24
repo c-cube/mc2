@@ -81,6 +81,7 @@ and term = {
   (** The "generalized variable" part, for assignments. *)
   mutable t_watches : term Vec.t lazy_t; (** terms that watch this term *)
   mutable t_value: term_assignment; (** current assignment *)
+  mutable t_nf: term option; (** used for rewriting *)
 }
 (** Main term representation. A {!term}, contains almost all information
     necessary to process it, including:
@@ -384,6 +385,7 @@ let rec dummy_term : term = {
   t_var=Var_none;
   t_watches=lazy (Vec.make_empty dummy_term);
   t_value=TA_none;
+  t_nf=None;
 }
 
 let dummy_clause : clause = {

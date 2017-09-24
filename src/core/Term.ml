@@ -123,13 +123,13 @@ module Unsafe = struct
     id
 
   (* build a fresh term *)
-  let[@inline never] make_term t_id t_view t_ty t_tc : t =
+  let make_term t_id t_view t_ty t_tc : t =
     let t_fields = Fields.empty in
     let t_weight = 0. in
     let t_idx = ~-1 in
     let t_watches = lazy (Vec.make_empty dummy_term) in
     { t_id; t_view; t_ty; t_fields; t_weight; t_idx;
-      t_var=Var_none; t_value=TA_none; t_watches; t_tc; }
+      t_var=Var_none; t_value=TA_none; t_watches; t_tc; t_nf=None; }
 end
 
 (* make a fresh variable for this term *)
@@ -364,36 +364,42 @@ module Subst = struct
 
   let[@inline] find s t : term = Int_map.find t.t_id s |> snd
 
-  (* TODO: investigate in storing normal form in a pointer in the term
-     instead;
-     rw_cache would then just be a vector of terms for which to clean
-     the normal form *)
+  type rw_cache = term Vec.t (* Terms whose [nf] is set and that should be cleared *)
 
-  type rw_cache = term Tbl.t lazy_t (* Maps terms to their normal form *)
-
-  let mk_cache () : rw_cache = lazy (Tbl.create 32)
+  let mk_cache () : rw_cache = Vec.make_empty dummy_term
 
   (* applying a substitution to a term.
      Since terms in the codomain of the substitution are not normalized,
      we have to apply the substitution to them, too *)
-  let apply ?(cache=mk_cache()) (subst:term_subst) (t:term) : term =
+  let apply ?cache (subst:term_subst) (t:term) : term =
     if is_empty subst then t
     else (
       (* evaluate as a DAG *)
-      let lazy cache = cache in
-      let rec aux (t:term) : term = match Tbl.find cache t with
-        | u -> u
-        | exception Not_found ->
+      let rec aux (t:term) : term = match t.t_nf with
+        | Some u -> u
+        | None ->
           let u = match find subst t with
-            | u -> aux u
+            | u ->
+              assert (t != u);
+              aux u
             | exception Not_found ->
               t.t_tc.tct_map t aux (* rewrite subterms *)
           in
-          Tbl.add cache t u;
+          (* put into cache, if available *)
+          begin match cache with
+            | None ->  ()
+            | Some c ->
+              t.t_nf <- Some u;
+              Vec.push c t;
+          end;
           u
       in
       aux t
     )
+
+  let[@inline] clean_cache (c:rw_cache) : unit =
+    Vec.iter (fun t -> t.t_nf <- None) c;
+    Vec.clear c
 
   let pp_ pp_t out (s:t) =
     if is_empty s then Fmt.string out "{}"

@@ -86,8 +86,8 @@ module Subst = struct
   type cache = Term.Subst.rw_cache
 
   (* paramodulate inside atom *)
-  let[@inline] apply ?(cache=Term.Subst.mk_cache()) (subst:term_subst) (a:atom) : atom =
-    let t = Term.Subst.apply ~cache subst (term a) in
+  let[@inline] apply ?cache (subst:term_subst) (a:atom) : atom =
+    let t = Term.Subst.apply ?cache subst (term a) in
     assert (Term.is_bool t);
     if is_pos a then Term.Bool.pa t else Term.Bool.na t
 end

@@ -225,6 +225,9 @@ module Subst : sig
   val apply : ?cache:rw_cache -> t -> term -> term
   (** Apply substitution recursively to the term. *)
 
+  val clean_cache : rw_cache -> unit
+  (** Cleanup of cached terms *)
+
   val pp : t Fmt.printer
   val debug : t Fmt.printer
 end
