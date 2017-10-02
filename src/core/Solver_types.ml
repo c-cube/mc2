@@ -110,8 +110,28 @@ and tc_term = {
 }
 (** type class for terms, packing all operations on terms *)
 
-and term_subst = (term * term) Int_map.t
-(** Finite substitution over terms *)
+and paramod_trace = {
+  pt_lhs: term;
+  pt_val: value;
+  pt_rhs: term;
+  pt_step: paramod_step;
+}
+(** rewrite [lhs] into [rhs] such that:
+    - [can_eval[trail] t v]
+    - [step] is a justification for why
+*)
+
+and paramod_step =
+  | PS_paramod of {
+      pc: paramod_clause;
+    } (** rewrite [lhs] into [rhs] such that:
+          - [can_eval[trail] t v]
+          - [pc] is a clause with head [lhs=rhs] *)
+  | PS_sub of {
+      subs: paramod_trace list;
+    } (** given the list of sub-paramodulations [subs], lhs=rhs *)
+  | PS_skipped (** removed, it was pure evaluation *)
+  | PS_added (** atom, added to final learnt clause *)
 
 and watch_res =
   | Watch_keep (** Keep the watch *)
@@ -119,7 +139,7 @@ and watch_res =
 
 and eval_bool_res =
   | Eval_unknown (** The given formula does not have an evaluation *)
-  | Eval_bool of bool * term list
+  | Eval_bool of bool * (term * value) list
   (** The given formula can be evaluated to the given bool.
       The list of terms to give is the list of terms that were effectively used
       for the evaluation.
@@ -179,14 +199,28 @@ and atom = {
     the variable v points to the positive atom [a] which wraps [f], while
     [a.neg] wraps the theory negation of [f]. *)
 
-(** The value and reason for propagation/decision of the term *)
+(** The value(s) and reason(s) for propagation/decision
+    and evaluation of the term *)
 and term_assignment =
   | TA_none
-  | TA_assign of {
-      level : int; (** Decision level of the assignment *)
-      value: value;
-      reason: reason;
+  | TA_eval of {
+      mutable level : int; (** Decision level of the assignment *)
+      mutable value: value;
+      mutable reason: reason;
     }
+  | TA_assign of {
+      mutable level : int; (** Decision level of the assignment *)
+      mutable value: value;
+      mutable reason: reason;
+    }
+  | TA_both of {
+      mutable level_eval: level;
+      mutable value_eval: value;
+      mutable reason_eval: reason;
+      mutable level_assign: level;
+      mutable value_assign: value;
+      mutable reason_assign: reason
+    } (** Two assignments *)
 
 and clause = {
   c_name : int; (** Clause name, mainly for printing, unique. *)
@@ -232,8 +266,9 @@ and reason =
       lemma: lemma; (** justification *)
     }
   (** [t -> v] explained by [guard => (t = rewrite_into)] *)
-  | Semantic of term list
-  (** The term can be evaluated using the terms in the list *)
+  | Eval of (term * value) list
+  (** The term can be evaluated using the terms in the list. Each
+      term is bundled with the value it can evaluate into *)
 (** Reasons of propagation/decision of atoms/terms. *)
 
 and premise =
@@ -306,7 +341,7 @@ and actions = {
   (** push a new clause *)
   act_level : unit -> level;
   (** access current decision level *)
-  act_propagate_bool_eval : term -> bool -> subs:term list -> unit;
+  act_propagate_bool_eval : term -> bool -> subs:(term * value) list -> unit;
   (** [act_propagate_bool_eval t b l] propagates the boolean literal [t]
       assigned to boolean value [b], explained by evaluation with
       relevant (sub)terms [l]
@@ -318,7 +353,7 @@ and actions = {
       Precondition: [c] is a tautology such that [c == (c' ∨ t=b)], where [c']
       is composed of atoms false in current model.
   *)
-  act_propagate_val_eval : term -> value -> subs:term list -> unit;
+  act_propagate_val_eval : term -> value -> subs:(term * value) list -> unit;
   (** [act_propagate_val_eval t v l] propagates the term [t]
       assigned to value [v], explained by evaluation with
       relevant (sub)terms [l]

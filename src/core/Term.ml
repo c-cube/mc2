@@ -38,7 +38,19 @@ let[@inline] is_bool t = Type.is_bool t.t_ty
 let[@inline] subterms t : t list = iter_subterms t |> Sequence.to_list
 let[@inline] level t = match t.t_value with
   | TA_none -> -1
+  | TA_eval {level;_}
   | TA_assign {level;_} -> level
+  | TA_both {level_eval=l1; level_assign=l2;_} -> min l1 l2
+
+let level_for t v = match t.t_value with
+  | TA_none -> -1
+  | TA_eval {level;value;_}
+  | TA_assign {level;value;_} ->
+    if Value.equal value v then level else -1
+  | TA_both ta ->
+    if Value.equal ta.value_eval v then ta.level_eval
+    else if Value.equal ta.value_assign v then ta.level_assign
+    else -1
 
 let[@inline] gc_marked (t:t) : bool = field_get field_t_gc_marked t
 let[@inline] gc_unmark (t:t) : unit = field_clear field_t_gc_marked t
@@ -51,10 +63,16 @@ let[@inline] dirty_mark (t:t) : unit = field_set field_t_dirty t
 let[@inline] value (t:t): term_assignment = t.t_value
 let[@inline] value_exn (t:t): value = match t.t_value with
   | TA_none -> assert false
+  | TA_eval {value;_}
   | TA_assign {value;_} -> value
+  | TA_both {value_eval=v; _} -> v
 let[@inline] has_value (t:t): bool = match t.t_value with
   | TA_none -> false
-  | TA_assign _ -> true
+  | _ -> true
+let[@inline] has_eval_conflict (t:t): bool = match t.t_value with
+  | TA_both {value_eval=v1; value_assign=v2; _} ->
+    not (Value.equal v1 v2)
+  | _ -> false
 
 let[@inline] max_level l1 l2 =
   if l1<0 || l2<0 then -1
@@ -75,12 +93,16 @@ let[@inline] level_sub (t:t) : level = level_sub_aux ~f:max t
 let[@inline] mk_eq (t:t) (u:t) : t = Type.mk_eq (ty t) t u
 
 let[@inline] reason_exn t = match value t with
+  | TA_eval {reason;_}
   | TA_assign{reason;_} -> reason
+  | TA_both {reason_eval=r;_} -> r
   | TA_none -> assert false
 
 let[@inline] reason t = match value t with
   | TA_none -> None
+  | TA_eval {reason;_}
   | TA_assign{reason;_} -> Some reason
+  | TA_both {reason_eval=r;_} -> Some r
 
 let[@inline] recompute_state (lvl:level) (t:t) : unit =
   Type.refresh_state (ty t) lvl t
@@ -93,12 +115,15 @@ let[@inline] decide_state_exn (t:t) : decide_state = match var t with
 
 let[@inline] assigned (t:term): bool = match t.t_value with
   | TA_none -> false
-  | TA_assign _ -> true
+  | _ -> true
 
 let[@inline] assignment (t:term) = match value t with
   | TA_assign {value=V_true;_} -> Some (A_bool (t,true))
   | TA_assign {value=V_false;_} -> Some (A_bool (t,false))
-  | TA_assign {value;_} -> Some (A_semantic (t,value))
+  | TA_both {value_eval=value;_}
+  | TA_eval {value;_}
+  | TA_assign {value;_}
+    -> Some (A_semantic (t,value))
   | TA_none -> None
 
 (** {2 Containers} *)
@@ -240,11 +265,19 @@ let debug_no_val out t : unit =
 
 (* verbose debug printer *)
 let debug out t : unit =
+  let p_of_reason r = match r with Decision -> "@" | _ -> "$" in
   let pp_val out = function
     | TA_none -> ()
-    | TA_assign {value;level;reason} ->
-      let prefix = match reason with Decision -> "@" | _ -> "$" in
+    | TA_assign {value;level;reason}
+    | TA_eval {value;level;reason} ->
+      let prefix = p_of_reason reason in
       Format.fprintf out "[%s%d@<1>→%a]" prefix level Value.pp value
+    | TA_both ta ->
+      let prefix1 = p_of_reason ta.reason_assign in
+      let prefix2 = p_of_reason ta.reason_eval in
+      Format.fprintf out "[%s%d@<1>→%a;%s%d@<1>→%a]"
+        prefix1 ta.level_assign Value.pp ta.value_assign
+        prefix2 ta.level_eval Value.pp ta.value_eval
   in
   debug_no_val out t;
   pp_val out (value t)
@@ -345,72 +378,6 @@ module Watch2 = struct
       add_watch w.(1) t;
       Watch_remove
     )
-end
-
-(** {2 Subst} *)
-
-module Subst = struct
-  type t = term_subst
-
-  let empty = Int_map.empty
-
-  let is_empty = Int_map.is_empty
-
-  let[@inline] add s t u =
-    assert (not (Int_map.mem t.t_id s));
-    Int_map.add t.t_id (t,u) s
-
-  let[@inline] mem s t = Int_map.mem t.t_id s
-
-  let[@inline] find s t : term = Int_map.find t.t_id s |> snd
-
-  type rw_cache = term Vec.t (* Terms whose [nf] is set and that should be cleared *)
-
-  let mk_cache () : rw_cache = Vec.make_empty dummy_term
-
-  (* applying a substitution to a term.
-     Since terms in the codomain of the substitution are not normalized,
-     we have to apply the substitution to them, too *)
-  let apply ?cache (subst:term_subst) (t:term) : term =
-    if is_empty subst then t
-    else (
-      (* evaluate as a DAG *)
-      let rec aux (t:term) : term = match t.t_nf with
-        | Some u -> u
-        | None ->
-          let u = match find subst t with
-            | u ->
-              assert (t != u);
-              aux u
-            | exception Not_found ->
-              t.t_tc.tct_map t aux (* rewrite subterms *)
-          in
-          (* put into cache, if available *)
-          begin match cache with
-            | None ->  ()
-            | Some c ->
-              t.t_nf <- Some u;
-              Vec.push c t;
-          end;
-          u
-      in
-      aux t
-    )
-
-  let[@inline] clean_cache (c:rw_cache) : unit =
-    Vec.iter (fun t -> t.t_nf <- None) c;
-    Vec.clear c
-
-  let pp_ pp_t out (s:t) =
-    if is_empty s then Fmt.string out "{}"
-    else (
-      let pp_bind out (t,u) = Fmt.fprintf out "@[%a@ @<1>→ %a@]" pp_t t pp_t u in
-      Fmt.fprintf out "{@[<hv>%a@]}"
-        (Util.pp_seq ~sep:";" pp_bind) (Int_map.values s)
-    )
-
-  let[@inline] pp out s = pp_ pp out s
-  let[@inline] debug out s = pp_ debug out s
 end
 
 (** {2 Hashconsing of a Theory Terms} *)

@@ -33,6 +33,10 @@ let[@inline] set_atom_reason (a:atom) (r:reason) : unit =
     | TA_none -> assert false
     | TA_assign{value;_} ->
       a.a_term.t_value <- TA_assign{value;reason=r;level=0}
+    | TA_both ta ->
+      ta.reason_assign <- r;
+      ta.level_assign <- 0;
+    | TA_eval _ -> assert false
   end
 
 (* update proof of atom [a] with additional information at level 0 *)
@@ -353,6 +357,7 @@ let pp_a_set out (a:Atom.Set.t) : unit =
      return conclusion *)
 let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
   let atoms = set_of_c init in
+  (* FIXME: sth to redo paramod
   let subst =
     List.fold_left
       (fun subst -> function
@@ -367,6 +372,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
   if not (Term.Subst.is_empty subst) then (
     Log.debugf 10 (fun k->k "(@[proof.check.find_subst@ %a@])" Term.Subst.debug subst);
   );
+     *)
   List.fold_left
     (fun atoms step ->
        begin match step with
@@ -393,6 +399,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
            |> Atom.Set.add_seq atoms
          | Step_paramod_away a0 ->
            (* check that [subst(atom) -> false] *)
+           (* FIXME: redo it
            let a = Atom.Subst.apply subst a0 in
            if not (Atom.is_absurd a) then (
              Util.errorf
@@ -407,10 +414,12 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                Atom.debug a0 pp_a_set atoms
            );
            (* remove the atom *)
+              *)
            Atom.Set.remove a0 atoms
          | Step_paramod_learn {init;learn} ->
            (* learn [subst(init)] and remove [init] *)
            assert (init.a_term.t_nf=None);
+           (* FIXME: redo it
            let a = Atom.Subst.apply subst init in
            if not (Atom.equal a learn) then (
              Util.errorf
@@ -425,7 +434,8 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                Atom.debug init pp_a_set atoms
            );
            (* remove old atom, add new one *)
-           atoms |> Atom.Set.remove init |> Atom.Set.add a
+              *)
+           atoms |> Atom.Set.remove init |> Atom.Set.add learn
        end)
     atoms steps
 

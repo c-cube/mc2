@@ -18,7 +18,7 @@ let pp out = function
     ) else Format.fprintf out "#%d@<1>←<lazy>" n
   | n, Propagate_value {rw_into;_} ->
     Format.fprintf out "=%d@<1>←%a" n Term.debug rw_into
-  | n, Semantic _ ->
+  | n, Eval _ ->
     Format.fprintf out "$%d" n
 
 let pp_opt out = function

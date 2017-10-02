@@ -34,6 +34,7 @@ val marked : t -> bool (** Was {!mark} called on this var? *)
 val is_deleted : t -> bool
 val is_added : t -> bool
 val level : t -> level (** decision/assignment level of the term *)
+val level_for : t -> value -> level (** level for evaluating into this value *)
 val var : t -> var
 val ty : t -> Type.t
 val reason : t -> reason option
@@ -70,6 +71,7 @@ val set_weight : t -> float -> unit
 val has_value : t -> bool
 val value : t -> term_assignment
 val value_exn : t -> value
+val has_eval_conflict: t -> bool (** both assign/eval, with distinct values *)
 
 val mk_eq : t -> t -> t
 (** Use the term's type to make two terms equal *)
@@ -203,34 +205,6 @@ end
 
 val assigned : t -> bool
 val assignment : t -> assignment_view option (** Current assignment of this term *)
-
-(** {2 Subst} *)
-
-module Subst : sig
-  type t = term_subst
-
-  val empty : t
-
-  val is_empty : t -> bool
-
-  val add : t -> term -> term -> t
-
-  val mem : t -> term -> bool
-
-  type rw_cache
-  (** Used to cache rewriting of terms *)
-
-  val mk_cache : unit -> rw_cache
-
-  val apply : ?cache:rw_cache -> t -> term -> term
-  (** Apply substitution recursively to the term. *)
-
-  val clean_cache : rw_cache -> unit
-  (** Cleanup of cached terms *)
-
-  val pp : t Fmt.printer
-  val debug : t Fmt.printer
-end
 
 (** {2 Low Level constructors. Use at your own risks.} *)
 (**/**)

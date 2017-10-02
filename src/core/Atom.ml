@@ -23,20 +23,15 @@ let[@inline] abs (a:t) : t = match a.a_term.t_var with
   | Var_bool { pa; _ } -> pa
   | Var_none | Var_semantic _ -> assert false
 
-let[@inline] value (a:t) : term_assignment = a.a_term.t_value
-let[@inline] value_exn (a:t) : value = match value a with
-  | TA_none -> assert false
-  | TA_assign {value;_} -> value
-
-let[@inline] value_bool (a:t): bool option = match value a with
+let[@inline] value_bool (a:t): bool option = match Term.value a.a_term with
   | TA_none -> None
-  | TA_assign{value=V_true;_} -> Some true
-  | TA_assign{value=V_false;_} -> Some false
+  | TA_assign{value=V_true;_} -> Some (is_pos a)
+  | TA_assign{value=V_false;_} -> Some (not (is_pos a))
   | _ -> assert false
 
-let[@inline] value_bool_exn (a:t): bool = match value a with
-  | TA_assign{value=V_true;_} -> true
-  | TA_assign{value=V_false;_} -> false
+let[@inline] value_bool_exn (a:t): bool = match Term.value a.a_term with
+  | TA_assign{value=V_true;_} -> is_pos a
+  | TA_assign{value=V_false;_} -> not (is_pos a)
   | _ -> assert false
 
 let[@inline] is_true (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
@@ -49,14 +44,14 @@ let[@inline] is_false (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
   | TA_assign{value=V_false;_}, Var_bool{pa;_} when a==pa -> true
   | _ -> false
 
-let[@inline] is_undef (a:t): bool = match value a with
+let[@inline] is_undef (a:t): bool = match Term.value a.a_term with
   | TA_none -> true
   | _ -> false
-let[@inline] has_value (a:t): bool = match value a with
-  | TA_assign _ -> true
-  | TA_none -> false
+let[@inline] has_value (a:t): bool = not (is_undef a)
 
 let[@inline] reason (a:t) = match a.a_term.t_value with
+  | TA_both{reason_eval=reason;_}
+  | TA_eval{reason;_}
   | TA_assign{reason;_} -> Some reason
   | _ -> None
 
@@ -80,17 +75,6 @@ let pp_level fmt a = Reason.pp_opt fmt (level a, reason a)
 
 let[@inline] mark_neg (a:t) = mark (neg a)
 let[@inline] unmark_neg (a:t) = unmark (neg a)
-
-module Subst = struct
-  type t = term_subst
-  type cache = Term.Subst.rw_cache
-
-  (* paramodulate inside atom *)
-  let[@inline] apply ?cache (subst:term_subst) (a:atom) : atom =
-    let t = Term.Subst.apply ?cache subst (term a) in
-    assert (Term.is_bool t);
-    if is_pos a then Term.Bool.pa t else Term.Bool.na t
-end
 
 let[@inline] eval_bool (a:t) : eval_bool_res =
   begin match Term.eval_bool (term a) with
