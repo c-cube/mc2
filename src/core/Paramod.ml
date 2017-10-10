@@ -12,7 +12,7 @@ let debug_pclause out (c:pclause) : unit =
     Premise.pp c.pc_premise
 
 let rec pp_trace out (pt:trace) : unit =
-  Fmt.fprintf out "(@[<hv>param@ :lhs %a@ :rhs %a@ :steps (@[<hv>%a@])@]"
+  Fmt.fprintf out "(@[<hv>param@ @[<2>%a@ := %a@]@ :steps (@[<hv>%a@])@]"
     Term.debug pt.pt_lhs
     Term.debug pt.pt_rhs
     (Util.pp_list pp_step) pt.pt_steps

@@ -39,7 +39,7 @@ val var : t -> var
 val ty : t -> Type.t
 val reason : t -> reason option
 val reason_exn : t -> reason
-val eval_bool : t -> eval_bool_res
+val eval : t -> eval_res
 val is_bool : t -> bool
 
 val level_semantic : t -> level
@@ -104,7 +104,7 @@ val tc_mk :
   ?update_watches:(actions -> term -> watch:term -> watch_res) ->
   ?delete:(term -> unit) ->
   ?subterms:(term_view -> (term->unit) -> unit) ->
-  ?eval_bool:(term -> eval_bool_res) ->
+  ?eval:(term -> eval_res) ->
   ?map:(term -> (term -> term) -> term) ->
   pp:term_view CCFormat.printer ->
   unit ->

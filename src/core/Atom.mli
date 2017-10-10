@@ -28,7 +28,7 @@ val is_false : t -> bool
 val is_undef : t -> bool
 val has_some_value : t -> bool
 
-val eval_bool : t -> eval_bool_res (** Semantically evaluate atom *)
+val eval : t -> eval_res (** Semantically evaluate atom *)
 val is_absurd : t -> bool
 
 val term : t -> term

@@ -56,8 +56,6 @@ let build p_id Plugin.S_nil : Plugin.t =
         Fmt.fprintf out "(@[%a@ %a@])" ID.pp_name id (Util.pp_array Term.pp) args
       | _ -> assert false
 
-    let eval_bool _ = Eval_unknown
-
     let[@inline] subterms v yield = match v with
       | Const _ -> ()
       | App {args; _} -> Array.iter yield args
@@ -253,7 +251,7 @@ let build p_id Plugin.S_nil : Plugin.t =
 
     let tc : tc_term =
       Term.tc_mk
-        ~pp ~update_watches ~init ~subterms ~eval_bool ()
+        ~pp ~update_watches ~init ~subterms ()
 
     let check_if_sat _ = Sat
     let gc_all = T_alloc.gc_all

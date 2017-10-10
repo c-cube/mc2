@@ -185,10 +185,11 @@ let check_model state : bool =
              (fun k -> k "(@[check.atom@ %a@])" Term.debug (Atom.term a));
          let b = Solver.Sat_state.eval state a in
          (* check consistency with eval_bool *)
-         begin match Term.eval_bool (Atom.term a) with
+         begin match Term.eval (Atom.term a) with
            | Eval_unknown -> ()
-           | Eval_bool (b', _) ->
-             assert (b = (if Atom.is_pos a then b' else not b'));
+           | Eval_into (b', _) ->
+             assert (Value.equal b'
+                 (Value.of_bool (if Atom.is_pos a then b else not b)));
          end;
          b)
         c

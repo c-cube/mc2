@@ -184,7 +184,7 @@ let tc_mk
     ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
     ?(delete=fun _ -> ())
     ?(subterms=fun _ _ -> ())
-    ?(eval_bool=fun _ -> Eval_unknown)
+    ?(eval=fun _ -> Eval_unknown)
     ?(map=fun t _ -> t)
     ~pp
     () : tc =
@@ -193,7 +193,7 @@ let tc_mk
     tct_delete=delete;
     tct_subterms=subterms;
     tct_pp=pp;
-    tct_eval_bool=eval_bool;
+    tct_eval=eval;
     tct_map=map;
   }
 
@@ -235,9 +235,7 @@ module Bool = struct
   let[@inline] mk_eq t u = mk_eq t u |> pa
 end
 
-let[@inline] eval_bool (t:term) : eval_bool_res =
-  assert (Type.is_bool t.t_ty);
-  t.t_tc.tct_eval_bool t
+let[@inline] eval (t:term) : eval_res = t.t_tc.tct_eval t
 
 let debug_no_val out t : unit =
   let state = if is_deleted t then "][D" else "" in

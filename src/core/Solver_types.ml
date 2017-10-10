@@ -105,7 +105,7 @@ and tc_term = {
   tct_delete: term -> unit;
   (** called when term is deleted *)
   tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
-  tct_eval_bool : term -> eval_bool_res; (** Evaluate boolean term *)
+  tct_eval: term -> eval_res; (** Evaluate term *)
   mutable tct_map : term -> (term -> term) -> term; (** Map function to subterms *)
 }
 (** type class for terms, packing all operations on terms *)
@@ -114,10 +114,10 @@ and watch_res =
   | Watch_keep (** Keep the watch *)
   | Watch_remove (** Remove the watch *)
 
-and eval_bool_res =
+and eval_res =
   | Eval_unknown (** The given formula does not have an evaluation *)
-  | Eval_bool of bool * (term * value) list
-  (** The given formula can be evaluated to the given bool.
+  | Eval_into of value * (term * value) list
+  (** The given formula can be evaluated to the given value.
       The list of terms to give is the list of terms that were effectively used
       for the evaluation.
   *)
@@ -384,7 +384,7 @@ let tct_default : tc_term = {
   tct_update_watches=(fun _ _ ~watch:_ -> Watch_keep);
   tct_delete=(fun _ -> ());
   tct_subterms=(fun _ _ -> ());
-  tct_eval_bool=(fun _ -> Eval_unknown);
+  tct_eval=(fun _ -> Eval_unknown);
   tct_map=(fun t _ -> t);
 }
 

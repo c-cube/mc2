@@ -164,12 +164,12 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | _ -> assert false
 
     (* evaluate equality *)
-    let eval_bool (t:term) : eval_bool_res = match Term.view t with
-      | Eq (a, b) when Term.equal a b -> Eval_bool (true, [])
+    let eval (t:term) : eval_res = match Term.view t with
+      | Eq (a, b) when Term.equal a b -> Eval_into (Value.true_, [])
       | Eq (a, b) ->
         begin match Term.value a, Term.value b with
           | Some va, Some vb ->
-            Eval_bool (Value.equal va vb, [a,va;b,vb])
+            Eval_into (Value.equal va vb |> Value.of_bool, [a,va;b,vb])
           | _ -> Eval_unknown
         end
       | _ -> assert false
@@ -323,9 +323,10 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             add_diff acts a value ~diseqn:(Term.Bool.na eqn) ~other:b
           | _, Some _, Some _ ->
             (* semantic propagation *)
-            begin match eval_bool eqn with
+            begin match eval eqn with
               | Eval_unknown -> assert false
-              | Eval_bool (b, subs) ->
+              | Eval_into (v, subs) ->
+                let b = Value.as_bool_exn v in
                 Actions.propagate_bool_eval acts eqn b ~subs
             end
           | _ -> ()
@@ -342,7 +343,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | _ -> assert false
 
     let tc_term : tc_term =
-      Term.tc_mk ~pp ~subterms ~update_watches ~init ~eval_bool ()
+      Term.tc_mk ~pp ~subterms ~update_watches ~init ~eval ()
 
     (* make an equality literal *)
     let mk_eq (t:term) (u:term): term =

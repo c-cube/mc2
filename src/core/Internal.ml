@@ -704,13 +704,17 @@ let enqueue_val_theory_propagate (env:t) (t:term) (v:value)
 
 (* evaluate an atom for MCsat, if it's not assigned
    by boolean propagation/decision *)
-let th_eval (env:t) (a:atom) : bool option =
+let th_eval (env:t) (a:atom) : value option =
   if Atom.is_true a || Atom.is_false a then None
   else (
-    begin match Atom.eval_bool a with
+    begin match Atom.eval a with
       | Eval_unknown -> None
-      | Eval_bool (b, l) ->
-        let atom = if b then a else Atom.neg a in
+      | Eval_into (b, l) ->
+        let atom =
+          if Value.is_true b then a
+          else if Value.is_false b then Atom.neg a
+          else assert false
+        in
         enqueue_semantic_bool_eval env atom l;
         Some b
     end
@@ -720,21 +724,21 @@ let pp_subs out l : unit =
   let pp_p out (t,v) = Fmt.fprintf out "(@[%a@ → %a@])" Term.debug t Value.pp v in
   Fmt.fprintf out "(@[<v>%a@])" (Util.pp_list pp_p) l
 
-let debug_eval_bool out = function
+let debug_eval out = function
   | Eval_unknown -> Fmt.string out "unknown"
-  | Eval_bool (b, subs) ->
-    Fmt.fprintf out "(@[<hv>%B@ :subs (@[<v>%a@])@])" b pp_subs subs
+  | Eval_into (v, subs) ->
+    Fmt.fprintf out "(@[<hv>%a@ :subs (@[<v>%a@])@])" Value.pp v pp_subs subs
 
 (* [a] is part of a conflict/learnt clause, but might not be evaluated yet.
    Evaluate it, save its value, and ensure it is indeed false. *)
 let eval_atom_to_false (env:t) (a:atom): unit =
   if Atom.is_false a then ()
   else (
-    let v = Atom.eval_bool a in
+    let v = Atom.eval a in
     Log.debugf debug (fun k->k "(@[atom_must_be_false@ %a@ :eval_to %a@])"
-        Atom.debug a debug_eval_bool v);
+        Atom.debug a debug_eval v);
     begin match v with
-      | Eval_bool (false, subs) ->
+      | Eval_into (V_false, subs) ->
         enqueue_semantic_bool_eval env (Atom.neg a) subs
       | _ -> assert false
     end
@@ -783,6 +787,9 @@ let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
          Util.swap_arr arr 1 i;
        ))
     arr
+
+let[@inline] level_subs (l:(term*value) list) : level =
+  List.fold_left (fun l (t,_) -> max l (Term.level t)) 0 l
 
 (** {2 Conflict Analysis} *)
 
@@ -1484,10 +1491,11 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
               (fun k->k "(@[<hv>solver.propagate_bool@ %a@ :clause %a@])"
                   Atom.debug first Clause.debug c);
             enqueue_bool env first ~level:(decision_level env) (Bcp c)
-          | Some true -> ()
-          | Some false ->
+          | Some V_true -> ()
+          | Some V_false ->
             env.propagate_head <- Vec.size env.trail;
             raise (Conflict (Conflict_clause c))
+          | Some _ -> assert false
         end
       );
       Watch_keep
@@ -1705,7 +1713,7 @@ let rec pick_branch_aux (env:t) (atom:atom) : unit =
     (* does this boolean term eval to [true]? *)
     (* TODO: should the plugin already have propagated this?
        or is it an optim? *)
-    begin match Term.eval_bool t with
+    begin match Term.eval t with
       | Eval_unknown ->
         (* do a decision *)
         env.decisions <- env.decisions + 1;
@@ -1713,9 +1721,13 @@ let rec pick_branch_aux (env:t) (atom:atom) : unit =
         Log.debugf debug (fun k->k "(@[solver.bool_decide@ %a@])" Atom.debug atom);
         let current_level = decision_level env in
         enqueue_bool env atom ~level:current_level Decision
-      | Eval_bool (b, l) ->
+      | Eval_into (b, l) ->
         (* already evaluates in the trail *)
-        let a = if b then atom else Atom.neg atom in
+        let a =
+          if Value.is_true b then atom
+          else if Value.is_false b then Atom.neg atom
+          else assert false
+        in
         enqueue_semantic_bool_eval env a l
     end
   )
@@ -1926,12 +1938,12 @@ let eval_level (a:atom) =
   if Atom.is_true a then true, lvl
   else if Atom.is_false a then false, lvl
   else (
-    begin match Atom.eval_bool a with
+    begin match Atom.eval a with
       | Eval_unknown -> err_undecided_lit a.a_term
-      | Eval_bool (b, l) ->
+      | Eval_into(b, l) ->
         (* level is highest level of terms used to eval into [b] *)
-        let lvl = List.fold_left (fun l (t,_) -> max l (Term.level t)) 0 l in
-        b, lvl
+        let lvl = level_subs l in
+        Value.as_bool_exn b, lvl
     end
   )
 

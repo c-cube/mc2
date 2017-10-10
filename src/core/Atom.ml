@@ -61,16 +61,16 @@ let pp_level fmt a = Reason.pp_opt fmt (level a, reason a)
 let[@inline] mark_neg (a:t) = mark (neg a)
 let[@inline] unmark_neg (a:t) = unmark (neg a)
 
-let[@inline] eval_bool (a:t) : eval_bool_res =
-  begin match Term.eval_bool (term a) with
+let[@inline] eval (a:t) : eval_res =
+  begin match Term.eval (term a) with
     | Eval_unknown -> Eval_unknown
-    | Eval_bool (v, subs) ->
-      let v = if is_pos a then v else not v in
-      Eval_bool (v, subs)
+    | Eval_into (v, subs) ->
+      let v = if is_pos a then v else Value.bool_neg v in
+      Eval_into (v, subs)
   end
 
-let[@inline] is_absurd (a:t) : bool = match eval_bool a with
-  | Eval_bool (false,[]) -> true
+let[@inline] is_absurd (a:t) : bool = match eval a with
+  | Eval_into (V_false,[]) -> true
   | _ -> false
 
 let pp_value fmt a =
