@@ -180,24 +180,11 @@ and atom = {
     and evaluation of the term *)
 and term_assignment =
   | TA_none
-  | TA_eval of {
-      mutable level : int; (** Decision level of the assignment *)
-      mutable value: value;
-      mutable reason: reason;
-    }
   | TA_assign of {
       mutable level : int; (** Decision level of the assignment *)
       mutable value: value;
       mutable reason: reason;
     }
-  | TA_both of {
-      mutable level_eval: level;
-      mutable value_eval: value;
-      mutable reason_eval: reason;
-      mutable level_assign: level;
-      mutable value_assign: value;
-      mutable reason_assign: reason
-    } (** Two assignments *)
 
 and clause = {
   c_name : int; (** Clause name, mainly for printing, unique. *)
