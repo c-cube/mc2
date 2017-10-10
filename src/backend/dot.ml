@@ -157,7 +157,7 @@ module Make(A : Arg with type atom := atom
                 in
                 Paramod.Trace.pc_seq pa.pa_trace
                 |> Sequence.fold
-                  (fun acc pc ->
+                  (fun acc c ->
                      Inf_subst (Paramod.PClause.lhs c, Paramod.PClause.rhs c) :: acc)
                   [last])
             steps

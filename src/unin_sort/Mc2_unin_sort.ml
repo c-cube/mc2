@@ -168,8 +168,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | Eq (a, b) when Term.equal a b -> Eval_bool (true, [])
       | Eq (a, b) ->
         begin match Term.value a, Term.value b with
-          | TA_assign {value=va;_}, TA_assign {value=vb;_} ->
-            Eval_bool (Value.equal va vb, [a;b])
+          | Some va, Some vb ->
+            Eval_bool (Value.equal va vb, [a,va;b,vb])
           | _ -> Eval_unknown
         end
       | _ -> assert false
@@ -262,7 +262,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                 "(@[<hv>%s.add_singleton.done@ :to %a@ :c_list %a@])"
                 name Term.debug t pp_c_list ds.c_list);
           (* also, propagate, if not assigned yet ! *)
-          if not (Term.has_value t) then (
+          if not (Term.has_some_value t) then (
             let lemma = Lemma.make Equality tc_lemma in
             Actions.propagate_val_lemma acts t v ~rw_into:other [eqn] lemma;
           )
@@ -313,15 +313,15 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let update_watches acts (eqn:term) ~watch:_ = match Term.view eqn with
       | Eq (a,b) ->
         begin match Term.value eqn, Term.value a, Term.value b with
-          | TA_assign{value=V_true;_}, TA_assign{value;_}, TA_none ->
+          | Some V_true, Some value, None ->
             add_singleton acts b value ~eqn:(Term.Bool.pa eqn) ~other:a
-          | TA_assign{value=V_true;_}, TA_none, TA_assign{value;_} ->
+          | Some V_true, None, Some value ->
             add_singleton acts a value ~eqn:(Term.Bool.pa eqn) ~other:b
-          | TA_assign{value=V_false;_}, TA_assign{value;_}, TA_none ->
+          | Some V_false, Some value, None ->
             add_diff acts b value ~diseqn:(Term.Bool.na eqn) ~other:a
-          | TA_assign{value=V_false;_}, TA_none, TA_assign{value;_} ->
+          | Some V_false, None, Some value ->
             add_diff acts a value ~diseqn:(Term.Bool.na eqn) ~other:b
-          | _, TA_assign _, TA_assign _ ->
+          | _, Some _, Some _ ->
             (* semantic propagation *)
             begin match eval_bool eqn with
               | Eval_unknown -> assert false
