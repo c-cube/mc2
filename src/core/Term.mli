@@ -68,10 +68,10 @@ val recompute_state : level -> t -> unit
 val weight : t -> float (** Heuristic weight *)
 val set_weight : t -> float -> unit
 
-val has_value : t -> bool
-val value : t -> term_assignment
+val has_some_value : t -> bool
+val has_value : t -> value -> bool
+val value : t -> value option
 val value_exn : t -> value
-val has_eval_conflict: t -> bool (** both assign/eval, with distinct values *)
 
 val mk_eq : t -> t -> t
 (** Use the term's type to make two terms equal *)
@@ -94,6 +94,9 @@ val setup_var : t -> unit (** create a variable for the term *)
 val add_watch : t -> t -> unit
 (** [add_watch t u] adds [u] to the list of watches of [t]. [u] will be
     notified whenever [t] is assigned *)
+
+val map : f:(t -> t) -> t -> t
+(** Map on immediate subterms *)
 
 (** Make a new typeclass *)
 val tc_mk :

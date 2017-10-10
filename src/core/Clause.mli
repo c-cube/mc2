@@ -47,3 +47,4 @@ val debug_atoms_a : atom array CCFormat.printer
 val pp_dimacs : t CCFormat.printer
 
 module Tbl : CCHashtbl.S with type key = clause
+module Set : CCSet.S with type elt = clause

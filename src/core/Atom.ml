@@ -23,37 +23,22 @@ let[@inline] abs (a:t) : t = match a.a_term.t_var with
   | Var_bool { pa; _ } -> pa
   | Var_none | Var_semantic _ -> assert false
 
-let[@inline] value_bool (a:t): bool option = match Term.value a.a_term with
-  | TA_none -> None
-  | TA_assign{value=V_true;_} -> Some (is_pos a)
-  | TA_assign{value=V_false;_} -> Some (not (is_pos a))
-  | _ -> assert false
+let[@inline] value (a:t): value option =
+  if is_pos a then Term.value a.a_term
+  else CCOpt.map Value.bool_neg (Term.value a.a_term)
 
-let[@inline] value_bool_exn (a:t): bool = match Term.value a.a_term with
-  | TA_assign{value=V_true;_} -> is_pos a
-  | TA_assign{value=V_false;_} -> not (is_pos a)
-  | _ -> assert false
+let[@inline] is_true (a:t): bool =
+  if is_pos a
+  then Term.has_value a.a_term Value.true_
+  else Term.has_value a.a_term Value.false_
+let[@inline] is_false (a:t): bool =
+  if is_pos a
+  then Term.has_value a.a_term Value.false_
+  else Term.has_value a.a_term Value.true_
+let[@inline] has_some_value (a:t): bool = Term.has_some_value a.a_term
+let[@inline] is_undef (a:t): bool = not (has_some_value a)
 
-let[@inline] is_true (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
-  | TA_assign{value=V_true; _}, Var_bool{pa;_} when a==pa -> true
-  | TA_assign{value=V_false;_}, Var_bool{na;_} when a==na -> true
-  | _ -> false
-
-let[@inline] is_false (a:t): bool = match a.a_term.t_value, a.a_term.t_var with
-  | TA_assign{value=V_true; _}, Var_bool{na;_} when a==na -> true
-  | TA_assign{value=V_false;_}, Var_bool{pa;_} when a==pa -> true
-  | _ -> false
-
-let[@inline] is_undef (a:t): bool = match Term.value a.a_term with
-  | TA_none -> true
-  | _ -> false
-let[@inline] has_value (a:t): bool = not (is_undef a)
-
-let[@inline] reason (a:t) = match a.a_term.t_value with
-  | TA_both{reason_eval=reason;_}
-  | TA_eval{reason;_}
-  | TA_assign{reason;_} -> Some reason
-  | _ -> None
+let[@inline] reason (a:t) : reason option = Term.reason a.a_term
 
 let[@inline] term (a:t) = a.a_term
 let[@inline] level (a:t) = Term.level a.a_term

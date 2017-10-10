@@ -12,8 +12,7 @@ val is_pos : t -> bool (** Positive atom? *)
 val is_neg : t -> bool (** Negative atom? *)
 val neg : t -> t (** Negation *)
 val abs : t -> t (** Positive version *)
-val value_bool : t -> bool option
-val value_bool_exn : t -> bool
+val value : t -> value option
 
 val mark : t -> unit (** Mark the atom as seen, using fields in the variable. *)
 val marked : t -> bool (** Returns wether the atom has been marked as seen. *)
@@ -27,7 +26,7 @@ val reason : t -> reason option
 val is_true : t -> bool (** True in current model? *)
 val is_false : t -> bool
 val is_undef : t -> bool
-val has_value : t -> bool
+val has_some_value : t -> bool
 
 val eval_bool : t -> eval_bool_res (** Semantically evaluate atom *)
 val is_absurd : t -> bool

@@ -18,6 +18,8 @@ val is_false : t -> bool
 val as_bool : t -> bool option
 val as_bool_exn : t -> bool
 
+val bool_neg : t -> t
+
 val view : t -> value_view (** non-bool only *)
 val tc : t -> tc_value (** non-bool only *)
 

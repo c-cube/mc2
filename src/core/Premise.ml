@@ -35,23 +35,27 @@ let[@inline] steps init steps =
   assert (steps<>[]);
   P_steps {init;steps}
 
+let[@inline] res_is_absurd (pa:paramod_atom): bool = CCOpt.is_none pa.pa_learn
+
 let[@inline] pp_raw_premise_step out = function
   | RP_resolve c -> pp_clause_name out c
-  | RP_paramod_away atom ->
-    Fmt.fprintf out "rw(%a→⊥)" pp_atom_id atom
-  | RP_paramod_learn {init;learn} ->
-    Fmt.fprintf out "rw(%a→%a)" pp_atom_id init pp_atom_id learn
-  | RP_paramod_with c ->
-    Fmt.fprintf out "(%a=%a)" pp_term_id c.pc_lhs pp_term_id c.pc_rhs
+  | RP_paramod pa ->
+    begin match pa.pa_learn with
+      | None ->
+        Fmt.fprintf out "rw(%a→⊥)" pp_atom_id pa.pa_init
+      | Some learn ->
+        Fmt.fprintf out "(%a=%a)" pp_atom_id pa.pa_init pp_atom_id learn
+    end
 
 let[@inline] pp_premise_step out = function
   | Step_resolve {c;_} -> pp_clause_name out c
-  | Step_paramod_away atom ->
-    Fmt.fprintf out "rw(%a→⊥)" pp_atom_id atom
-  | Step_paramod_learn {init;learn} ->
-    Fmt.fprintf out "rw(%a→%a)" pp_atom_id init pp_atom_id learn
-  | Step_paramod_with c ->
-    Fmt.fprintf out "(%a=%a)" pp_term_id c.pc_lhs pp_term_id c.pc_rhs
+  | Step_paramod pa ->
+    begin match pa.pa_learn with
+      | None ->
+        Fmt.fprintf out "rw(%a→⊥)" pp_atom_id pa.pa_init
+      | Some learn ->
+        Fmt.fprintf out "(%a=%a)" pp_atom_id pa.pa_init pp_atom_id learn
+    end
 
 let pp out = function
   | Hyp -> Format.fprintf out "hyp"

@@ -29,34 +29,32 @@ let[@inline] prove conclusion = conclusion
 
 (* update reason of a *)
 let[@inline] set_atom_reason (a:atom) (r:reason) : unit =
-  begin match a.a_term.t_value with
+  begin match a.a_term.t_assign with
     | TA_none -> assert false
     | TA_assign{value;_} ->
-      a.a_term.t_value <- TA_assign{value;reason=r;level=0}
-    | TA_both ta ->
-      ta.reason_assign <- r;
-      ta.level_assign <- 0;
-    | TA_eval _ -> assert false
+      a.a_term.t_assign <- TA_assign{value;reason=r;level=0}
   end
 
 (* update proof of atom [a] with additional information at level 0 *)
-let rec recompute_update_proof_of_atom (a:atom) : clause =
+let rec recompute_update_proof_of_atom (a:atom) (v:value) : clause =
   assert (Atom.level a >= 0);
   begin match Atom.reason a with
     | Some (Bcp c) ->
       Log.debugf 10
-        (fun k -> k "(@[<hv>proof.analyzing@ :atom %a@ :bcp %a@])"
-            Atom.debug a Clause.debug c);
+        (fun k -> k "(@[<hv>proof.analyzing@ :atom %a@ :val %a@ :bcp %a@])"
+            Atom.debug a Value.pp v Clause.debug c);
       if Array.length c.c_atoms = 1 then (
         Log.debugf 15 (fun k -> k "(@[<hv>proof.analyze.keep_old_reason@ %a@])" Atom.debug a);
         c
       ) else (
-        assert (Atom.is_false a);
         let premise =
           Array.fold_left
             (fun acc b ->
                if Atom.equal (Atom.neg a) b then acc
-               else RP_resolve (recompute_update_proof_of_atom b) :: acc)
+               else (
+                 let c = recompute_update_proof_of_atom b Value.false_ in
+                 RP_resolve c :: acc
+               ))
             []
             c.c_atoms
         in
@@ -80,7 +78,7 @@ let prove_unsat (conflict:clause) : clause =
       Array.fold_left
         (fun acc a ->
            assert (Atom.is_false a);
-           RP_resolve (recompute_update_proof_of_atom a) :: acc)
+           RP_resolve (recompute_update_proof_of_atom a Value.false_) :: acc)
         [] conflict.c_atoms
     in
     let premise = Premise.raw_steps (RP_resolve conflict :: premise) in
@@ -92,7 +90,7 @@ let prove_unsat (conflict:clause) : clause =
 
 let prove_atom a =
   if Atom.is_true a && Atom.level a = 0 then (
-    Some (recompute_update_proof_of_atom a)
+    Some (recompute_update_proof_of_atom a Value.true_)
   ) else (
     None
   )
@@ -119,12 +117,15 @@ let[@inline] step n = n.step
 let pp_clause_step out = function
   | Step_resolve {c;pivot} ->
     Fmt.fprintf out "(@[res@ %a@ :on %a@])" Clause.debug c Term.debug pivot
-  | Step_paramod_away a ->
-    Fmt.fprintf out "(@[param_false@ %a@])" Atom.debug a
-  | Step_paramod_learn {init;learn} ->
-    Fmt.fprintf out "(@[param@ %a@ :into %a@])" Atom.debug init Atom.debug learn
-  | Step_paramod_with c ->
-    Fmt.fprintf out "(@[param_with@ %a@])" Paramod_clause.debug c
+  | Step_paramod pa ->
+    begin match pa.pa_learn with
+      | None ->
+        Fmt.fprintf out "(@[param_false@ %a@ :by %a@])"
+          Atom.debug pa.pa_init Paramod.Trace.pp pa.pa_trace
+      | Some learn ->
+        Fmt.fprintf out "(@[param@ %a@ :into %a@ :by %a@])"
+          Atom.debug pa.pa_init Atom.debug learn Paramod.Trace.pp pa.pa_trace
+    end
 
 let debug_step out (s:step) : unit = match s with
   | Hypothesis -> Fmt.string out "hypothesis"
@@ -145,16 +146,13 @@ let find_pivots (init:clause) (l:raw_premise_step list) : premise_step list =
   let steps =
     List.map
       (function
-        | RP_paramod_away a ->
-          Atom.unmark a;
-          Step_paramod_away a
-        | RP_paramod_learn {init;learn} ->
-          Atom.unmark init;
-          Atom.mark learn;
-          Step_paramod_learn {init;learn}
-        | RP_paramod_with pc ->
-          List.iter Atom.mark_neg pc.pc_guard;
-          Step_paramod_with pc
+        | RP_paramod pa ->
+          Atom.unmark pa.pa_init;
+          CCOpt.iter Atom.mark pa.pa_learn;
+          (* recursively mark clauses in the paramodulation trace *)
+          Paramod.Trace.pc_seq pa.pa_trace
+            (fun pc -> List.iter Atom.mark_neg pc.pc_guard);
+          Step_paramod pa
         | RP_resolve c ->
           let pivot =
             match
@@ -182,24 +180,25 @@ let find_pivots (init:clause) (l:raw_premise_step list) : premise_step list =
   List.iter
     (function
       | RP_resolve c -> Array.iter Atom.unmark c.c_atoms
-      | RP_paramod_with pc -> List.iter Atom.unmark_neg pc.pc_guard
-      | RP_paramod_away _ -> ()
-      | RP_paramod_learn {learn;_} -> Atom.unmark learn)
+      | RP_paramod pa ->
+        CCOpt.iter Atom.unmark pa.pa_learn;
+        Paramod.Trace.pc_seq pa.pa_trace
+          (fun pc -> List.iter Atom.unmark_neg pc.pc_guard))
     l;
   steps
 
 (* debug raw premise, verbose *)
 let debug_raw_premise_step out = function
   | RP_resolve c -> Fmt.fprintf out "(@[resolve %a@])" Clause.debug c
-  | RP_paramod_away atom ->
-    Fmt.fprintf out "(@[paramod_away %a→⊥@])" Atom.debug atom
-  | RP_paramod_learn {init;learn} ->
-    Fmt.fprintf out "(@[paramod %a@ → %a@])" Atom.debug init Atom.debug learn
-  | RP_paramod_with c ->
-    Fmt.fprintf out "(@[<hv>paramod_with@ @[<2>%a@ := %a@]@ :guard %a@])"
-      Term.debug c.pc_lhs
-      Term.debug c.pc_rhs
-      (Util.pp_list ~sep:" ∧ " Atom.pp) c.pc_guard
+  | RP_paramod pa ->
+    begin match pa.pa_learn with
+      | None ->
+        Fmt.fprintf out "(@[paramod_away %a→⊥@ :with %a@])"
+          Atom.debug pa.pa_init Paramod.Trace.pp pa.pa_trace
+      | Some learn ->
+        Fmt.fprintf out "(@[paramod %a@ → %a@ :with %a@])"
+          Atom.debug pa.pa_init Atom.debug learn Paramod.Trace.pp pa.pa_trace
+    end
 
 let expand (conclusion:clause) : node =
   Log.debugf 15 (fun k -> k "(@[proof.expanding@ %a@])" Clause.debug conclusion);
@@ -241,11 +240,10 @@ let is_leaf = function
   | Deduplicate _ | Hyper_res _ -> false
 
 let[@inline] parents_steps l : t list =
-  CCList.filter_map
+  CCList.flat_map
     (function
-      | Step_resolve {c;_} -> Some c
-      | Step_paramod_with pc -> Some (Paramod_clause.to_clause pc)
-      | _ -> None)
+      | Step_resolve {c;_} -> [c]
+      | Step_paramod pa -> Paramod.Trace.clauses pa.pa_trace |> Clause.Set.to_list)
     l
 
 let[@inline] parents_raw_steps l : t list =
@@ -352,27 +350,69 @@ let pp_a_set out (a:Atom.Set.t) : unit =
   Fmt.fprintf out "(@[<v>%a@])"
     (Util.pp_seq ~sep:" ∨ " Atom.debug) (Atom.Set.to_seq a)
 
+  (* paramodulate term *)
+let perform_paramod (pt:paramod_trace) : term =
+  let module T = Paramod.Trace in
+  let module PC = Paramod.PClause in
+  let tbl = T.Tbl.create 16 in
+  (* recursive checking that rewriting makes sense *)
+  let rec aux_trace (pt:T.t) : term =
+    begin match T.Tbl.get tbl pt with
+      | Some t -> t (* checked already *)
+      | None ->
+        (* rewrite [lhs] using [steps] *)
+        let u = List.fold_left aux_step pt.pt_lhs pt.pt_steps in
+        (* check we obtain the expected result *)
+        if not (Term.equal u pt.pt_rhs) then (
+          Util.errorf
+            "(@[<hv>proof.check.paramod.mismatch@ :lhs %a@ :into %a@ :expected %a@])"
+            Term.debug pt.pt_lhs Term.debug u Term.debug pt.pt_rhs
+        );
+        u
+    end
+  (* rewrite [t] using the steps *)
+  and aux_step (t:term) (s:Paramod.Step.t) : term = match s with
+    | PS_sub {subs} ->
+      let map =
+        List.fold_left
+          (fun m pt ->
+             assert (not (Term.Map.mem pt.pt_lhs m));
+             let rhs = aux_trace pt in
+             Term.Map.add pt.pt_lhs rhs m)
+          Term.Map.empty
+          subs
+      in
+      Term.map t ~f:(fun t -> Term.Map.get_or ~default:t t map)
+    | PS_paramod {pc} ->
+      (* check that [pc.lhs] corresponds to our term *)
+      if not (Term.equal t (PC.lhs pc)) then (
+        Util.errorf
+          "(@[<hv>proof.check.paramod_with.mismatch@ :t %a@ :pc %a@])"
+          Term.debug t PC.debug pc
+      );
+      PC.rhs pc
+  in
+  aux_trace pt
+
+(* paramodulate atom *)
+let perform_paramod_atom (pa:paramod_atom) : atom =
+  let sign = Atom.is_pos pa.pa_init in
+  if not (Term.equal pa.pa_trace.pt_lhs (Atom.term pa.pa_init)) then (
+    Util.errorf
+      "(@[<hv>proof.check.paramod_atom.mismatch@ \
+       :pa_init %a@ :pa-trace-lhs@])"
+      Atom.debug pa.pa_init Term.debug pa.pa_trace.pt_lhs
+  );
+  (* rewrite term *)
+  let t = perform_paramod pa.pa_trace in
+  (* report sign *)
+  if sign then Term.Bool.pa t else Term.Bool.na t
+
 (* rebuild explicitely clauses by hyper-res;
      check they are not tautologies;
      return conclusion *)
 let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
   let atoms = set_of_c init in
-  (* FIXME: sth to redo paramod
-  let subst =
-    List.fold_left
-      (fun subst -> function
-         | Step_paramod_with pc ->
-           let l = Paramod_clause.lhs pc in
-           let r = Paramod_clause.rhs pc in
-           assert (not (Term.Subst.mem subst l));
-           Term.Subst.add subst l r
-         | _ -> subst)
-      Term.Subst.empty steps
-  in
-  if not (Term.Subst.is_empty subst) then (
-    Log.debugf 10 (fun k->k "(@[proof.check.find_subst@ %a@])" Term.Subst.debug subst);
-  );
-     *)
   List.fold_left
     (fun atoms step ->
        begin match step with
@@ -392,50 +432,38 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                   Atom.Set.add a new_atoms
                 ))
              atoms c.c_atoms
-         | Step_paramod_with pc ->
-           (* add (negated) atoms of [pc] *)
-           Sequence.of_list (Paramod_clause.guard pc)
-           |> Sequence.map Atom.neg
-           |> Atom.Set.add_seq atoms
-         | Step_paramod_away a0 ->
-           (* check that [subst(atom) -> false] *)
-           (* FIXME: redo it
-           let a = Atom.Subst.apply subst a0 in
-           if not (Atom.is_absurd a) then (
-             Util.errorf
-               "(@[<hv>proof.check_paramod_away.atom_not_false@ \
-                :atom %a@ :rw_into %a@ :subst %a@])"
-               Atom.debug a0 Atom.debug a Term.Subst.debug subst
-           );
-           if not (Atom.Set.mem a0 atoms) then (
+         | Step_paramod pa ->
+           if not (Atom.Set.mem pa.pa_init atoms) then (
              Util.errorf
                "(@[<hv>proof.check_paramod_away.atom_not_present@ \
                 :atom %a@ :clause %a@])"
-               Atom.debug a0 pp_a_set atoms
+               Atom.debug pa.pa_init pp_a_set atoms
            );
-           (* remove the atom *)
-              *)
-           Atom.Set.remove a0 atoms
-         | Step_paramod_learn {init;learn} ->
-           (* learn [subst(init)] and remove [init] *)
-           assert (init.a_term.t_nf=None);
-           (* FIXME: redo it
-           let a = Atom.Subst.apply subst init in
-           if not (Atom.equal a learn) then (
-             Util.errorf
-               "(@[<hv>proof.check_paramod.wrong_atom@ \
-                :atom %a@ :expect %a@ :got %a@ :subst %a@])"
-               Atom.debug init Atom.debug learn Atom.debug a Term.Subst.debug subst
-           );
-           if not (Atom.Set.mem init atoms) then (
-             Util.errorf
-               "(@[<hv>proof.check_paramod_learn.atom_not_present@ \
-                :atom %a@ :clause %a@])"
-               Atom.debug init pp_a_set atoms
-           );
-           (* remove old atom, add new one *)
-              *)
-           atoms |> Atom.Set.remove init |> Atom.Set.add learn
+           let atoms = Atom.Set.remove pa.pa_init atoms in
+           (* do paramodulation *)
+           let new_atom = perform_paramod_atom pa in
+           (* add learnt atom *)
+           let atoms = match pa.pa_learn with
+             | None ->
+               if not (Atom.is_absurd new_atom) then (
+                 Util.errorf
+                   "(@[<hv>proof.check_paramod_away.atom_not_false@ \
+                    :atom %a@ :rw_into %a@ :by %a@])"
+                   Atom.debug pa.pa_init
+                   Atom.debug new_atom Paramod.Trace.pp pa.pa_trace
+               );
+               atoms
+             | Some learn ->
+               if not (Atom.equal learn new_atom) then (
+                 Util.errorf
+                   "(@[<hv>proof.check_paramod.wrong_atom@ \
+                    :atom %a@ :expect %a@ :got %a@ :by %a@])"
+                   Atom.debug pa.pa_init Atom.debug learn Atom.debug new_atom
+                   Paramod.Trace.pp pa.pa_trace
+               );
+               Atom.Set.add learn atoms
+           in
+           atoms
        end)
     atoms steps
 

@@ -80,7 +80,7 @@ and term = {
   mutable t_var: var;
   (** The "generalized variable" part, for assignments. *)
   mutable t_watches : term Vec.t lazy_t; (** terms that watch this term *)
-  mutable t_value: term_assignment; (** current assignment *)
+  mutable t_assign: term_assignment; (** current assignment *)
   mutable t_nf: term option; (** used for rewriting *)
 }
 (** Main term representation. A {!term}, contains almost all information
@@ -109,29 +109,6 @@ and tc_term = {
   mutable tct_map : term -> (term -> term) -> term; (** Map function to subterms *)
 }
 (** type class for terms, packing all operations on terms *)
-
-and paramod_trace = {
-  pt_lhs: term;
-  pt_val: value;
-  pt_rhs: term;
-  pt_step: paramod_step;
-}
-(** rewrite [lhs] into [rhs] such that:
-    - [can_eval[trail] t v]
-    - [step] is a justification for why
-*)
-
-and paramod_step =
-  | PS_paramod of {
-      pc: paramod_clause;
-    } (** rewrite [lhs] into [rhs] such that:
-          - [can_eval[trail] t v]
-          - [pc] is a clause with head [lhs=rhs] *)
-  | PS_sub of {
-      subs: paramod_trace list;
-    } (** given the list of sub-paramodulations [subs], lhs=rhs *)
-  | PS_skipped (** removed, it was pure evaluation *)
-  | PS_added (** atom, added to final learnt clause *)
 
 and watch_res =
   | Watch_keep (** Keep the watch *)
@@ -303,13 +280,7 @@ and premise =
 (** Clause or paramodulation, raw form *)
 and raw_premise_step =
   | RP_resolve of clause (** resolution with clause *)
-  | RP_paramod_away of atom (** atom to rewrite. atom -> false *)
-  | RP_paramod_learn of {
-      init: atom;
-      learn: atom;
-    }
-  (** atom to rewrite. [init] should rewrite to [learn], which is to to be kept *)
-  | RP_paramod_with of paramod_clause (** Use this clause for paramodulation *)
+  | RP_paramod of paramod_atom (** Paramodulation on one atom *)
 
 (** Clause or paramodulation, refined form *)
 and premise_step =
@@ -317,13 +288,36 @@ and premise_step =
       c: clause; (** clause to resolve with *)
       pivot: term; (** pivot to remove *)
     }
-  | Step_paramod_away of atom (** atom to rewrite. atom->false *)
-  | Step_paramod_learn of {
-      init: atom;
-      learn: atom;
-    }
-  (** atom to rewrite. [init] should rewrite to [learn], which is to to be kept *)
-  | Step_paramod_with of paramod_clause (** Use this clause for paramodulation *)
+  | Step_paramod of paramod_atom
+
+and paramod_trace = {
+  pt_id: int; (* unique ID *)
+  pt_lhs: term;
+  pt_rhs: term;
+  pt_steps: paramod_step list;
+}
+(** rewrite [lhs] into [rhs] such that:
+    - [can_eval[trail] t v]
+    - [step] is a transitive list of equalities that starts with [lhs]
+        and ends with [rhs]
+*)
+
+and paramod_step =
+  | PS_paramod of {
+      pc: paramod_clause;
+    } (** rewrite [lhs] into [rhs] such that:
+          - [can_eval[trail] t v]
+          - [pc] is a clause with head [lhs=rhs] *)
+  | PS_sub of {
+      subs: paramod_trace list;
+    } (** given the list of sub-paramodulations [subs], lhs=rhs *)
+
+(** Paramodulation of atoms *)
+and paramod_atom = {
+  pa_init: atom;
+  pa_learn: atom option; (** if result not absurd (otherwise [false]) *)
+  pa_trace: paramod_trace; (** rewrite [init.term -> learn.term] *)
+}
 
 and lemma =
   | Lemma_bool_tauto (** tautology [a ∨ ¬a] *)
@@ -419,7 +413,7 @@ let rec dummy_term : term = {
   t_weight= -1.;
   t_var=Var_none;
   t_watches=lazy (Vec.make_empty dummy_term);
-  t_value=TA_none;
+  t_assign=TA_none;
   t_nf=None;
 }
 

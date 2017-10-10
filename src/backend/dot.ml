@@ -147,13 +147,19 @@ module Make(A : Arg with type atom := atom
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Hyper_res" "GREY"
           [(fun fmt () -> Format.fprintf fmt "%s" (node_id n))];
         let pivots =
-          List.map
+          CCList.flat_map
             (function
-              | Step_resolve {pivot;_} -> Inf_pivot (Term.Bool.pa pivot)
-              | Step_paramod_away a -> Inf_paramod_away a
-              | Step_paramod_learn {init;learn} -> Inf_paramod_into(init,learn)
-              | Step_paramod_with c ->
-                Inf_subst (Paramod_clause.lhs c, Paramod_clause.rhs c))
+              | Step_resolve {pivot;_} -> [Inf_pivot (Term.Bool.pa pivot)]
+              | Step_paramod pa ->
+                let last = match pa.pa_learn with
+                  | None -> Inf_paramod_away pa.pa_init
+                  | Some learn -> Inf_paramod_into (pa.pa_init, learn)
+                in
+                Paramod.Trace.pc_seq pa.pa_trace
+                |> Sequence.fold
+                  (fun acc pc ->
+                     Inf_subst (Paramod.PClause.lhs c, Paramod.PClause.rhs c) :: acc)
+                  [last])
             steps
         in
         print_dot_res_node fmt (res_node_id n) pivots;

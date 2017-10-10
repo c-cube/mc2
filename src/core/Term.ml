@@ -36,22 +36,13 @@ let[@inline] ty t = t.t_ty
 let[@inline] iter_subterms (t:term): term Sequence.t = t.t_tc.tct_subterms t.t_view
 let[@inline] is_bool t = Type.is_bool t.t_ty
 let[@inline] subterms t : t list = iter_subterms t |> Sequence.to_list
-let[@inline] level t = match t.t_value with
+let[@inline] level t = match t.t_assign with
   | TA_none -> -1
-  | TA_eval {level;_}
   | TA_assign {level;_} -> level
-  | TA_both {level_eval=l1; level_assign=l2;_} -> min l1 l2
-
-let level_for t v = match t.t_value with
+let[@inline] level_for t v = match t.t_assign with
   | TA_none -> -1
-  | TA_eval {level;value;_}
   | TA_assign {level;value;_} ->
     if Value.equal value v then level else -1
-  | TA_both ta ->
-    if Value.equal ta.value_eval v then ta.level_eval
-    else if Value.equal ta.value_assign v then ta.level_assign
-    else -1
-
 let[@inline] gc_marked (t:t) : bool = field_get field_t_gc_marked t
 let[@inline] gc_unmark (t:t) : unit = field_clear field_t_gc_marked t
 let[@inline] gc_mark (t:t) : unit = field_set field_t_gc_marked t
@@ -60,19 +51,18 @@ let[@inline] dirty (t:t): bool = field_get field_t_dirty t
 let[@inline] dirty_unmark (t:t) : unit = field_clear field_t_dirty t
 let[@inline] dirty_mark (t:t) : unit = field_set field_t_dirty t
 
-let[@inline] value (t:t): term_assignment = t.t_value
-let[@inline] value_exn (t:t): value = match t.t_value with
+let[@inline] value (t:t): value option = match t.t_assign with
+  | TA_none -> None
+  | TA_assign {value;_} -> Some value
+let[@inline] value_exn (t:t): value = match t.t_assign with
   | TA_none -> assert false
-  | TA_eval {value;_}
   | TA_assign {value;_} -> value
-  | TA_both {value_eval=v; _} -> v
-let[@inline] has_value (t:t): bool = match t.t_value with
+let[@inline] has_some_value (t:t): bool = match t.t_assign with
   | TA_none -> false
   | _ -> true
-let[@inline] has_eval_conflict (t:t): bool = match t.t_value with
-  | TA_both {value_eval=v1; value_assign=v2; _} ->
-    not (Value.equal v1 v2)
-  | _ -> false
+let[@inline] has_value (t:t) (v:value): bool = match t.t_assign with
+  | TA_none -> false
+  | TA_assign {value;_} -> Value.equal value v
 
 let[@inline] max_level l1 l2 =
   if l1<0 || l2<0 then -1
@@ -92,17 +82,13 @@ let[@inline] level_sub (t:t) : level = level_sub_aux ~f:max t
 
 let[@inline] mk_eq (t:t) (u:t) : t = Type.mk_eq (ty t) t u
 
-let[@inline] reason_exn t = match value t with
-  | TA_eval {reason;_}
-  | TA_assign{reason;_} -> reason
-  | TA_both {reason_eval=r;_} -> r
-  | TA_none -> assert false
-
-let[@inline] reason t = match value t with
+let[@inline] reason t = match t.t_assign with
   | TA_none -> None
-  | TA_eval {reason;_}
-  | TA_assign{reason;_} -> Some reason
-  | TA_both {reason_eval=r;_} -> Some r
+  | TA_assign {reason;_} -> Some reason
+
+let[@inline] reason_exn t = match reason t with
+  | Some r -> r
+  | None -> assert false
 
 let[@inline] recompute_state (lvl:level) (t:t) : unit =
   Type.refresh_state (ty t) lvl t
@@ -111,17 +97,17 @@ let[@inline] decide_state_exn (t:t) : decide_state = match var t with
   | Var_semantic {v_decide_state=s;_} -> s
   | _ -> assert false
 
+let[@inline] map ~f (t:t) : t = t.t_tc.tct_map t f
+
 (** {2 Assignment view} *)
 
-let[@inline] assigned (t:term): bool = match t.t_value with
+let[@inline] assigned (t:term): bool = match t.t_assign with
   | TA_none -> false
   | _ -> true
 
-let[@inline] assignment (t:term) = match value t with
+let[@inline] assignment (t:term) = match t.t_assign with
   | TA_assign {value=V_true;_} -> Some (A_bool (t,true))
   | TA_assign {value=V_false;_} -> Some (A_bool (t,false))
-  | TA_both {value_eval=value;_}
-  | TA_eval {value;_}
   | TA_assign {value;_}
     -> Some (A_semantic (t,value))
   | TA_none -> None
@@ -154,7 +140,7 @@ module Unsafe = struct
     let t_idx = ~-1 in
     let t_watches = lazy (Vec.make_empty dummy_term) in
     { t_id; t_view; t_ty; t_fields; t_weight; t_idx;
-      t_var=Var_none; t_value=TA_none; t_watches; t_tc; t_nf=None; }
+      t_var=Var_none; t_assign=TA_none; t_watches; t_tc; t_nf=None; }
 end
 
 (* make a fresh variable for this term *)
@@ -223,23 +209,17 @@ module Bool = struct
     let seen_neg = Term_fields.get field_t_mark_neg t.t_fields in
     seen_pos && seen_neg
 
-  let[@inline] assigned_atom t : atom option = match value t, var t with
+  let[@inline] is_true t = has_value t Value.true_
+  let[@inline] is_false t = has_value t Value.false_
+
+  let[@inline] assigned_atom t : atom option = match t.t_assign, var t with
     | TA_assign {value=V_true;_}, Var_bool{pa;_} -> Some pa
     | TA_assign {value=V_false;_}, Var_bool{na;_} -> Some na
     | _ -> None
 
-  let[@inline] assigned_atom_exn t : atom = match value t, var t with
-    | TA_assign {value=V_true;_}, Var_bool{pa;_} -> pa
-    | TA_assign {value=V_false;_}, Var_bool{na;_} -> na
-    | _ -> assert false
-
-  let[@inline] is_true t = match value t with
-    | TA_assign {value=V_true;_} -> true
-    | _ -> false
-
-  let[@inline] is_false t = match value t with
-    | TA_assign {value=V_false;_} -> true
-    | _ -> false
+  let[@inline] assigned_atom_exn t : atom = match assigned_atom t with
+    | Some a -> a
+    | None -> assert false
 
   let[@inline] pa_unsafe (t:t) : atom = match t.t_var with
     | Var_bool {pa; _} -> pa
@@ -268,26 +248,19 @@ let debug out t : unit =
   let p_of_reason r = match r with Decision -> "@" | _ -> "$" in
   let pp_val out = function
     | TA_none -> ()
-    | TA_assign {value;level;reason}
-    | TA_eval {value;level;reason} ->
+    | TA_assign {value;level;reason} ->
       let prefix = p_of_reason reason in
       Format.fprintf out "[%s%d@<1>→%a]" prefix level Value.pp value
-    | TA_both ta ->
-      let prefix1 = p_of_reason ta.reason_assign in
-      let prefix2 = p_of_reason ta.reason_eval in
-      Format.fprintf out "[%s%d@<1>→%a;%s%d@<1>→%a]"
-        prefix1 ta.level_assign Value.pp ta.value_assign
-        prefix2 ta.level_eval Value.pp ta.value_eval
   in
   debug_no_val out t;
-  pp_val out (value t)
+  pp_val out t.t_assign
 
 (* find a term in [w] that is not assigned, or otherwise,
        the one with highest level
        @return index of term to watch, and [true] if all are assigned *)
 let rec find_watch_ w i highest : int * bool =
   if i=Array.length w then highest, true
-  else if has_value w.(i) then (
+  else if has_some_value w.(i) then (
     let highest =
       if level w.(i) > level w.(highest) then i else highest
     in
@@ -351,7 +324,7 @@ module Watch2 = struct
     if all_set0 then (
       on_all_set ()
     ) else if all_set1 then (
-      assert (not (has_value w.(0)));
+      assert (not (has_some_value w.(0)));
       on_unit w.(0);
     );
     ()
@@ -365,7 +338,7 @@ module Watch2 = struct
     ) else assert (w.(1) == watch);
     let i, all_set1 = find_watch_ w 1 0 in
     if all_set1 then (
-      if has_value w.(0) then (
+      if has_some_value w.(0) then (
         on_all_set ();
       ) else (
         on_unit w.(0);
@@ -414,7 +387,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) : TERM_ALLOC = struct
     Log.debugf 5 (fun k->k "(@[<1>term.alloc.delete@ %a@])" debug t);
     t.t_fields <- Term_fields.set field_t_is_deleted true t.t_fields;
     t.t_tc.tct_delete t;
-    t.t_value <- TA_none; (* unassign *)
+    t.t_assign <- TA_none; (* unassign *)
     assert (plugin_id t = Ops.p_id);
     H.remove tbl (view t);
     ()

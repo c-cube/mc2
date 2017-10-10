@@ -85,8 +85,12 @@ let pp_dimacs fmt { c_atoms; _} =
   in
   Format.fprintf fmt "%a0" aux c_atoms
 
-module Tbl = CCHashtbl.Make(struct
-    type t = clause
-    let hash = hash
-    let equal = equal
-  end)
+module As_key = struct
+  type t = clause
+  let hash = hash
+  let compare = compare
+  let equal = equal
+end
+
+module Tbl = CCHashtbl.Make(As_key)
+module Set = CCSet.Make(As_key)
