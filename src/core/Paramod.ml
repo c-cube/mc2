@@ -37,9 +37,13 @@ module Trace = struct
   type t = trace
   let pp = pp_trace
 
-  let equal a b : bool = a.pt_id = b.pt_id
-  let compare a b : int = CCInt.compare a.pt_id b.pt_id
-  let hash a = CCHash.int a.pt_id
+  let[@inline] equal a b : bool = a.pt_id = b.pt_id
+  let[@inline] compare a b : int = CCInt.compare a.pt_id b.pt_id
+  let[@inline] hash a = CCHash.int a.pt_id
+
+  let[@inline] lhs t = t.pt_lhs
+  let[@inline] rhs t = t.pt_rhs
+  let[@inline] steps t = t.pt_steps
 
   module As_key = struct
     type t = trace

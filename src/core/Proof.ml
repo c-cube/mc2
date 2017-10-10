@@ -350,7 +350,7 @@ let pp_a_set out (a:Atom.Set.t) : unit =
   Fmt.fprintf out "(@[<v>%a@])"
     (Util.pp_seq ~sep:" ∨ " Atom.debug) (Atom.Set.to_seq a)
 
-  (* paramodulate term *)
+(* paramodulate term *)
 let perform_paramod (pt:paramod_trace) : term =
   let module T = Paramod.Trace in
   let module PC = Paramod.PClause in
@@ -394,6 +394,13 @@ let perform_paramod (pt:paramod_trace) : term =
   in
   aux_trace pt
 
+(* state during paramodulation/resolution
+   (including tumbstones for atoms that have been removed) *)
+type state = {
+  cur: Atom.Set.t;
+  removed: Atom.Set.t; (* dead atoms *)
+}
+
 (* paramodulate atom *)
 let perform_paramod_atom (pa:paramod_atom) : atom =
   let sign = Atom.is_pos pa.pa_init in
@@ -411,39 +418,44 @@ let perform_paramod_atom (pa:paramod_atom) : atom =
 (* rebuild explicitely clauses by hyper-res;
      check they are not tautologies;
      return conclusion *)
-let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
+let perform_hyper_res (init:t) (steps:premise_step list) : state =
   let atoms = set_of_c init in
   List.fold_left
-    (fun atoms step ->
+    (fun (st:state) step ->
        begin match step with
-         | Step_resolve {pivot;c} ->
+         | Step_resolve {pivot;c=c2} ->
            (* perform resolution with [c] over [pivot] *)
            Array.fold_left
-             (fun new_atoms a ->
+             (fun st a ->
                 if Term.equal pivot (Atom.term a) then (
-                  if not (Atom.Set.mem (Atom.neg a) atoms) then (
+                  if not (Atom.Set.mem (Atom.neg a) st.cur) then (
                     Util.errorf
                       "(@[<hv>proof.check_hyper_res.pivot_not_found@ \
                        :pivot %a@ :c1 %a@ :c2 %a@])"
-                      Term.debug pivot pp_a_set atoms Clause.debug c
+                      Term.debug pivot pp_a_set st.cur Clause.debug c2
                   );
-                  Atom.Set.remove (Atom.neg a) new_atoms
+                  { cur=Atom.Set.remove (Atom.neg a) st.cur;
+                    removed=Atom.Set.add a st.removed;
+                  }
                 ) else (
-                  Atom.Set.add a new_atoms
+                  { st with cur=Atom.Set.add a st.cur }
                 ))
-             atoms c.c_atoms
+             st c2.c_atoms
          | Step_paramod pa ->
            if not (Atom.Set.mem pa.pa_init atoms) then (
              Util.errorf
                "(@[<hv>proof.check_paramod_away.atom_not_present@ \
-                :atom %a@ :clause %a@])"
+                :atom %a@ :cur-clause %a@])"
                Atom.debug pa.pa_init pp_a_set atoms
            );
-           let atoms = Atom.Set.remove pa.pa_init atoms in
+           let st = {
+             cur=Atom.Set.remove pa.pa_init st.cur;
+             removed=Atom.Set.add pa.pa_init st.removed;
+           } in
            (* do paramodulation *)
            let new_atom = perform_paramod_atom pa in
            (* add learnt atom *)
-           let atoms = match pa.pa_learn with
+           let st = match pa.pa_learn with
              | None ->
                if not (Atom.is_absurd new_atom) then (
                  Util.errorf
@@ -452,7 +464,7 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                    Atom.debug pa.pa_init
                    Atom.debug new_atom Paramod.Trace.pp pa.pa_trace
                );
-               atoms
+               st
              | Some learn ->
                if not (Atom.equal learn new_atom) then (
                  Util.errorf
@@ -461,11 +473,23 @@ let perform_hyper_res (init:t) (steps:premise_step list) : Atom.Set.t =
                    Atom.debug pa.pa_init Atom.debug learn Atom.debug new_atom
                    Paramod.Trace.pp pa.pa_trace
                );
-               Atom.Set.add learn atoms
+               {st with cur=Atom.Set.add learn st.cur}
            in
-           atoms
+           (* also add the guards of the pclauses *)
+           let st =
+             Paramod.Trace.pc_seq pa.pa_trace
+             |> Sequence.flat_map_l Paramod.PClause.guard
+             |> Sequence.map Atom.neg
+             |> Sequence.fold
+               (fun st a ->
+                  if Atom.Set.mem a st.removed then st
+                  else {st with cur=Atom.Set.add a st.cur})
+               st
+           in
+           st
        end)
-    atoms steps
+    {cur=atoms;removed=Atom.Set.empty}
+    steps
 
 let check (p:t) : unit =
   (* compare lists of atoms, ignoring order and duplicates *)
@@ -502,19 +526,19 @@ let check (p:t) : unit =
            );
            check_same_c ~ctx:"in-dedup" c ~expect:concl
          | Hyper_res {init;steps} ->
-           let atoms = perform_hyper_res init steps in
-           check_same_set ~ctx:"in-res" atoms ~expect:(set_of_c concl);
+           let st = perform_hyper_res init steps in
+           check_same_set ~ctx:"in-res" st.cur ~expect:(set_of_c concl);
            (* check it's not a tautology *)
            Atom.Set.iter
              (fun a ->
-                if Atom.Set.mem (Atom.neg a) atoms then (
+                if Atom.Set.mem (Atom.neg a) st.cur then (
                   Util.errorf
                     "(@[<hv>proof.check_hyper_res.clause_is_tautology@ \
                      :clause %a@])"
-                    pp_a_set atoms
+                    pp_a_set st.cur
 
                 ))
-             atoms;
+             st.cur;
            ()
        end)
     p

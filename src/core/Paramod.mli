@@ -21,6 +21,10 @@ module Trace : sig
   val compare : t -> t -> int
   val hash : t -> int
 
+  val lhs : t -> term
+  val rhs : t -> term
+  val steps : t -> step list
+
   val pc_seq : t -> pclause Sequence.t
   (** Iterate on clauses used for atomic steps *)
 

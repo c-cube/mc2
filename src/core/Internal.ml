@@ -132,7 +132,7 @@ type t = {
   (* temporary vector(s) used during conflict analysis.
      Contains atoms marked during analysis, to be unmarked at cleanup *)
 
-  paramod_tbl: paramod_trace TV_tbl.t;
+  paramod_tbl: paramod_trace option TV_tbl.t;
   (* table for paramodulation *)
 
   mutable var_incr : float;
@@ -317,6 +317,11 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
 (* make a decision for [t] based on its type *)
 let[@inline] decide_term (env:t) (t:term): value =
   Type.decide (Term.ty t) (actions env) t
+
+let[@inline] assign_term (env:t) (t:term) value reason level : unit =
+  assert (t.t_assign == TA_none);
+  t.t_assign <- TA_assign {value;reason;level};
+  Vec.push env.trail t
 
 (* main building function *)
 let create_real (actions:actions lazy_t) : t = {
@@ -562,7 +567,8 @@ let cancel_until (env:t) (lvl:int) : unit =
 (* Unsatisfiability is signaled through an exception, since it can happen
    in multiple places (adding new clauses, or solving for instance). *)
 let report_unsat (env:t) (confl:clause) : _ =
-  Log.debugf info (fun k -> k "@[Unsat conflict: %a@]" Clause.debug confl);
+  Log.debugf info
+    (fun k -> k "(@[@{<Yellow>solver.unsat_conflict@}:@ %a@])" Clause.debug confl);
   env.unsat_conflict <- Some confl;
   raise Unsat
 
@@ -619,8 +625,7 @@ let enqueue_bool (env:t) (a:atom) ~level:level (reason:reason) : unit =
     in
     (* assign term *)
     let value = Value.of_bool (Atom.is_pos a) in
-    a.a_term.t_assign <- TA_assign{value;reason;level};
-    Vec.push env.trail a.a_term;
+    assign_term env a.a_term value reason level;
     Log.debugf debug
       (fun k->k "(@[solver.enqueue_bool (%d/%d)@ %a@ :reason %a@])"
           (Vec.size env.trail)(decision_level env) Atom.debug a Reason.pp (level,reason));
@@ -663,8 +668,7 @@ let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) ~(level:int) :
     assert false
   );
   assert (t.t_assign = TA_none);
-  t.t_assign <- TA_assign {value;reason;level};
-  Vec.push env.trail t;
+  assign_term env t value reason level;
   Log.debugf debug
     (fun k->k "(@[solver.enqueue_semantic (%d/%d)@ %a@ :reason %a@])"
         (Vec.size env.trail) (decision_level env)
@@ -834,7 +838,7 @@ let pp_subs out (l:(term*value) list) : unit =
   let pp_pair out (t,v) =
     Fmt.fprintf out "(@[%a@ → %a@])" Term.debug t Value.pp v
   in
-  Fmt.fprintf out "(@[<hv>%a@])" (Util.pp_list pp_pair) l
+  Fmt.fprintf out "(@[<v>%a@])" (Util.pp_list pp_pair) l
 
 let pp_conflict out (e:conflict) = match e with
   | Conflict_clause c -> Clause.debug out c
@@ -862,19 +866,24 @@ end = struct
     cs_conflict_level: int; (* conflict level *)
     mutable cs_learnt: atom list; (* resulting clause to be learnt *)
     mutable cs_history: raw_premise_step list; (* proof object *)
-    mutable cs_paramod_tbl: paramod_trace TV_tbl.t; (* paramodulation graph *)
+    mutable cs_paramod_tbl: paramod_trace option TV_tbl.t; (* paramodulation graph *)
     cs_t_seen: term Vec.t; (** terms seen so far, for cleanup *)
+    cs_atoms : atom Vec.t;
   }
 
-  (* TODO: recursive exploration + paramodulation (use continuations?) *)
-
-  (* TODO: entry points as toplevel functions, so that eval-conflict
-     can directly call them on both sides of the term (not always boolean) *)
-
-  let[@inline] mark (st:state) (t:term) =
+  let[@inline] mark_term (st:state) (t:term) =
     if not (Term.marked t) then (
       Vec.push st.cs_t_seen t;
       Term.mark t;
+    )
+
+  (* learn atom *)
+  let[@inline] learn_atom (st:state) (a:atom) =
+    Log.debugf 30 (fun k->k"(@[analyze_conflict.learn_atom@ %a@])" Atom.debug a);
+    (* avoid duplicates *)
+    if not (Atom.marked a) then (
+      Atom.mark a;
+      st.cs_learnt <- a :: st.cs_learnt;
     )
 
   (* eliminate an atom true at level 0.
@@ -889,262 +898,24 @@ end = struct
       | _ -> assert false
     end
 
-  (* FIXME
-  (* term [t] is part of the conflict resolution. If it is propagated/evaluated
-     at conflict level, need to explain why.
-
-     If [t] is boolean, mark the negation of its assigned atom instead.
-     For example, to explain [f(a,b)] where [a:bool --> true],
-     one wants the clause [¬a ∨ f(a,b)]
-  *)
-  let conflict_mark_term_for_analysis env st t : unit =
-    if Term.is_bool t then (
-      (* analyze [¬p] instead *)
-      let p = Term.Bool.assigned_atom_exn t |> Atom.neg in
-      conflict_mark_atom_for_analysis env st p
-    ) else if not (Term.marked t) then (
-      Term.mark t;
-      Vec.push st.cs_t_seen t;
-      if Term.level t > 0 then (
-        bump_term_activity env t;
-        if Term.level t >= st.cs_conflict_level then (
-          st.cs_n_terms_to_process <- 1 + st.cs_n_terms_to_process;
-        );
-      );
+  (* try to evaluate [t] *)
+  let[@inline] try_eval (st:state) (t:term) : unit =
+    if not (Term.has_some_value t) then (
+      begin match Term.eval t with
+        | Eval_into (v, subs) ->
+          let level = level_subs subs in
+          assign_term st.cs_env t v (Eval subs) level;
+        | _ -> ()
+      end
     )
-     *)
 
-  (* FIXME
-  let conflict_analyze_clause env st (c:clause) : unit =
-    Log.debugf debug
-      (fun k->k "(@[analyze_conflict.resolve_with@ :clause %a@])" Clause.debug c);
-    (* increase activity since [c] participates in a conflict *)
-    begin match c.c_premise with
-      | P_raw_steps _ | P_steps _ -> bump_clause_activity env c
-      | Hyp | Local | Simplify _ | Lemma _ -> ()
-    end;
-    st.cs_history <- RP_resolve c :: st.cs_history;
-    (* visit the current predecessors *)
-    Array.iter (conflict_mark_atom_for_analysis env st) c.c_atoms
-  *)
+  (* can we evaluate this to false? *)
+  let[@inline] can_eval_to_false (a:atom): bool = match Atom.eval a with
+    | Eval_into (V_false, _) -> true
+    | _ -> false
 
-  (* FIXME
-  let conflict_analyze_pclause env st (pc:paramod_clause) : unit =
-    Log.debugf debug
-      (fun k->k "(@[analyze_conflict.paramod_with@ :pc %a@])"
-          Paramod.PClause.debug pc);
-    st.cs_history <- RP_paramod_with pc :: st.cs_history;
-    (* visit RHS *)
-    conflict_mark_term_for_analysis env st (Paramod.PClause.rhs pc);
-    (* visit predecessors for the guard *)
-    List.iter
-      (fun a -> conflict_mark_atom_for_analysis env st (Atom.neg a))
-      (Paramod.PClause.guard pc);
-    ()
-  *)
-
-  (* FIXME
-  (* analyze one atom *)
-  let rec conflict_analyze_atom env st (a:atom) : unit =
-    let reason = Term.reason_exn a.a_term in
-    Log.debugf 30
-      (fun k->k"(@[<hv>conflict_analyze.atom.check_cause_of@ %a@ :reason %a@])"
-          Atom.debug a Reason.pp (Atom.level a,reason));
-    begin match reason with
-      | Propagate_value _ ->
-        assert false (* not for atoms *)
-      | Eval subs ->
-        (* mark sub-terms for conflict analysis *)
-        List.iter (conflict_mark_term_for_analysis env st) subs;
-        (* boolean atom -> paramodulate it and maybe learn
-           its paramodulated version.
-           Don't do it for the initial atom which is valued to true
-           but evaluates to false. *)
-        if Term.field_get field_t_inconsistent a.a_term then (
-          Log.debugf 30
-            (fun k->k "(@[conflict_analyze.skip_inconsistent_atom@ %a@])" Atom.debug a);
-        ) else (
-          let p = Atom.neg a in
-          conflict_add_to_paramod st p subs;
-        )
-      | (Bcp cl | Bcp_lazy (lazy cl))->
-        assert (Atom.level a >= st.cs_conflict_level);
-        conflict_analyze_clause env st cl;
-      | Decision ->
-        st.cs_learnt <- Atom.neg a :: st.cs_learnt;
-    end
-  *)
-
-  (* FIXME
-  (* one step: find the next marked term on the trail and process it *)
-  let conflict_analyze_term env st (t:term) : unit =
-    assert (not (Term.is_bool t));
-    let reason = Term.reason_exn t in
-    Log.debugf 30
-      (fun k->k"(@[<hv>conflict_analyze.term.check_cause_of@ %a@ :reason %a@])"
-          Term.debug t Reason.pp (Term.level t,reason));
-    begin match reason with
-      | Propagate_value {rw_into;guard;lemma} ->
-        (* perform paramodulation [t == rw_into] *)
-        st.cs_subst <- Term.Subst.add st.cs_subst t rw_into;
-        let pc = Paramod.PClause.make t rw_into guard (Lemma lemma) in
-        conflict_analyze_pclause env st pc
-      | Eval subs ->
-        (* mark sub-terms for conflict analysis *)
-        List.iter (conflict_mark_term_for_analysis env st) subs;
-      | (Bcp _ | Bcp_lazy _) -> assert false (* not for terms *)
-      | Decision ->
-        () (* simply skip decisions *)
-    end
-     *)
-
-  (* TODO: update comment *)
-  (* This is the main loop of the conflict resolution process
-
-     loop until either:
-     - the clause is empty (found unsat)
-     - one decision term with level strictly greater than the other
-       terms level (the UIP)
-     - all terms at maximal level are semantic propagations ("semantic split")
-
-     as long as this is not reached, we pick the highest (propagated)
-     term part of analysis and do resolution or paramodulation
-     with the clause that propagated it. Note that there cannot be two decision
-     terms above the conflict_level.
-
-     [n_terms_above_lvl] is used to count how many terms at conflict
-     level are still to be analyzed,
-     and is therefore central for termination.
-  *)
-
-  (* FIXME
-  let conflict_analyze_loop (env:t) (st:conflict_state) : unit =
-    while st.cs_n_terms_to_process > 0 do
-      (* find next term to process *)
-      while
-        let t = Vec.get env.trail st.cs_trail_ptr in
-        Log.debugf 30 (fun k -> k "(@[conflict_analyze.at_trail_elt@ %a@])" Term.debug t);
-        (* skip a term if:
-               - it is not marked (not part of resolution/paramod), OR
-               - below conflict level
-        *)
-        not (Term.marked t) || Term.level t < st.cs_conflict_level
-      do
-        st.cs_trail_ptr <- st.cs_trail_ptr - 1;
-      done;
-      let t = Vec.get env.trail st.cs_trail_ptr in
-      st.cs_trail_ptr <- st.cs_trail_ptr - 1;
-      st.cs_n_terms_to_process <- st.cs_n_terms_to_process - 1;
-      if Term.is_bool t then (
-        let p = Term.Bool.assigned_atom_exn t in
-        conflict_analyze_atom env st p
-      ) else (
-        conflict_analyze_term env st t
-      );
-    done
-     *)
-
-  (* FIXME
-  (* perform the paramodulation part of conflict analysis *)
-  let conflict_do_paramod (env:t) (st:conflict_state) : atom list =
-    if st.cs_atoms_to_paramod = [] then (
-      assert (Term.Subst.is_empty st.cs_subst);
-      []
-    ) else (
-      let a_seen = env.tmp_atom_vec in
-      (* mark atoms to avoid duplicates *)
-      let mark_for_dup_ a =
-        if not (Atom.marked a) then (
-          Atom.mark a;
-          Vec.push a_seen a;
-        )
-      in
-      List.iter mark_for_dup_ st.cs_learnt;
-      Log.debugf 30
-        (fun k ->
-           k"(@[<hv>conflict_analyze.param_subst@ %a@])" Term.Subst.debug st.cs_subst);
-      let cache = Term.Subst.mk_cache() in
-      let l = CCList.filter_map
-          (fun a0 ->
-             let a = Atom.Subst.apply ~cache st.cs_subst a0 in
-             let absurd = Atom.is_absurd a in
-             Log.debugf 30
-               (fun k ->
-                  k"(@[<hv>conflict_analyze.param_term@ %a@ :into %a@ :absurd %B@ :subst %a@])"
-                    Atom.debug a0 Atom.debug a absurd Term.Subst.debug st.cs_subst);
-             if absurd then (
-               st.cs_history <- RP_paramod_away a0 :: st.cs_history;
-               None
-             ) else if Atom.marked a then (
-               (* already in conflict clause or resolved away; still, need to
-                  remove a0 (and ignore the duplicate a) *)
-               st.cs_history <- RP_paramod_learn {init=a0;learn=a} :: st.cs_history;
-               Log.debugf 30
-                 (fun k->k"(@[conflict_analyze.duplicate_param_term@ :atom %a@ :into %a@])"
-                     Atom.debug a0 Atom.debug a);
-               None
-             ) else if Atom.equal a a0 then (
-               (* trivial rewriting, ignore *)
-               mark_for_dup_ a;
-               Some a
-             ) else (
-               (* learn [a] *)
-               st.cs_history <- RP_paramod_learn {init=a0;learn=a} :: st.cs_history;
-               mark_for_dup_ a0;
-               mark_for_dup_ a;
-               if Atom.level a = 0 then (
-                 (* remove [a] by resolution at level 0 *)
-                 Log.debugf 30
-                   (fun k->k"(@[conflict_analyze.param_remove_atom0@ :atom %a@])"
-                       Atom.debug a);
-                 conflict_remove_atom0 st a;
-                 None
-               ) else (
-                 Some a
-               )
-             ))
-          st.cs_atoms_to_paramod
-      in
-      (* cleanup *)
-      Vec.iter Atom.unmark a_seen;
-      Vec.clear a_seen;
-      Term.Subst.clean_cache cache;
-      l
-    )
-     *)
-
-  (* FIXME
-  (* atom [a] is part of the conflict resolution. If it is BCP'd
-     at conflict level, need to perform resolution. *)
-  let conflict_mark_atom_for_analysis env st a : unit =
-    if Atom.level a <= 0 then conflict_remove_atom0 st a;
-    (* if we have not explored this atom yet, do it now.
-       It can either be part of the final clause, or it can lead
-       to resolution with another clause *)
-    if not (Term.marked a.a_term) then (
-      Term.mark a.a_term;
-      Vec.push st.cs_t_seen a.a_term;
-      (* only atoms above level 0 can participate to the conflict,
-         these proved at level 0 would bring no information *)
-      if Atom.level a > 0 then (
-        bump_term_activity env a.a_term;
-        if Atom.level a >= st.cs_conflict_level then (
-          st.cs_n_terms_to_process <- 1 + st.cs_n_terms_to_process;
-        ) else (
-          (* [a] will be part of the learnt clause *)
-          st.cs_learnt <- a :: st.cs_learnt;
-        )
-      )
-    )
-   *)
-
-  (** Result for analyzing one single term *)
-  type analyze_res =
-(*
-    | Paramod of Paramod.trace
-*)
-    | Resolve_away
-    | Keep
+  (* result of analysis *)
+  type analyze_res = Paramod.trace option
 
   (* analyze the given term
        @param t the term to analyze
@@ -1157,8 +928,11 @@ end = struct
       ~(r:reason)
       ~(lvl:level)
     : analyze_res =
+    Log.debugf 30
+      (fun k->k"(@[analyze_conflict.term@ %a@ :value %a@ :reason %a@])"
+          Term.debug t Value.pp v Reason.pp (lvl,r));
+    bump_term_activity st.cs_env t;
     if Term.is_bool t then (
-      let v = Value.as_bool_exn v in
       analyze_bool st t ~v ~r ~lvl
     ) else (
       (* analyze both sides but drop the rewrite rules because [t] will not
@@ -1174,62 +948,221 @@ end = struct
        @return [Some p] if it paramodulates with [p], [None] if it comes from
          a decision
   *)
-  and analyze_semantic (_st:state) (t:term) ~v:_ ~r:_ ~lvl:_ =
+  and analyze_semantic (st:state) (t:term) ~v ~r ~lvl : analyze_res =
     assert (not (Term.is_bool t));
-    assert false
-  (* FIXME
-     begin match r with
-     | Decision -> None
-     | Eval subs ->
-     let subs =
-      CCList.filter_map
-        (fun (sub,v_sub) ->
-           let lvl = Term.level sub in
-           assert (lvl >= 0);
-           let r = Term.reason_exn sub in
-           analyze_term st sub sub_v r ~lvl)
-        subs
-     in
-     let u = Term.map t ~f:(
-     let p = Paramod.Trace.make
-     end
-  *)
+    begin match TV_tbl.get st.cs_paramod_tbl (t,v) with
+      | Some res -> res (* cached *)
+      | None ->
+        mark_term st t;
+        let res = analyze_semantic_real st t ~v ~r ~lvl in
+        (* memoize, and return *)
+        TV_tbl.add st.cs_paramod_tbl (t,v) res;
+        res
+    end
 
-  and[@inline] analyze_bool (st:state) (t:term) ~(v:bool) ~r ~lvl =
-    let a = if v then Term.Bool.na t else Term.Bool.pa t in
+  and analyze_semantic_real st t ~v:_ ~r ~lvl =
+    begin match r with
+      | _ when lvl < st.cs_conflict_level ->
+        None (* keep it, it's under conflict level *)
+      | Decision ->
+        None (* drop term decisions *)
+      | Eval _ | Propagate_value _ ->
+        let new_t, steps = paramod_term_rec st [] t in
+        if steps=[] then (
+          assert (Term.equal t new_t);
+          None
+        ) else (
+          assert (not (Term.equal t new_t));
+          let steps = List.rev steps in
+          let pt = Paramod.Trace.make t new_t steps in
+          Log.debugf 30
+            (fun k->k
+                "(@[<hv>analyze_conflict.paramod_done@ :from %a@ :into %a@ :trace %a@])"
+                Term.debug t Term.debug new_t Paramod.Trace.pp pt);
+          Some pt
+        )
+      | Bcp _ | Bcp_lazy _ -> assert false
+    end
+
+  and[@inline] analyze_bool (st:state) (t:term) ~v ~r ~lvl =
+    assert (Value.is_bool v);
+    (* consider the false atom of [t] *)
+    let a = if Value.is_true v then Term.Bool.na t else Term.Bool.pa t in
     analyze_atom_false st a ~r ~lvl
 
-  (* analyze why this atom is false *)
-  and analyze_atom_false (st:state) (a:atom) ~r ~lvl:_ =
-    assert (Atom.is_false a);
-    if Atom.level a <= 0 then (
-      conflict_remove_atom0 st a;
-      Resolve_away
-    ) else (
-      begin match r with
-        | Decision ->
-          Keep
-        | Eval _subs -> assert false (* TODO: rewrite atom using subs *)
-        | Bcp _ | Bcp_lazy _ ->
-          assert false (* TODO *)
-        | Propagate_value _ -> assert false
-      end
-    )
+  (* analyze why this atom is false, with caching *)
+  and analyze_atom_false (st:state) (a:atom) ~r ~lvl : analyze_res =
+    Log.debugf 30
+      (fun k->k"(@[analyze_conflict.atom_false@ %a@ :reason %a@])"
+          Atom.debug a Reason.pp (lvl,r));
+    assert (Atom.is_false a || can_eval_to_false a);
+    let v =
+      if Atom.is_pos a then Value.false_ else Value.true_
+    in
+    let t = a.a_term in
+    begin match TV_tbl.get st.cs_paramod_tbl (t,v) with
+      | Some res -> res (* cached *)
+      | None ->
+        mark_term st a.a_term;
+        let res = analyze_atom_false_real st a ~r ~lvl in
+        (* memoize, and return *)
+        TV_tbl.add st.cs_paramod_tbl (t,v) res;
+        res
+    end
+
+  and analyze_atom_false_real st a ~r ~lvl =
+    begin match r with
+      | _ when lvl <= 0 ->
+        conflict_remove_atom0 st a;
+        None
+      | _ when Atom.level a < st.cs_conflict_level ->
+        (* keep it, it's under conflict level *)
+        learn_atom st a;
+        None
+      | Decision ->
+        (* learn atom, do not paramodulate it *)
+        learn_atom st a;
+        None
+      | Eval subs ->
+        (* paramodulate atom by rewriting subterms *)
+        let res = paramod_term_subs st a.a_term ~subs in
+        begin match res with
+          | None ->
+            (* no paramodulation actually occurred. learn atom. *)
+            learn_atom st a;
+          | Some pt ->
+            let new_a =
+              let u = Paramod.Trace.rhs pt in
+              assert (a.a_term != u);
+              if Atom.is_pos a then Term.Bool.pa u else Term.Bool.na u
+            in
+            let is_absurd = Atom.is_absurd new_a in
+            let proof =
+              let pa_learn = if is_absurd then None else Some new_a in
+              RP_paramod {pa_init=a; pa_learn; pa_trace=pt}
+            in
+            st.cs_history <- proof :: st.cs_history;
+            analyze_pclause_guards st; (* now do resolution on pclauses' guards *)
+            if not is_absurd then (
+              learn_atom st new_a;
+            );
+            Log.debugf 30
+              (fun k->k"(@[analyze_conflict.param_atom@ %a@ :into %a@ :trace %a@])"
+                  Atom.debug a Atom.debug new_a Paramod.Trace.pp pt);
+        end;
+        res
+      | Bcp cl | Bcp_lazy (lazy cl) ->
+        (* resolution with c *)
+        analyze_clause st cl;
+        None
+      | Propagate_value _ -> assert false
+    end
 
   (* analyze the clause, which must be false, by simply analyzing each
      literal *)
   and analyze_clause (st:state) (c:clause) : unit =
     Log.debugf 30
       (fun k -> k "(@[analyze_conflict.clause@ %a@])" Clause.pp c);
+    (* increase activity since [c] participates in a conflict *)
+    begin match c.c_premise with
+      | P_raw_steps _ | P_steps _ -> bump_clause_activity st.cs_env c
+      | Hyp | Local | Simplify _ | Lemma _ -> ()
+    end;
+    st.cs_history <- RP_resolve c :: st.cs_history;
     Array.iter
       (fun a ->
-         assert (Atom.is_false a);
-         let r = Term.reason_exn a.a_term in
-         let lvl = Atom.level a in
-         let _ = analyze_atom_false st a ~r ~lvl in
-         ())
+         if not (Term.marked a.a_term) then (
+           assert (Atom.is_false a);
+           let r = Term.reason_exn a.a_term in
+           let lvl = Atom.level a in
+           ignore (analyze_atom_false st a ~r ~lvl)
+         ))
       c.c_atoms
 
+  and analyze_pclause_guards (st:state) : unit =
+    while not (Vec.is_empty st.cs_atoms) do
+      let a = Vec.pop_last st.cs_atoms in
+      let a = Atom.neg a in
+      eval_atom_to_false st.cs_env a;
+      let r = Term.reason_exn a.a_term in
+      let lvl = Atom.level a in
+      ignore (analyze_atom_false st a ~r ~lvl)
+    done
+
+  (* paramodulate given term and return the full trace (if any paramodulation
+     occurs) *)
+  and paramod_term_subs (st:state) (t:term) ~subs : Paramod.trace option =
+    let new_t, steps = paramod_term_rec_subs st [] t ~subs in
+    if steps = [] then (
+      assert (Term.equal t new_t);
+      None
+    ) else (
+      assert (not (Term.equal t new_t));
+      let steps = List.rev steps in (* restore proper order *)
+      Some (Paramod.Trace.make t new_t steps)
+    )
+
+  and paramod_term_rec st acc t : term * Paramod.step list =
+    Log.debugf 30 (fun k->k"(@[analyze_conflict.paramod_rec@ %a@])" Term.debug t);
+    try_eval st t; (* the term might be new *)
+    begin match Term.reason t with
+      | None -> t, acc (* level too low *)
+      | _ when Term.level t < st.cs_conflict_level ->
+        t, acc (* level is too low *)
+      | Some (Eval subs) ->
+        (* rewrite subterms *)
+        paramod_term_rec_subs st acc t ~subs
+      | Some (Propagate_value {rw_into;guard;lemma}) ->
+        (* perform paramodulation [t == rw_into] *)
+        let pc = Paramod.PClause.make t rw_into guard (Lemma lemma) in
+        paramod_term_rec_propagate st acc t ~pc
+      | Some (Decision | Bcp _ | Bcp_lazy _) ->
+        (* stop paramodulation *)
+        t, acc
+    end
+
+  (* rewrite [t] by paramodulating subterms [subs] *)
+  and paramod_term_rec_subs st acc t ~subs : term * Paramod.step list =
+     let subs =
+      CCList.filter_map
+        (fun (sub,v_sub) ->
+           let lvl = Term.level sub in
+           if lvl >= 0 then (
+             let r_sub = Term.reason_exn sub in
+             analyze_term st sub ~v:v_sub ~r:r_sub ~lvl
+           ) else None)
+        subs
+     in
+     begin match subs with
+       | [] ->
+         t, acc (* no rewriting actually happens! e.g. if all subs are decisions *)
+       | _::_ ->
+         (* build a map for rewriting steps of [subs] *)
+         let map =
+           List.fold_left
+             (fun map pt -> Term.Map.add pt.pt_lhs pt map) Term.Map.empty subs
+         in
+         (* compute new term *)
+         let[@inline] find_sub u = match Term.Map.get u map with
+           | None -> u
+           | Some pt -> pt.pt_rhs
+         in
+         let new_t = Term.map t ~f:find_sub in
+         paramod_term_rec st (Paramod.Step.subs subs :: acc) new_t
+     end
+
+  (* rewrite [t] using the clause [pc] *)
+  and paramod_term_rec_propagate st acc t ~pc : term * Paramod.step list =
+    assert (Term.equal t (Paramod.PClause.lhs pc));
+    Log.debugf 30
+      (fun k->k"(@[<hv>analyze_conflict.paramod_with@ %a@])" Paramod.PClause.pp pc);
+    (* rewrite RHS of clause *)
+    let new_t = Paramod.PClause.rhs pc in
+    (* analyze guard, later *)
+    List.iter (Vec.push st.cs_atoms) (Paramod.PClause.guard pc);
+    paramod_term_rec st (Paramod.Step.paramod pc :: acc) new_t
+
+  (* entry point *)
   let analyze (env:t) (confl:conflict) : conflict_res =
     let conflict_level = level_conflict confl in
     let st = {
@@ -1239,6 +1172,7 @@ end = struct
       cs_t_seen=env.tmp_term_vec;
       cs_paramod_tbl=env.paramod_tbl;
       cs_history=[];
+      cs_atoms=Vec.make 10 dummy_atom; (* FIXME: pre-cache *)
     } in
     assert (decision_level env > 0);
     Log.debugf 5
@@ -1250,10 +1184,13 @@ end = struct
       | Conflict_clause c -> analyze_clause st c
       | Conflict_eval c ->
         (* analyze both values of [c.term] *)
-        let _ = analyze_term st c.term
-            ~v:c.value_assign ~r:c.reason_assign ~lvl:conflict_level in
-        let _ = analyze_term st c.term
-            ~v:c.value_eval ~r:(Eval c.subs) ~lvl:conflict_level in
+        ignore
+          (analyze_term st c.term
+            ~v:c.value_assign ~r:c.reason_assign ~lvl:conflict_level);
+        ignore
+          (analyze_term st c.term
+            ~v:c.value_eval ~r:(Eval c.subs) ~lvl:conflict_level);
+        analyze_pclause_guards st; (* now do resolution on pclauses' guards *)
         ()
     end;
     (* main loop *)
@@ -1265,6 +1202,7 @@ end = struct
     Vec.iter Term.unmark st.cs_t_seen;
     Vec.clear st.cs_t_seen;
     TV_tbl.clear st.cs_paramod_tbl;
+    Array.iter Atom.unmark learnt_a;
     (* check that all learnt literals can eval to false *)
     Array.iter (eval_atom_to_false env) learnt_a;
     (* put high level atoms first, for watches *)
