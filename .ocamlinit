@@ -1,2 +1,10 @@
-#directory "_build/src";;
-#load "msat.cma";;
+#use "topfind";;
+#require "containers";;
+#require "sequence";;
+#require "zarith";;
+#directory "_build/default/src/core";;
+#directory "_build/default/src/dimacs";;
+#directory "_build/default/src/uf";;
+#load "mc2_core.cma";;
+#load "mc2_uf.cma";;
+#load "mc2_dimacs.cma";;
