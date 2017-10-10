@@ -140,9 +140,6 @@ type t = {
   mutable clause_incr : float;
   (* increment for clauses' activity *)
 
-  remove_satisfied : bool;
-  (* Wether to remove satisfied learnt clauses when simplifying *)
-
   restart_inc : float;
   (* multiplicative factor for restart limit, default 1.5 *)
   mutable restart_first : int;
@@ -354,8 +351,6 @@ let create_real (actions:actions lazy_t) : t = {
   clause_incr = 1.;
   var_decay = 1. /. 0.95;
   clause_decay = 1. /. 0.999;
-
-  remove_satisfied = false;
 
   restart_inc = 1.5;
   restart_first = 100;
