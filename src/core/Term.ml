@@ -140,7 +140,7 @@ module Unsafe = struct
     let t_idx = ~-1 in
     let t_watches = lazy (Vec.make_empty dummy_term) in
     { t_id; t_view; t_ty; t_fields; t_weight; t_idx;
-      t_var=Var_none; t_assign=TA_none; t_watches; t_tc; t_nf=None; }
+      t_var=Var_none; t_assign=TA_none; t_watches; t_tc; }
 end
 
 (* make a fresh variable for this term *)
