@@ -56,10 +56,8 @@ module Make(A : Arg with type atom := atom
                      and type assumption := clause) = struct
 
   let[@inline] node_id n = "n"^string_of_int (Clause.name n.Proof.conclusion)
-
   let[@inline] res_node_id n = node_id n ^ "_res"
-
-  let proof_id p = node_id (Proof.expand p)
+  let[@inline] proof_id p = node_id (Proof.expand p)
 
   let print_clause fmt c =
     let v = c.c_atoms in

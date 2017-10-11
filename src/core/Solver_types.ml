@@ -266,7 +266,7 @@ and premise =
 
 (** Clause or paramodulation, raw form *)
 and raw_premise_step =
-  | RP_resolve of clause (** resolution with clause *)
+  | RP_resolve of clause (** init clause/resolution with clause *)
   | RP_paramod of paramod_atom (** Paramodulation on one atom *)
 
 (** Clause or paramodulation, refined form *)

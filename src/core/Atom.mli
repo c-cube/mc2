@@ -5,6 +5,7 @@ type t = Solver_types.atom
 
 val equal : t -> t -> bool
 val compare : t -> t -> int
+val hash : t -> int
 
 val same_term : t -> t -> bool (** same term, ignoring sign? *)
 

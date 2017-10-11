@@ -1231,7 +1231,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       in
       add_atom env fuip;
       if Atom.is_false fuip then (
-        assert (Atom.level fuip = 0);
+        (*FIXME? assert (Atom.level fuip = 0);*)
         report_unsat env uclause
       ) else (
         Vec.push env.clauses_learnt uclause;

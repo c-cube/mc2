@@ -5,6 +5,7 @@ type t = atom
 
 let[@inline] equal a b = a.a_id = b.a_id
 let[@inline] compare a b = CCInt.compare a.a_id b.a_id
+let[@inline] hash a = CCHash.int a.a_id
 
 let[@inline] same_term a b = a.a_term == b.a_term
 

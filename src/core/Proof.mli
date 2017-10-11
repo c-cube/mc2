@@ -57,7 +57,6 @@ val prove_unsat : clause -> t
 val prove_atom : atom -> t option
 (** Given an atom [a], returns a proof of the clause [\[a\]] if [a] is true at level 0 *)
 
-
 (** {3 Proof Nodes} *)
 
 val is_leaf : step -> bool
@@ -72,7 +71,6 @@ val expl : step -> string
 
 val parents : step -> t list
 (** Returns the parents of a proof node. *)
-
 
 (** {3 Proof Manipulation} *)
 
