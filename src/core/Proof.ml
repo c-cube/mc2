@@ -424,7 +424,12 @@ let rec fold_aux s h f acc =
             List.iter
               (function
                 | Step_resolve {c;_} -> Stack.push (Enter c) s
-                | _ -> ())
+                | Step_paramod pa ->
+                  begin
+                    Paramod.Trace.pc_seq pa.pa_trace
+                    |> Sequence.map Paramod.PClause.to_clause
+                    |> Sequence.iter (fun c -> Stack.push (Enter c) s)
+                  end)
               steps;
           | Hypothesis | Assumption | Lemma _ -> ()
         end
