@@ -611,7 +611,7 @@ let simpl_reason_level_0 : reason -> reason = function
    Wrapper function for adding a new propagated formula. *)
 let enqueue_bool (env:t) (a:atom) ~level:level (reason:reason) : unit =
   if Atom.is_false a then (
-    Util.errorf "(@[solver.enqueue_bool.atom_if_false@ %a@])" Atom.debug a
+    Util.errorf "(@[solver.enqueue_bool.atom_is_false@ %a@])" Atom.debug a
   ) else if Atom.is_true a then (
     Log.debugf 15 (fun k->k "(@[solver.enqueue_bool.already_true@ %a@])" Atom.debug a);
     (* TODO: if level is lower than current reason for [a], re-assign,
@@ -1538,21 +1538,17 @@ let propagate (env:t) : conflict option =
   assert (env.propagate_head <= Vec.size env.trail);
   propagate_rec env
 
-let[@inline] on_backtrack (env:t) (lev:level) (f:unit->unit) : unit =
-  if lev=0 then () (* never do it *)
-  else if lev > decision_level env then f() (* do it immediately *)
-  else (
-    Vec.push (Vec.get env.backtrack_stack (lev-1)) f
-  )
+module Actions : sig
+  val make : t -> actions
+end = struct
+  let[@inline] on_backtrack (env:t) (lev:level) (f:unit->unit) : unit =
+    if lev=0 then () (* never do it *)
+    else if lev > decision_level env then f() (* do it immediately *)
+    else (
+      Vec.push (Vec.get env.backtrack_stack (lev-1)) f
+    )
 
-(* build the "actions" available to the plugins *)
-let mk_actions (env:t) : actions =
-  let act_on_backtrack lev f : unit = on_backtrack env lev f
-  and act_level (): level = decision_level env
-  and act_push_clause (c:clause) : unit =
-    Log.debugf debug (fun k->k "(@[solver.@{<yellow>push_clause@}@ %a@])" Clause.debug c);
-    Stack.push c env.clauses_to_add
-  and act_raise_conflict (type a) (atoms:atom list) (lemma:lemma): a =
+  let raise_conflict (env:t) (atoms:atom list) (lemma:lemma) : 'a =
     Log.debugf debug (fun k->k
         "(@[<hv>raise_conflict@ :clause %a@ :lemma %a@])"
         Clause.debug_atoms atoms Lemma.pp lemma);
@@ -1562,15 +1558,16 @@ let mk_actions (env:t) : actions =
     List.iter
       (fun a ->
          add_atom env a;
-         eval_atom_to_false env a)
+         eval_atom_to_false ~save:true env a)
       atoms;
     let c = Clause.make atoms (Lemma lemma) in
     raise (Conflict (Conflict_clause c))
-  and act_propagate_bool_eval t (b:bool) ~(subs:(term*value) list) : unit =
+
+  let propagate_bool_eval (env:t) t (b:bool) ~(subs:(term*value) list) : unit =
     Log.debugf 5
       (fun k->k
           "(@[<hv>solver.@{<yellow>semantic_propagate_bool@}@ %a@ :val %B@ :subs %a@])"
-        Term.debug t b pp_subs subs);
+          Term.debug t b pp_subs subs);
     (* TODO: move this into [enqueue_semantic_bool_eval]? *)
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     if Atom.is_false a then (
@@ -1587,64 +1584,76 @@ let mk_actions (env:t) : actions =
     ) else (
       enqueue_semantic_bool_eval env a subs
     )
-  and act_propagate_bool_lemma t (v:bool) atoms lemma : unit =
+
+  let propagate_bool_lemma (env:t) t (v:bool) atoms lemma : unit =
     let a = if v then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     let lvl = List.fold_left
-      (fun lvl b ->
-         if not (Atom.equal a b) then (
-           add_atom env b;
-           eval_atom_to_false env b;
-           max lvl (Atom.level b)
-         ) else lvl)
-      0 atoms
+        (fun lvl b ->
+           if not (Atom.equal a b) then (
+             add_atom env b;
+             eval_atom_to_false ~save:true env b;
+             max lvl (Atom.level b)
+           ) else lvl)
+        0 atoms
     in
     Log.debugf 5
       (fun k->k "(@[<hv>solver.@{<yellow>theory_propagate_bool@}@ %a@ :val %B@ :lvl %d@ :clause %a@])"
-        Term.debug t v lvl Clause.debug_atoms atoms);
+          Term.debug t v lvl Clause.debug_atoms atoms);
     enqueue_bool_theory_propagate env a ~lvl atoms lemma
-  and act_propagate_val_eval t (v:value) ~(subs:(term * value) list) : unit =
+
+  let propagate_val_eval (env:t) t (v:value) ~(subs:(term * value) list) : unit =
     Log.debugf 5
       (fun k->k
           "(@[<hv>solver.@{<yellow>semantic_propagate_val@}@ %a@ :val %a@ :subs %a@])"
           Term.debug t Value.pp v
           pp_subs subs);
     enqueue_semantic_eval env t v subs
-  and act_propagate_val_lemma t (v:value) ~rw_into atoms lemma : unit =
+
+  let propagate_val_lemma (env:t) t (v:value) ~rw_into atoms lemma : unit =
     (* compute level for this propagation *)
     let lvl = List.fold_left
-      (fun lvl b ->
-        add_atom env b;
-        eval_atom_to_false env (Atom.neg b);
-        max lvl (Atom.level b))
-      (Term.level rw_into) atoms
+        (fun lvl b ->
+           add_atom env b;
+           eval_atom_to_false ~save:true env (Atom.neg b);
+           max lvl (Atom.level b))
+        (Term.level rw_into) atoms
     in
     Log.debugf 5
       (fun k->k
           "(@[<hv>solver.@{<yellow>theory_propagate_val@}@ %a@ :val %a@ :rw-into %a@ :lvl %d@ :clause %a@])"
-        Term.debug t Value.pp v Term.debug rw_into lvl Clause.debug_atoms atoms);
+          Term.debug t Value.pp v Term.debug rw_into lvl Clause.debug_atoms atoms);
     enqueue_val_theory_propagate env t v ~rw_into ~lvl atoms lemma
-  and act_mark_dirty (t:term): unit =
-    if not (Term.dirty t) then (
-      Log.debugf debug (fun k->k "(@[solver.mark_dirty@ %a@])" Term.debug t);
-      Term.dirty_mark t;
-      Vec.push env.dirty_terms t;
-    )
-  in
-  { act_on_backtrack;
-    act_push_clause;
-    act_mark_dirty;
-    act_level;
-    act_raise_conflict;
-    act_propagate_bool_eval;
-    act_propagate_bool_lemma;
-    act_propagate_val_eval;
-    act_propagate_val_lemma;
-  }
+
+  (* build the "actions" available to the plugins *)
+  let make (env:t) : actions =
+    let act_level (): level = decision_level env
+    and act_push_clause (c:clause) : unit =
+      Log.debugf debug
+        (fun k->k "(@[solver.@{<yellow>push_clause@}@ %a@])" Clause.debug c);
+      Stack.push c env.clauses_to_add
+    and act_mark_dirty (t:term): unit =
+      if not (Term.dirty t) then (
+        Log.debugf debug (fun k->k "(@[solver.mark_dirty@ %a@])" Term.debug t);
+        Term.dirty_mark t;
+        Vec.push env.dirty_terms t;
+      )
+    in
+    { act_on_backtrack=on_backtrack env;
+      act_push_clause;
+      act_mark_dirty;
+      act_level;
+      act_raise_conflict=raise_conflict env;
+      act_propagate_bool_eval=propagate_bool_eval env;
+      act_propagate_bool_lemma=propagate_bool_lemma env;
+      act_propagate_val_eval=propagate_val_eval env;
+      act_propagate_val_lemma=propagate_val_lemma env;
+    }
+end
 
 (* main constructor *)
 let create () : t =
   let rec env = lazy (create_real actions)
-  and actions = lazy (mk_actions (Lazy.force env)) in
+  and actions = lazy (Actions.make (Lazy.force env)) in
   let env = Lazy.force env in
   (* add builtins *)
   ignore (add_plugin env Builtins.plugin);
