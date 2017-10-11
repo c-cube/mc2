@@ -82,9 +82,9 @@ end = struct
     Sequence.of_array c.c_atoms
 
   (* atoms to cleanup in this step *)
-  let to_clean_step (s:premise_step) : atom Sequence.t = match s with
-    | Step_resolve {c;_} -> to_clean_clause c
-    | Step_paramod pa ->
+  let to_clean_step (s:raw_premise_step) : atom Sequence.t = match s with
+    | RP_resolve c -> to_clean_clause c
+    | RP_paramod pa ->
       fun yield ->
         yield pa.pa_init;
         CCOpt.iter yield pa.pa_learn;
@@ -95,90 +95,121 @@ end = struct
           |> Sequence.iter yield
         end
 
-  let to_clean_steps (l:premise_step list): atom Sequence.t =
+  let to_clean_steps (l:_ list): atom Sequence.t =
     Sequence.of_list l
     |> Sequence.flat_map to_clean_step
 
-  (* find pivots of hyper resolution *)
+  (* atoms added to the clause by this step *)
+  let atom_of_step (p:raw_premise_step) : atom Sequence.t = match p with
+    | RP_resolve c -> Sequence.of_array c.c_atoms
+    | RP_paramod pa ->
+      (* simulate [lhs = rhs <- guard] as [¬ lhs | rhs | ¬guard] *)
+      Sequence.of_list
+        [ Sequence.return (Atom.neg pa.pa_init);
+          CCOpt.to_seq pa.pa_learn;
+          (Paramod.Trace.pc_seq pa.pa_trace
+           |> Sequence.flat_map_l Paramod.PClause.guard
+           |> Sequence.map Atom.neg);
+        ]
+      |> Sequence.flatten
+
+  (* find pivots of hyper resolution, and sort steps in a valid order *)
   let rebuild_steps (init:clause) (l:raw_premise_step list) : premise_step list =
-    Array.iter Atom.mark init.c_atoms;
-    let steps =
-      List.map
-        (function
-          | RP_paramod pa ->
-            Atom.unmark pa.pa_init;
-            CCOpt.iter Atom.mark pa.pa_learn;
-            (* recursively mark clauses in the paramodulation trace *)
-            Paramod.Trace.pc_seq pa.pa_trace
-              (fun pc -> List.iter Atom.mark_neg pc.pc_guard);
-            Step_paramod pa
-          | RP_resolve c ->
-            let pivot =
-              match
-                Sequence.of_array c.c_atoms
-                |> Sequence.filter
-                  (fun a -> Atom.marked (Atom.neg a))
-                |> Sequence.to_list
-              with
-                | [a] -> a
-                | [] ->
-                  Util.errorf "(@[proof.expand.pivot_missing@ %a@])"
-                    Clause.debug c
-                | pivots ->
-                  Util.errorf "(@[proof.expand.multiple_pivots@ %a@ :pivots %a@])"
-                    Clause.debug c Clause.debug_atoms pivots
-            in
-            Array.iter Atom.mark c.c_atoms; (* add atoms to result *)
-            Atom.unmark pivot;
-            Atom.unmark (Atom.neg pivot);
-            Step_resolve {pivot=Atom.term pivot; c})
-        l
-    in
+    (* graph that connects atoms to the step that can remove them,
+       if they are not present in the final clause *)
+    let a_graph = Atom.Tbl.create 32 in
+    Array.iter (fun a -> Atom.Tbl.add a_graph a []; Atom.mark a) init.c_atoms;
+    List.iter
+      (fun step ->
+         begin match step with
+           | RP_paramod pa -> 
+             if not (Atom.marked pa.pa_init) then (
+               Util.errorf "(@[proof.expand.rewrite_absent_atom@ %a@ :with %a@])"
+                 Atom.pp pa.pa_init Premise.pp_raw_premise_step step
+             );
+             Atom.Tbl.replace a_graph pa.pa_init
+               (step :: Atom.Tbl.get_or ~default:[] a_graph pa.pa_init);
+             (* mark atoms to remove *)
+             CCOpt.iter Atom.mark pa.pa_learn;
+             begin
+               Paramod.Trace.pc_seq pa.pa_trace
+               |> Sequence.flat_map_l Paramod.PClause.guard
+               |> Sequence.iter Atom.mark_neg
+             end;
+           | RP_resolve c ->
+             let elim_sth = ref false in
+             Array.iter
+               (fun a ->
+                  let a_neg = Atom.neg a in
+                  (* is [a] used to remove [a_neg] from an intermediate clause
+                     in the proof? *)
+                  if Atom.marked a_neg then (
+                    if !elim_sth then (
+                      Util.errorf "(@[proof.expand.multiple_pivots@ %a@])"
+                        Premise.pp_raw_premise_step step
+                    );
+                    elim_sth := true;
+                    Atom.Tbl.replace a_graph a_neg
+                      (step :: Atom.Tbl.get_or ~default:[] a_graph a_neg);
+                  ) else (
+                    (* [a] belongs in the intermediate clause,
+                       and might be removed by later steps. *)
+                    Atom.mark a;
+                  ))
+               c.c_atoms;
+             (* check that one "pivot" was found *)
+             if not !elim_sth then (
+               Util.errorf "(@[proof.expand.pivot_missing@ %a@])"
+                 Premise.pp_raw_premise_step step
+             );
+         end)
+      l;
     (* cleanup *)
     begin
-      Sequence.append (to_clean_clause init) (to_clean_steps steps)
+      (Sequence.append (to_clean_clause init) (to_clean_steps l))
+      |> Sequence.iter Atom.unmark
+    end;
+    (* traverse the graph in topological order to rebuild a correct proof,
+       and find pivots properly *)
+    let rec aux acc (a:atom) : premise_step list =
+      if Atom.marked a then acc
+      else (
+        Atom.mark a;
+        (* explore steps which remove [a] from final clause, if any *)
+        let l = Atom.Tbl.get_or ~default:[] a_graph a in
+        List.fold_left
+          (fun acc step ->
+             begin match step with
+               | RP_paramod pa ->
+                 let acc = CCOpt.fold aux acc pa.pa_learn in
+                 let acc =
+                   Paramod.Trace.pc_seq pa.pa_trace
+                   |> Sequence.flat_map_l Paramod.PClause.guard
+                   |> Sequence.map Atom.neg
+                   |> Sequence.fold aux acc
+                 in
+                 Step_paramod pa :: acc
+               | RP_resolve c ->
+                 let pivot = a.a_term in
+                 let acc =
+                   Array.fold_left
+                     (fun acc a' ->
+                        if Term.equal pivot (Atom.term a') then acc
+                        else aux acc a')
+                     acc c.c_atoms
+                 in
+                 Step_resolve {pivot;c} :: acc
+             end)
+          acc l
+      )
+    in
+    let steps = Array.fold_left aux [] init.c_atoms in
+    (* cleanup *)
+    begin
+      (Sequence.append (to_clean_clause init) (to_clean_steps l))
       |> Sequence.iter Atom.unmark
     end;
     steps
-
-  module Step_tbl = CCHashtbl.Make(struct
-      type t = premise_step
-      let equal p1 p2 = match p1, p2 with
-        | Step_resolve r1, Step_resolve r2 ->
-          Term.equal r1.pivot r2.pivot &&
-          Clause.equal r1.c r2.c
-        | Step_paramod pa1, Step_paramod pa2 ->
-          Atom.equal pa1.pa_init pa2.pa_init &&
-          CCOpt.equal Atom.equal pa1.pa_learn pa2.pa_learn
-        | Step_resolve _, _
-        | Step_paramod _, _
-          -> false
-
-      let hash = function
-        | Step_resolve {c;pivot} ->
-          CCHash.combine3 10 (Term.hash pivot) (Clause.hash c)
-        | Step_paramod pa ->
-          CCHash.combine3 20
-            (Atom.hash pa.pa_init) (CCHash.opt Atom.hash pa.pa_learn)
-    end)
-
-  (* dependencies of this step *)
-  let next
-      (tbl_pivot:premise_step Term.Tbl.t)
-      (p:premise_step)
-    : premise_step Sequence.t = match p with
-    | Step_resolve {c; pivot} ->
-      Sequence.of_array c.c_atoms
-      |> Sequence.map Atom.term
-      |> Sequence.filter (fun t -> not (Term.equal t pivot))
-      |> Sequence.filter_map (Term.Tbl.get tbl_pivot)
-    | Step_paramod pa ->
-      Sequence.append
-        (CCOpt.to_seq pa.pa_learn)
-        (Paramod.Trace.pc_seq pa.pa_trace
-         |> Sequence.flat_map_l Paramod.PClause.guard)
-      |> Sequence.map Atom.term
-      |> Sequence.filter_map (Term.Tbl.get tbl_pivot)
 
   (* debug raw premise, verbose *)
   let debug_raw_premise_step out = function
