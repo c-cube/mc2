@@ -735,7 +735,7 @@ let debug_eval out = function
 
 (* [a] is part of a conflict/learnt clause, but might not be evaluated yet.
    Evaluate it, save its value, and ensure it is indeed false. *)
-let eval_atom_to_false (env:t) (a:atom): unit =
+let eval_atom_to_false ~save (env:t) (a:atom): unit =
   if Atom.is_false a then ()
   else (
     let v = Atom.eval a in
@@ -743,7 +743,10 @@ let eval_atom_to_false (env:t) (a:atom): unit =
         Atom.debug a debug_eval v);
     begin match v with
       | Eval_into (V_false, subs) ->
-        enqueue_semantic_bool_eval env (Atom.neg a) subs
+        (* update value, if it doesn't have one already *)
+        if save && not (Atom.has_some_value a) then (
+          enqueue_semantic_bool_eval env (Atom.neg a) subs
+        )
       | _ -> assert false
     end
   )
@@ -800,12 +803,13 @@ let[@inline] can_eval_to_false (a:atom): bool = match Atom.eval a with
   | Eval_into (V_false, _) -> true
   | _ -> false
 
-(* can we evaluate this to false? *)
-let can_eval_to_false_at_level_0 (a:atom): bool =
-  (Atom.is_false a && Atom.level a = 0) ||
+(* can we evaluate this to false at base level or below? *)
+let can_eval_to_false_at_base_level env (a:atom): bool =
+  let lvl = base_level env in
+  (Atom.is_false a && Atom.level a <= lvl) ||
   begin match Atom.eval a with
     | Eval_into (V_false, subs) ->
-      List.for_all (fun (t,_) -> Term.level t = 0) subs
+      List.for_all (fun (t,_) -> Term.level t <= lvl) subs
     | _ -> false
   end
 
@@ -1092,7 +1096,7 @@ end = struct
     while not (Vec.is_empty st.cs_atoms) do
       let a = Vec.pop_last st.cs_atoms in
       let a = Atom.neg a in
-      eval_atom_to_false st.cs_env a;
+      eval_atom_to_false ~save:false st.cs_env a;
       let r = Term.reason_exn a.a_term in
       let lvl = Atom.level a in
       ignore (analyze_atom_false st a ~r ~lvl)
@@ -1213,7 +1217,7 @@ end = struct
     TV_tbl.clear st.cs_paramod_tbl;
     Array.iter Atom.unmark learnt_a;
     (* check that all learnt literals can eval to false *)
-    Array.iter (eval_atom_to_false env) learnt_a;
+    Array.iter (eval_atom_to_false ~save:false env) learnt_a;
     (* put high level atoms first, for watches *)
     put_high_level_atoms_first learnt_a;
     let level, is_uip = backtrack_lvl env learnt_a in
@@ -1240,7 +1244,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       in
       add_atom env fuip;
       if Atom.is_false fuip then (
-        assert (can_eval_to_false_at_level_0 fuip);
+        assert (can_eval_to_false_at_base_level env fuip);
         report_unsat env uclause
       ) else (
         Vec.push env.clauses_learnt uclause;
