@@ -795,6 +795,20 @@ let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
 let[@inline] level_subs (l:(term*value) list) : level =
   List.fold_left (fun l (t,_) -> max l (Term.level t)) 0 l
 
+(* can we evaluate this to false? *)
+let[@inline] can_eval_to_false (a:atom): bool = match Atom.eval a with
+  | Eval_into (V_false, _) -> true
+  | _ -> false
+
+(* can we evaluate this to false? *)
+let can_eval_to_false_at_level_0 (a:atom): bool =
+  (Atom.is_false a && Atom.level a = 0) ||
+  begin match Atom.eval a with
+    | Eval_into (V_false, subs) ->
+      List.for_all (fun (t,_) -> Term.level t = 0) subs
+    | _ -> false
+  end
+
 (** {2 Conflict Analysis} *)
 
 (* Conflict analysis for MCSat, looking for the last UIP
@@ -908,11 +922,6 @@ end = struct
         | _ -> ()
       end
     )
-
-  (* can we evaluate this to false? *)
-  let[@inline] can_eval_to_false (a:atom): bool = match Atom.eval a with
-    | Eval_into (V_false, _) -> true
-    | _ -> false
 
   (* result of analysis *)
   type analyze_res = Paramod.trace option
@@ -1231,7 +1240,7 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
       in
       add_atom env fuip;
       if Atom.is_false fuip then (
-        (*FIXME? assert (Atom.level fuip = 0);*)
+        assert (can_eval_to_false_at_level_0 fuip);
         report_unsat env uclause
       ) else (
         Vec.push env.clauses_learnt uclause;
