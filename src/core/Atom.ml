@@ -90,7 +90,12 @@ let pp out a =
   let sign = if is_pos a then "" else "¬" in
   Format.fprintf out "%s%a" sign Term.pp a.a_term
 
-module Set = CCSet.Make(struct
-    type t = atom
-    let compare = compare
-  end)
+module As_key = struct
+  type t = atom
+  let hash = hash
+  let equal = equal
+  let compare = compare
+end
+
+module Tbl = CCHashtbl.Make(As_key)
+module Set = CCSet.Make(As_key)

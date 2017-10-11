@@ -38,4 +38,5 @@ val watched : t -> clause Vec.t
 val pp : t CCFormat.printer (** nice printer *)
 val debug : t CCFormat.printer (** very verbose printer *)
 
-module Set : CCSet.S with type elt = atom
+module Tbl : CCHashtbl.S with type key = t
+module Set : CCSet.S with type elt = t
