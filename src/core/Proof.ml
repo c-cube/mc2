@@ -180,39 +180,6 @@ end = struct
       |> Sequence.map Atom.term
       |> Sequence.filter_map (Term.Tbl.get tbl_pivot)
 
-  let sort_steps (l:premise_step list) : premise_step list =
-    (* topological sort with all steps from [l] *)
-    let topo_sort tbl_pivot l =
-      let seen = Step_tbl.create 16 in
-      let rec aux acc s =
-        if Step_tbl.mem seen s then acc
-        else (
-          Step_tbl.add seen s ();
-          let acc =
-            Sequence.fold aux acc (next tbl_pivot s)
-          in
-          s :: acc
-        )
-      in
-      List.fold_left aux [] l
-    in
-    begin match l with
-      | [] -> []
-      | _::rest ->
-        let tbl_pivot = Term.Tbl.create 16 in (* pivot -> how to remove it *)
-        (* index pivots *)
-        List.iter
-          (fun step ->
-             begin match step with
-               | Step_resolve r -> Term.Tbl.replace tbl_pivot r.pivot step
-               | Step_paramod pa ->
-                 Term.Tbl.replace tbl_pivot pa.pa_init.a_term step
-             end)
-          rest;
-        (* topological order *)
-        topo_sort tbl_pivot l
-    end
-
   (* debug raw premise, verbose *)
   let debug_raw_premise_step out = function
     | RP_resolve c -> Fmt.fprintf out "(@[resolve %a@])" Clause.debug c
@@ -247,8 +214,8 @@ end = struct
       | P_raw_steps ((RP_resolve c::r) as l) ->
         Log.debugf 30 (fun k->k"(@[<hv>proof.expanding.raw@ %a@])"
             (Util.pp_list debug_raw_premise_step) l);
-        (* find pivots for hyper-resolution, then sort steps *)
-        let steps = rebuild_steps c r |> sort_steps in
+        (* find pivots for hyper-resolution *)
+        let steps = rebuild_steps c r in
         (* update premise to memoize proof *)
         conclusion.c_premise <- Premise.steps c steps;
         let step = Hyper_res {init=c; steps} in

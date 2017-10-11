@@ -862,7 +862,6 @@ end = struct
     mutable cs_history: raw_premise_step list; (* proof object *)
     mutable cs_paramod_tbl: paramod_trace option TV_tbl.t; (* paramodulation graph *)
     cs_t_seen: term Vec.t; (** terms seen so far, for cleanup *)
-    cs_atoms : atom Vec.t;
   }
 
   let[@inline] mark_term (st:state) (t:term) =
@@ -1056,7 +1055,6 @@ end = struct
               RP_paramod {pa_init=a; pa_learn; pa_trace=pt}
             in
             st.cs_history <- proof :: st.cs_history;
-            analyze_pclause_guards st; (* now do resolution on pclauses' guards *)
             (* learn the atom, but maybe remove it if it's proved *)
             if not is_absurd then (
               if Atom.level new_a = 0 then (
@@ -1097,16 +1095,6 @@ end = struct
            end
          ))
       c.c_atoms
-
-  and analyze_pclause_guards (st:state) : unit =
-    while not (Vec.is_empty st.cs_atoms) do
-      let a = Vec.pop_last st.cs_atoms in
-      let a = Atom.neg a in
-      eval_atom_to_false ~save:false st.cs_env a;
-      let r = Term.reason_exn a.a_term in
-      let lvl = Atom.level a in
-      ignore (analyze_atom_false st a ~r ~lvl)
-    done
 
   (* paramodulate given term and return the full trace (if any paramodulation
      occurs) *)
@@ -1177,8 +1165,15 @@ end = struct
       (fun k->k"(@[<hv>analyze_conflict.paramod_with@ %a@])" Paramod.PClause.pp pc);
     (* rewrite RHS of clause *)
     let new_t = Paramod.PClause.rhs pc in
-    (* analyze guard, later *)
-    List.iter (Vec.push st.cs_atoms) (Paramod.PClause.guard pc);
+    (* analyze guard *)
+    let analyze_guard_a a_guard =
+      let a = Atom.neg a_guard in
+      begin match atom_as_false a with
+        | None -> assert false
+        | Some (r,lvl) -> ignore (analyze_atom_false st a ~r ~lvl)
+      end
+    in
+    List.iter analyze_guard_a (Paramod.PClause.guard pc);
     paramod_term_rec st (Paramod.Step.paramod pc :: acc) new_t
 
   (* entry point *)
@@ -1191,7 +1186,6 @@ end = struct
       cs_t_seen=env.tmp_term_vec;
       cs_paramod_tbl=env.paramod_tbl;
       cs_history=[];
-      cs_atoms=Vec.make 10 dummy_atom; (* FIXME: pre-cache *)
     } in
     assert (decision_level env > 0);
     Log.debugf 5
@@ -1209,7 +1203,6 @@ end = struct
         ignore
           (analyze_term st c.term
             ~v:c.value_eval ~r:(Eval c.subs) ~lvl:c.lvl_eval);
-        analyze_pclause_guards st; (* now do resolution on pclauses' guards *)
         ()
     end;
     (* main loop *)
