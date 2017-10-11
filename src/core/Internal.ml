@@ -678,7 +678,6 @@ let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) ~(level:int) :
 (* term [t] evaluates to [v] because of [subs] *)
 let enqueue_semantic_eval (env:t) (t:term) (v:value) (subs:_ list) : unit =
   if Term.has_some_value t then (
-    (* FIXME: check for conflict instead *)
     assert (Value.equal (Term.value_exn t) v);
   ) else (
     assert (List.for_all (fun (t,_) -> Term.is_added t) subs);
@@ -751,31 +750,6 @@ let eval_atom_to_false ~save (env:t) (a:atom): unit =
     end
   )
 
-(* find which level to backtrack to, given a conflict clause
-   and a boolean stating whether it is a UIP ("Unique Implication Point")
-   precondition: the atoms with highest decision level are first in the array *)
-let backtrack_lvl (env:t) (a:atom array) : int * bool =
-  if Array.length a <= 1 then (
-    0, true (* unit or empty clause *)
-  ) else (
-    assert (Atom.level a.(0) >= base_level env);
-    assert (Atom.level a.(1) >= base_level env);
-    if Atom.level a.(0) > Atom.level a.(1) then (
-      (* backtrack below [a], so we can propagate [not a] *)
-      Atom.level a.(1), true
-      (* NOTE: (to explore)
-         since we can propagate at level [a.(1).level] wherever we want
-         we might also want to backtrack at [a.(0).level-1] but still
-         propagate [¬a.(0)] at a lower level? That would save current decisions *)
-    ) else (
-      (* NOTE: clauses can be deduced that are not semantic splits
-         nor regular conflict clause, thanks to paramodulation *)
-      assert (Atom.level a.(0) >= Atom.level a.(1));
-      assert (Atom.level a.(0) >= base_level env);
-      max (Atom.level a.(0) - 1) (base_level env), false
-    )
-  )
-
 (* move atoms assigned at high levels first *)
 let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
   Array.iteri
@@ -798,85 +772,87 @@ let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
 let[@inline] level_subs (l:(term*value) list) : level =
   List.fold_left (fun l (t,_) -> max l (Term.level t)) 0 l
 
+(* find how the atom can be false, either by assignment or by evaluation *)
+let[@inline] atom_as_false (a:atom) : (reason * level) option =
+  if Atom.is_false a then Some (Term.reason_exn a.a_term, Atom.level a)
+  else match Atom.eval a with
+    | Eval_into (V_false, subs) -> Some (Eval subs, level_subs subs)
+    | _ -> None
+
 (* can we evaluate this to false? *)
-let[@inline] can_eval_to_false (a:atom): bool = match Atom.eval a with
-  | Eval_into (V_false, _) -> true
-  | _ -> false
+let[@inline] can_eval_to_false (a:atom): bool = CCOpt.is_some (atom_as_false a)
 
 (* can we evaluate this to false at base level or below? *)
 let can_eval_to_false_at_base_level env (a:atom): bool =
   let lvl = base_level env in
   (Atom.is_false a && Atom.level a <= lvl) ||
   begin match Atom.eval a with
-    | Eval_into (V_false, subs) ->
-      List.for_all (fun (t,_) -> Term.level t <= lvl) subs
+    | Eval_into (V_false, subs) -> level_subs subs <= lvl
     | _ -> false
   end
 
 (** {2 Conflict Analysis} *)
 
 (* Conflict analysis for MCSat, looking for the last UIP
-   (Unique Implication Point) in an efficient imperative manner.
-   We do not really perform a series of resolution, but just keep enough
-   information for proof reconstruction.
+   We do not really perform a series of resolution/paramodulation,
+   but just keep enough information for proof reconstruction.
 *)
 
-(* result of conflict analysis, containing the learnt clause and some
-   additional info.
+module Conflict = struct
+  (** The possibilities for a conflict *)
+  type t =
+    | Conflict_clause of clause (* conflict clause *)
+    | Conflict_eval of {
+        term: term; (** term assigned to [value_assign], evaluates to [value_eval] *)
+        value_assign: value;
+        reason_assign: reason; (** reason for [value_assign] *)
+        lvl_assign: level; (** level for [value_assign] *)
+        value_eval: value;
+        subs: (term*value) list; (** subterms used to evaluate to [value_assign] *)
+        lvl_eval: level;
+      } (** Conflict because a term is assigned to a value and
+            evaluates to another value.
+            invariants:
+            - [value_assign != value_eval]
+        *)
 
-   invariant: cr_history's order matters, as its head is later used
-   during pop operations to determine the origin of a clause/conflict
-   (boolean conflict i.e hypothesis, or theory lemma) *)
-type conflict_res = {
-  cr_backtrack_lvl : int; (* level to backtrack to *)
-  cr_learnt: atom array; (* lemma learnt from conflict *)
-  cr_history: raw_premise_step list; (* justification: conflict clause + proof steps *)
-  cr_is_uip: bool; (* conflict is UIP? *)
-}
+  let pp out (e:t) = match e with
+    | Conflict_clause c -> Clause.debug out c
+    | Conflict_eval c ->
+      Fmt.fprintf out
+        "(@[<hv>eval_conflict@ :term %a@ \
+         :value-assign %a@ :reason %a@ \
+         :value-eval %a@ :reason %a@])"
+        Term.debug c.term
+        Value.pp c.value_assign Reason.pp (c.lvl_assign, c.reason_assign)
+        Value.pp c.value_eval Reason.pp (c.lvl_eval, Eval c.subs)
 
-(** The possibilities for a conflict *)
-type conflict =
-  | Conflict_clause of clause (* conflict clause *)
-  | Conflict_eval of {
-      term: term; (** term assigned to [value_assign], evaluates to [value_eval] *)
-      value_assign: value;
-      reason_assign: reason; (** reason for [value_assign] *)
-      value_eval: value;
-      subs: (term*value) list; (** subterms used to evaluate to [value_assign] *)
-      lvl: level;
-    } (** Conflict because a term is assigned to a value and
-          evaluates to another value.
-          invariants:
-          - [value_assign != value_eval]
-      *)
+  let level (e:t) : level = match e with
+    | Conflict_eval {lvl_assign;lvl_eval;_} -> max lvl_assign lvl_eval
+    | Conflict_clause c ->
+      (Array.fold_left[@inlined])
+        (fun acc p -> max acc (Atom.level p)) 0 c.c_atoms
+end
 
-exception Conflict of conflict
+exception Conflict of Conflict.t
 
-let pp_subs out (l:(term*value) list) : unit =
-  let pp_pair out (t,v) =
-    Fmt.fprintf out "(@[%a@ → %a@])" Term.debug t Value.pp v
-  in
-  Fmt.fprintf out "(@[<v>%a@])" (Util.pp_list pp_pair) l
+module Conflict_res = struct
+  (* result of conflict analysis, containing the learnt clause and some
+     additional info.
 
-let pp_conflict out (e:conflict) = match e with
-  | Conflict_clause c -> Clause.debug out c
-  | Conflict_eval c ->
-    Fmt.fprintf out
-      "(@[<hv>eval_conflict@ :term %a@ :lvl %d@ \
-       :value-assign %a@ :reason %a@ \
-       :value-eval %a@ :subs %a@])"
-      Term.debug c.term c.lvl
-      Value.pp c.value_assign Reason.pp (c.lvl, c.reason_assign)
-      Value.pp c.value_eval pp_subs c.subs
+     invariant: cr_history's order matters, as its head is later used
+     during pop operations to determine the origin of a clause/conflict
+     (boolean conflict i.e hypothesis, or theory lemma) *)
+  type t = {
+    cr_backtrack_lvl : int; (* level to backtrack to *)
+    cr_learnt: atom array; (* lemma learnt from conflict *)
+    cr_history: raw_premise_step list; (* justification: conflict clause + proof steps *)
+    cr_is_uip: bool; (* conflict is UIP? *)
+  }
+end
 
-let level_conflict (e:conflict) : level = match e with
-  | Conflict_eval {lvl;_} -> lvl
-  | Conflict_clause c ->
-    (Array.fold_left[@inlined])
-      (fun acc p -> max acc (Atom.level p)) 0 c.c_atoms
-
-module Conflict_res : sig
-  val analyze : t -> conflict -> conflict_res
+module Analyze : sig
+  val analyze : t -> Conflict.t -> Conflict_res.t
 end = struct
   (* state for conflict analysis *)
   type state = {
@@ -925,6 +901,31 @@ end = struct
           assign_term st.cs_env t v (Eval subs) level;
         | _ -> ()
       end
+    )
+
+  (* find which level to backtrack to, given a conflict clause
+     and a boolean stating whether it is a UIP ("Unique Implication Point")
+     precondition: the atoms with highest decision level are first in the array *)
+  let backtrack_lvl (st:state) (a:atom array) : int * bool =
+    if Array.length a <= 1 then (
+      0, true (* unit or empty clause *)
+    ) else (
+      assert (Atom.level a.(0) >= base_level st.cs_env);
+      assert (Atom.level a.(1) >= base_level st.cs_env);
+      if Atom.level a.(0) > Atom.level a.(1) then (
+        (* backtrack below [a], so we can propagate [not a] *)
+        Atom.level a.(1), true
+        (* NOTE: (to explore)
+           since we can propagate at level [a.(1).level] wherever we want
+           we might also want to backtrack at [a.(0).level-1] but still
+           propagate [¬a.(0)] at a lower level? That would save current decisions *)
+      ) else (
+        (* NOTE: clauses can be deduced that are not semantic splits
+           nor regular conflict clause, thanks to paramodulation *)
+        assert (Atom.level a.(0) >= Atom.level a.(1));
+        assert (Atom.level a.(0) >= base_level st.cs_env);
+        max (Atom.level a.(0) - 1) (base_level st.cs_env), false
+      )
     )
 
   (* result of analysis *)
@@ -1008,7 +1009,7 @@ end = struct
     Log.debugf 30
       (fun k->k"(@[analyze_conflict.atom_false@ %a@ :reason %a@])"
           Atom.debug a Reason.pp (lvl,r));
-    assert (Atom.is_false a || can_eval_to_false a);
+    assert (can_eval_to_false a);
     let v =
       if Atom.is_pos a then Value.false_ else Value.true_
     in
@@ -1028,7 +1029,7 @@ end = struct
       | _ when lvl <= 0 ->
         conflict_remove_atom0 st a;
         None
-      | _ when Atom.level a < st.cs_conflict_level ->
+      | _ when lvl < st.cs_conflict_level ->
         (* keep it, it's under conflict level *)
         learn_atom st a;
         None
@@ -1056,8 +1057,13 @@ end = struct
             in
             st.cs_history <- proof :: st.cs_history;
             analyze_pclause_guards st; (* now do resolution on pclauses' guards *)
+            (* learn the atom, but maybe remove it if it's proved *)
             if not is_absurd then (
-              learn_atom st new_a;
+              if Atom.level new_a = 0 then (
+                conflict_remove_atom0 st new_a;
+              ) else (
+                learn_atom st new_a;
+              )
             );
             Log.debugf 30
               (fun k->k"(@[analyze_conflict.param_atom@ %a@ :into %a@ :trace %a@])"
@@ -1085,10 +1091,10 @@ end = struct
     Array.iter
       (fun a ->
          if not (Term.marked a.a_term) then (
-           assert (Atom.is_false a);
-           let r = Term.reason_exn a.a_term in
-           let lvl = Atom.level a in
-           ignore (analyze_atom_false st a ~r ~lvl)
+           begin match atom_as_false a with
+             | None -> assert false
+             | Some (r, lvl) -> ignore (analyze_atom_false st a ~r ~lvl)
+           end
          ))
       c.c_atoms
 
@@ -1176,8 +1182,8 @@ end = struct
     paramod_term_rec st (Paramod.Step.paramod pc :: acc) new_t
 
   (* entry point *)
-  let analyze (env:t) (confl:conflict) : conflict_res =
-    let conflict_level = level_conflict confl in
+  let analyze (env:t) (confl:Conflict.t) : Conflict_res.t =
+    let conflict_level = Conflict.level confl in
     let st = {
       cs_env=env;
       cs_conflict_level=conflict_level;
@@ -1190,19 +1196,19 @@ end = struct
     assert (decision_level env > 0);
     Log.debugf 5
       (fun k -> k "(@[analyze_conflict (%d/%d)@ :conflict %a@])"
-          conflict_level (decision_level env) pp_conflict confl);
+          conflict_level (decision_level env) Conflict.pp confl);
     assert (conflict_level >= 0);
     (* analyze from initial conflict *)
     begin match confl with
-      | Conflict_clause c -> analyze_clause st c
-      | Conflict_eval c ->
+      | Conflict.Conflict_clause c -> analyze_clause st c
+      | Conflict.Conflict_eval c ->
         (* analyze both values of [c.term] *)
         ignore
           (analyze_term st c.term
-            ~v:c.value_assign ~r:c.reason_assign ~lvl:conflict_level);
+            ~v:c.value_assign ~r:c.reason_assign ~lvl:c.lvl_assign);
         ignore
           (analyze_term st c.term
-            ~v:c.value_eval ~r:(Eval c.subs) ~lvl:conflict_level);
+            ~v:c.value_eval ~r:(Eval c.subs) ~lvl:c.lvl_eval);
         analyze_pclause_guards st; (* now do resolution on pclauses' guards *)
         ()
     end;
@@ -1220,8 +1226,9 @@ end = struct
     Array.iter (eval_atom_to_false ~save:false env) learnt_a;
     (* put high level atoms first, for watches *)
     put_high_level_atoms_first learnt_a;
-    let level, is_uip = backtrack_lvl env learnt_a in
-    { cr_backtrack_lvl = level;
+    let level, is_uip = backtrack_lvl st learnt_a in
+    {Conflict_res.
+      cr_backtrack_lvl = level;
       cr_learnt = learnt_a;
       cr_history = List.rev st.cs_history;
       cr_is_uip = is_uip;
@@ -1229,7 +1236,8 @@ end = struct
 end
 
 (* add the learnt clause to the clause database, propagate, etc. *)
-let record_learnt_clause (env:t) (cr:conflict_res): unit =
+let record_learnt_clause (env:t) (cr:Conflict_res.t): unit =
+  let open Conflict_res in
   begin match cr.cr_learnt with
     | [||] ->
       (* empty clause *)
@@ -1281,21 +1289,21 @@ let record_learnt_clause (env:t) (cr:conflict_res): unit =
    - backtrack
    - report unsat if conflict at level 0
 *)
-let add_conflict (env:t) (confl:conflict): unit =
-  Log.debugf info (fun k -> k"@{<Yellow>## add_conflict@}: %a" pp_conflict confl);
+let add_conflict (env:t) (confl:Conflict.t): unit =
+  Log.debugf info (fun k -> k"@{<Yellow>## add_conflict@}: %a" Conflict.pp confl);
   env.next_decision <- None;
   env.conflicts <- env.conflicts + 1;
   assert (decision_level env >= base_level env);
   if decision_level env = base_level env ||
-     level_conflict confl <= base_level env
+     Conflict.level confl <= base_level env
   then (
     begin match confl with
-      | Conflict_clause c -> report_unsat env c (* Top-level conflict *)
-      | Conflict_eval _ -> assert false (* FIXME: on the fly param? *)
+      | Conflict.Conflict_clause c -> report_unsat env c (* Top-level conflict *)
+      | Conflict.Conflict_eval _ -> assert false (* FIXME: on the fly param? *)
     end
   );
-  let cr = Conflict_res.analyze env confl in
-  cancel_until env (max cr.cr_backtrack_lvl (base_level env));
+  let cr = Analyze.analyze env confl in
+  cancel_until env (max cr.Conflict_res.cr_backtrack_lvl (base_level env));
   record_learnt_clause env cr
 
 (* Get the correct vector to insert a clause in. *)
@@ -1368,7 +1376,7 @@ let add_clause (env:t) (init:clause) : unit =
           put_high_level_atoms_first ats;
           assert(Atom.level ats.(0) >= Atom.level ats.(1));
           attach_clause env clause;
-          add_conflict env (Conflict_clause clause)
+          add_conflict env (Conflict.Conflict_clause clause)
         ) else (
           attach_clause env clause;
           if Atom.is_false b && Atom.is_undef a then (
@@ -1433,7 +1441,7 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
       if Atom.is_false first then (
         (* clause is false *)
         env.propagate_head <- Vec.size env.trail;
-        raise (Conflict (Conflict_clause c))
+        raise (Conflict (Conflict.Conflict_clause c))
       ) else (
         begin match th_eval env first with
           | None -> (* clause is unit, keep the same watches, but propagate *)
@@ -1445,7 +1453,7 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
           | Some V_true -> ()
           | Some V_false ->
             env.propagate_head <- Vec.size env.trail;
-            raise (Conflict (Conflict_clause c))
+            raise (Conflict (Conflict.Conflict_clause c))
           | Some _ -> assert false
         end
       );
@@ -1501,7 +1509,7 @@ let propagate_term (env:t) (t:term): unit =
    need to inform the plugins about these assignments, so they can do their job,
    and we also do boolean propagation
    @return the conflict clause, if a plugin detects unsatisfiability *)
-let rec propagate_rec (env:t) : conflict option =
+let rec propagate_rec (env:t) : Conflict.t option =
   assert (env.propagate_head <= Vec.size env.trail);
   if env.propagate_head = Vec.size env.trail then (
     None (* fixpoint reached *)
@@ -1535,7 +1543,7 @@ let rec propagate_rec (env:t) : conflict option =
 
 (* Fixpoint between boolean propagation and theory propagation.
    @return a conflict clause, if any *)
-let propagate (env:t) : conflict option =
+let propagate (env:t) : Conflict.t option =
   (* First, treat the stack of lemmas added by the theory, if any *)
   flush_clauses env;
   (* Now, check that the situation is sane *)
@@ -1565,24 +1573,24 @@ end = struct
          eval_atom_to_false ~save:true env a)
       atoms;
     let c = Clause.make atoms (Lemma lemma) in
-    raise (Conflict (Conflict_clause c))
+    raise (Conflict (Conflict.Conflict_clause c))
 
   let propagate_bool_eval (env:t) t (b:bool) ~(subs:(term*value) list) : unit =
     Log.debugf 5
       (fun k->k
           "(@[<hv>solver.@{<yellow>semantic_propagate_bool@}@ %a@ :val %B@ :subs %a@])"
           Term.debug t b pp_subs subs);
-    (* TODO: move this into [enqueue_semantic_bool_eval]? *)
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     if Atom.is_false a then (
       (* conflict! *)
-      let lvl = decision_level env in
+      let lvl_eval = decision_level env in
       let value_assign = if Atom.is_pos a then Value.false_ else Value.true_ in
+      let lvl_assign = Atom.level a in
       let value_eval = Value.of_bool b in
       assert (not @@ Value.equal value_eval value_assign);
-      let c = Conflict_eval {
-          lvl; term=a.a_term; subs; value_assign;
-          value_eval; reason_assign=Term.reason_exn a.a_term;
+      let c = Conflict.Conflict_eval {
+          term=a.a_term; subs; value_assign; lvl_assign;
+          value_eval; reason_assign=Term.reason_exn a.a_term; lvl_eval;
         } in
       raise (Conflict c)
     ) else (
@@ -1611,7 +1619,20 @@ end = struct
           "(@[<hv>solver.@{<yellow>semantic_propagate_val@}@ %a@ :val %a@ :subs %a@])"
           Term.debug t Value.pp v
           pp_subs subs);
-    enqueue_semantic_eval env t v subs
+    begin match Term.value t with
+      | Some v' when not (Value.equal v v') ->
+        (* conflict *)
+        let lvl_eval = decision_level env in
+        let value_assign = v' in
+        let lvl_assign = Term.level t in
+        let c = Conflict.Conflict_eval {
+            term=t; subs; value_assign; lvl_assign;
+            value_eval=v; reason_assign=Term.reason_exn t; lvl_eval;
+          } in
+        raise (Conflict c)
+      | _ ->
+        enqueue_semantic_eval env t v subs
+    end
 
   let propagate_val_lemma (env:t) t (v:value) ~rw_into atoms lemma : unit =
     (* compute level for this propagation *)
@@ -2026,9 +2047,9 @@ let push (env:t) : unit =
     (fun k->k"(@[solver.push.status@ :prop_head %d@ :trail (@[<hv>%a@])@])"
         env.propagate_head (Vec.print ~sep:"" Term.debug) env.trail);
   begin match propagate env with
-    | Some (Conflict_clause c) ->
+    | Some (Conflict.Conflict_clause c) ->
       report_unsat env c
-    | Some (Conflict_eval _) -> assert false (* FIXME *)
+    | Some (Conflict.Conflict_eval _) -> assert false (* FIXME *)
     | None ->
       Log.debugf 30
         (fun k -> k "(@[<v>solver.current_trail@ (@[<hv>%a@])@])"
