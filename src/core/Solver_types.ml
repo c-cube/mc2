@@ -58,7 +58,6 @@ type ty =
 and tc_ty = {
   tcty_decide: actions -> term -> value;
   (** How to make semantic decisions for terms of this type? *)
-  tcty_refresh_state: level -> term -> unit; (** recompute internal {!decide_state} in new level *)
   tcty_eq: term -> term -> term;
   (* how to build equalities between terms of that type *)
   tcty_pp: ty_view CCFormat.printer; (** print types *)
@@ -345,16 +344,11 @@ and actions = {
       It is necessary that [rw_into] evaluates to [v] in the current model.
       Precondition: [c] is a list of true atoms such that [c => (t = rw_into)].
   *)
-  act_mark_dirty : term -> unit;
-  (** Mark the term as dirty because its set of unit constraints has changed.
-      It potentially has to re-compute new information from that
-      (e.g. lower/upper bounds, set of forbidden values, etc.). *)
   act_raise_conflict: 'a. atom list -> lemma -> 'a;
   (** Raise a conflict with the given clause, which must be false
       in the current trail, and with a lemma to explain *)
-  act_on_backtrack : level -> (unit -> unit) -> unit;
-  (** [act_on_backtrack level f] will call [f] when the given [level]
-      is backtracked *)
+  act_on_backtrack : (unit -> unit) -> unit;
+  (** [act_on_backtrack f] will call [f] when we backtrack *)
 }
 (** Actions available to terms/plugins when doing propagation/model building,
     including adding clauses, registering actions to do upon
@@ -367,7 +361,6 @@ let field_t_mark_neg = Term_fields.mk_field() (** negative atom marked? *)
 let field_t_seen = Term_fields.mk_field() (** term seen during some traversal? *)
 let field_t_negated = Term_fields.mk_field() (** negated term? *)
 let field_t_gc_marked = Term_fields.mk_field() (** marked for GC? *)
-let field_t_dirty = Term_fields.mk_field() (** needs to update unit constraints? *)
 let field_t_inconsistent = Term_fields.mk_field() (** assignment is inconsistent (BCP/eval). At most one per conflict *)
 
 let field_c_attached = Clause_fields.mk_field() (** clause added to state? *)

@@ -47,10 +47,6 @@ let[@inline] gc_marked (t:t) : bool = field_get field_t_gc_marked t
 let[@inline] gc_unmark (t:t) : unit = field_clear field_t_gc_marked t
 let[@inline] gc_mark (t:t) : unit = field_set field_t_gc_marked t
 
-let[@inline] dirty (t:t): bool = field_get field_t_dirty t
-let[@inline] dirty_unmark (t:t) : unit = field_clear field_t_dirty t
-let[@inline] dirty_mark (t:t) : unit = field_set field_t_dirty t
-
 let[@inline] value (t:t): value option = match t.t_assign with
   | TA_none -> None
   | TA_assign {value;_} -> Some value
@@ -89,9 +85,6 @@ let[@inline] reason t = match t.t_assign with
 let[@inline] reason_exn t = match reason t with
   | Some r -> r
   | None -> assert false
-
-let[@inline] recompute_state (lvl:level) (t:t) : unit =
-  Type.refresh_state (ty t) lvl t
 
 let[@inline] decide_state_exn (t:t) : decide_state = match var t with
   | Var_semantic {v_decide_state=s;_} -> s

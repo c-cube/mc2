@@ -87,18 +87,14 @@ type t = {
   decision_levels : level Vec.t;
   (* decision levels in [trail]  *)
 
-  backtrack_stack : (unit -> unit) Vec.t Vec.t;
+  backtrack_stack : (unit -> unit) Vec.t;
   (* one set of undo actions for every decision level *)
-  (* TODO: do the same as {!trail} instead? i.e. unsorted vector of
-     [(int,unit->unit)] + side vector for offsets, and do the same
-     kind of moving trick during backtracking? *)
+
+  backtrack_levels: level Vec.t;
+  (* offsets in [backtrack_stack] *)
 
   user_levels : level Vec.t;
   (* user levels in [clauses_temp] *)
-
-  dirty_terms: term Vec.t;
-  (* set of terms made dirty by backtracking, whose [decide_state]
-     must potentially be updated *)
 
   mutable propagate_head : int;
   (* Start offset in the queue {!trail} of
@@ -342,10 +338,10 @@ let create_real (actions:actions lazy_t) : t = {
   propagate_head = 0;
 
   trail = Vec.make 601 dummy_term;
-  backtrack_stack = Vec.make 601 (Vec.make_empty (fun () -> assert false));
+  backtrack_stack = Vec.make 601 (fun () -> assert false);
+  backtrack_levels = Vec.make 10 (-1);
   decision_levels = Vec.make 601 (-1);
   user_levels = Vec.make 10 (-1);
-  dirty_terms = Vec.make 50 dummy_term;
   tmp_term_vec = Vec.make 10 dummy_term;
   tmp_atom_vec = Vec.make 10 dummy_atom;
   paramod_tbl = TV_tbl.create 64;
@@ -496,7 +492,7 @@ let[@inline] fully_propagated (env:t) : bool =
 let new_decision_level (env:t) : unit =
   assert (fully_propagated env);
   Vec.push env.decision_levels (Vec.size env.trail);
-  Vec.push env.backtrack_stack (Vec.make_empty (fun _ -> ()));
+  Vec.push env.backtrack_levels (Vec.size env.backtrack_stack);
   ()
 
 (* Attach/Detach a clause.
@@ -524,6 +520,8 @@ let cancel_until (env:t) (lvl:int) : unit =
     Log.debugf info (fun k -> k "@{<Yellow>### Backtracking@} to lvl %d" lvl);
     (* We set the head of the solver and theory queue to what it was. *)
     let top = Vec.get env.decision_levels lvl in
+    let backtrack_top = Vec.get env.backtrack_levels lvl in
+    env.propagate_head <- top; (* will need to repropagate from there *)
     let head = ref top in
     (* Now we need to cleanup the vars that are not valid anymore
        (i.e to the right of propagate_head in the queue).
@@ -543,25 +541,17 @@ let cancel_until (env:t) (lvl:int) : unit =
         schedule_decision_term env t;
       )
     done;
-    (* elements we kept are already propagated, update pointers accordingly *)
-    env.propagate_head <- !head;
     (* Resize the vectors according to their new size. *)
     Vec.shrink env.trail !head;
     Vec.shrink env.decision_levels lvl;
+    Vec.shrink env.backtrack_levels lvl;
     (* call undo-actions registered by plugins *)
-    while Vec.size env.backtrack_stack > lvl do
-      let v = Vec.last env.backtrack_stack in
-      Vec.iter (fun f -> f()) v;
-      Vec.pop env.backtrack_stack;
+    while Vec.size env.backtrack_stack > backtrack_top do
+      let f = Vec.pop_last env.backtrack_stack in
+      f();
     done;
-    (* refresh dirty variables *)
-    let lvl = decision_level env in
-    Vec.iter
-      (fun t -> Term.dirty_unmark t; Term.recompute_state lvl t)
-      env.dirty_terms;
-    Vec.clear env.dirty_terms;
   );
-  assert (Vec.size env.decision_levels = Vec.size env.backtrack_stack);
+  assert (Vec.size env.decision_levels = Vec.size env.backtrack_levels);
   ()
 
 (* Unsatisfiability is signaled through an exception, since it can happen
@@ -1546,12 +1536,8 @@ let propagate (env:t) : Conflict.t option =
 module Actions : sig
   val make : t -> actions
 end = struct
-  let[@inline] on_backtrack (env:t) (lev:level) (f:unit->unit) : unit =
-    if lev=0 then () (* never do it *)
-    else if lev > decision_level env then f() (* do it immediately *)
-    else (
-      Vec.push (Vec.get env.backtrack_stack (lev-1)) f
-    )
+  let[@inline] on_backtrack (env:t) (f:unit->unit) : unit =
+    Vec.push env.backtrack_stack f
 
   let raise_conflict (env:t) (atoms:atom list) (lemma:lemma) : 'a =
     Log.debugf debug (fun k->k
@@ -1649,16 +1635,9 @@ end = struct
       Log.debugf debug
         (fun k->k "(@[solver.@{<yellow>push_clause@}@ %a@])" Clause.debug c);
       Stack.push c env.clauses_to_add
-    and act_mark_dirty (t:term): unit =
-      if not (Term.dirty t) then (
-        Log.debugf debug (fun k->k "(@[solver.mark_dirty@ %a@])" Term.debug t);
-        Term.dirty_mark t;
-        Vec.push env.dirty_terms t;
-      )
     in
     { act_on_backtrack=on_backtrack env;
       act_push_clause;
-      act_mark_dirty;
       act_level;
       act_raise_conflict=raise_conflict env;
       act_propagate_bool_eval=propagate_bool_eval env;

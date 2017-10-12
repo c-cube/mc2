@@ -144,15 +144,15 @@ let build p_id Plugin.S_nil : Plugin.t =
     type tbl_entry = {
       e_sig: signature;
       mutable e_value: value;
-      mutable e_reasons: e_reason list;
+      mutable e_reason: e_reason;
       (* terms [f(t1…tn) --> v] with [t_i --> sig[i]] *)
     }
 
     let pp_reason out {e_level=lvl;e_term=t} =
       Fmt.fprintf out "%a[at %d]" Term.debug t lvl
     let pp_entry out (e:tbl_entry) =
-      Fmt.fprintf out "(@[<hv>entry@ :sig %a@ :val %a@ :reasons (@[%a@])@])"
-        pp_sig e.e_sig Value.pp e.e_value (Util.pp_list pp_reason) e.e_reasons
+      Fmt.fprintf out "(@[<hv>entry@ :sig %a@ :val %a@ :reason (@[%a@])@])"
+        pp_sig e.e_sig Value.pp e.e_value pp_reason e.e_reason
 
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512
@@ -176,25 +176,35 @@ let build p_id Plugin.S_nil : Plugin.t =
           let sigtr = { sig_head=id; sig_args=Array.map Term.value_exn args } in
           Log.debugf 15
             (fun k->k "(@[uf.check_sig@ :sig %a@ :term %a@])" pp_sig sigtr Term.debug t);
-          let entry = match Sig_tbl.get tbl_ sigtr with
+          begin match Sig_tbl.get tbl_ sigtr with
             | None ->
+              let lev_back = Term.max_level (Term.level t) (Term.level_semantic t) in
+              let reason = {e_level=lev_back; e_term=t} in
               (* add new entry *)
               let entry = {
                 e_sig=sigtr;
                 e_value=v;
-                e_reasons=[]
+                e_reason=reason;
               } in
               Sig_tbl.add tbl_ sigtr entry;
-              entry
+              assert (lev_back>=0);
+              (* on backtracking, remove [t] from reasons, and possibly remove
+                 the whole entry *)
+              let on_backtrack () =
+                Log.debugf 15
+                  (fun k->k "(@[<hv>uf.remove_entry@ :sig %a@ :lev %d@ :yields (@[%a@])@])"
+                      pp_sig sigtr lev_back pp_reason entry.e_reason);
+                Sig_tbl.remove tbl_ sigtr;
+              in
+              Actions.on_backtrack acts on_backtrack
             | Some entry ->
               if Value.equal v entry.e_value then (
-                entry
+                () (* compatible *)
               ) else (
                 (* conflict *)
-                assert (entry.e_reasons <> []);
                 (*Format.printf "tbl: %a@ entry %a@."
                     (Sig_tbl.print pp_sig pp_entry) tbl_ pp_entry entry;*)
-                let {e_term=u;_} = List.hd entry.e_reasons in
+                let {e_term=u;_} = entry.e_reason in
                 Log.debugf 5
                   (fun k->k
                       "(@[<hv>uf.congruence_conflict@ :sig %a@ :t %a@ :u %a@ \
@@ -210,22 +220,7 @@ let build p_id Plugin.S_nil : Plugin.t =
                   Actions.raise_conflict acts c lemma_congruence_semantic
                 )
               )
-          in
-          let lev_back = Term.max_level (Term.level t) (Term.level_semantic t) in
-          assert (lev_back>=0);
-          entry.e_reasons <- {e_level=lev_back; e_term=t} :: entry.e_reasons;
-          (* on backtracking, remove [t] from reasons, and possibly remove
-             the whole entry *)
-          let on_backtrack () =
-            entry.e_reasons <- remove_higher_lvl lev_back entry.e_reasons;
-            Log.debugf 15
-              (fun k->k "(@[<hv>uf.remove_entry@ :sig %a@ :lev %d@ :yields (@[%a@])@])"
-                  pp_sig sigtr lev_back (Util.pp_list pp_reason) entry.e_reasons);
-            if entry.e_reasons = [] then (
-              Sig_tbl.remove tbl_ sigtr;
-            )
-          in
-          Actions.on_backtrack acts lev_back on_backtrack
+          end
         | _ -> assert false
       end
 

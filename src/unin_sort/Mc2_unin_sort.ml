@@ -20,23 +20,21 @@ type reason = {
 
 (* list of unit constraints for a term. Each constraint maps
    a value to a list of reasons why the term cannot be this value *)
-type constraint_list =
+type unit_constraints =
   | C_none
   | C_diseq of {
-      tbl: reason list Value.Tbl.t;
+      tbl: reason Value.Tbl.t;
     } (** Term is none of these values *)
   | C_eq of {
       value: value;
-      mutable l: reason list;
-      diseq_tbl: reason list Value.Tbl.t lazy_t;
+      reason: reason;
     } (** Term equal value *)
 
 (* current knowledge for a value of an uninterpreted type *)
 type decide_state +=
   | DS of {
-      mutable c_list : constraint_list;
-      (* list of constraints on the term.
-         invariant: all the [C_singleton] cases come first *)
+      mutable c_list : unit_constraints;
+      (* constraints on the term. *)
     }
 
 (* uninterpreted types *)
@@ -66,12 +64,8 @@ let tc_lemma =
   in
   { tcl_pp }
 
-let c_list_as_seq (tbl:reason list Value.Tbl.t) : (value * reason) Sequence.t =
+let[@inline] c_list_as_seq (tbl:reason Value.Tbl.t) : (value * reason) Sequence.t =
   Value.Tbl.to_seq tbl
-  |> Sequence.flat_map
-    (fun (v,l) ->
-       Sequence.of_list l
-       |> Sequence.map (fun t -> v,t))
 
 let pp_v_reason_eq out (v,rn): unit =
   Fmt.fprintf out "(@[eq:v %a@ :lvl %d@ :other %a@ :eqn %a@])"
@@ -81,11 +75,10 @@ let pp_v_reason_neq out (v,rn): unit =
   Fmt.fprintf out "(@[diff :v %a@ :lvl %d@ :other %a@ :diseqn %a@])"
     Value.pp v rn.lvl Term.debug rn.other Atom.debug rn.atom
 
-let pp_c_list out (c_l:constraint_list) = match c_l with
+let pp_c_list out (c_l:unit_constraints) = match c_l with
   | C_none -> Fmt.string out "ø"
-  | C_eq {value;l;_} ->
-    let l = Sequence.of_list l |> Sequence.map (CCPair.make value) in
-    Fmt.fprintf out "{@[<hv>%a@]}" (Util.pp_seq pp_v_reason_eq) l
+  | C_eq {value;reason;_} ->
+    Fmt.fprintf out "%a" pp_v_reason_eq(value,reason)
   | C_diseq {tbl} ->
     Fmt.fprintf out "{@[<hv>%a@]}"
       (Util.pp_seq pp_v_reason_neq) (c_list_as_seq tbl)
@@ -181,19 +174,17 @@ let build ~propagate p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       | Conflict_neq_eq of {other:term; eqn:atom} (* atom is equal and disequal to value. arg=Eq *)
 
     (* find a conflicting constraints in [l] for [t=v] *)
-    let find_conflict_eq_ (v:value) (l:constraint_list) : conflict_opt =
+    let find_conflict_eq_ (v:value) (l:unit_constraints) : conflict_opt =
       begin match l with
         | C_none -> Conflict_none
         | C_diseq {tbl} ->
           begin match Value.Tbl.find tbl v with
-            | [] -> assert false
-            | {atom;other;_} :: _ ->
+            | {atom;other;_} ->
               assert (Atom.is_neg atom);
               Conflict_eq_neq {diseqn=atom;other}
             | exception Not_found -> Conflict_none
           end
-        | C_eq {l=[];_} -> assert false
-        | C_eq {value=v2;l={other;atom;_}::_;_} ->
+        | C_eq {value=v2;reason={other;atom;_};_} ->
           if Value.equal v v2 then (
             Conflict_none
           ) else (
@@ -203,10 +194,9 @@ let build ~propagate p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       end
 
     (* find a conflicting constraints in [l] for [t≠v] *)
-    let find_conflict_diseq_ (v:value) (l:constraint_list) : conflict_opt =
+    let find_conflict_diseq_ (v:value) (l:unit_constraints) : conflict_opt =
       begin match l with
-        | C_eq {l=[];_} -> assert false
-        | C_eq {value;l={atom;other;_}::_;_} ->
+        | C_eq {value;reason={atom;other;_};_} ->
           if Value.equal v value
           then Conflict_neq_eq {eqn=atom;other}
           else Conflict_none
@@ -248,14 +238,13 @@ let build ~propagate p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
           end;
           (* just add constraint *)
           let lvl = max (Atom.level eqn) (Term.level other) in
-          Actions.on_backtrack acts lvl (fun () -> Actions.mark_dirty acts t);
+          let old_c_list = ds.c_list in
+          Actions.on_backtrack acts (fun () -> ds.c_list <- old_c_list);
           let r = {other;atom=eqn;lvl} in
           begin match ds.c_list with
-            | C_none ->
-              ds.c_list <- C_eq {value=v;l=[r];diseq_tbl=lazy (Value.Tbl.create 5)};
-            | C_eq eq -> eq.l <- r :: eq.l
-            | C_diseq {tbl} ->
-              ds.c_list <- C_eq {value=v;l=[r];diseq_tbl=Lazy.from_val tbl};
+            | C_none -> ds.c_list <- C_eq {value=v;reason=r};
+            | C_eq _ -> () (* do not change *)
+            | C_diseq _ -> ds.c_list <- C_eq {value=v;reason=r};
           end;
           Log.debugf 30
             (fun k->k
@@ -292,20 +281,23 @@ let build ~propagate p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
               Actions.raise_conflict acts conflict lemma
             | Conflict_none -> ()
           end;
-          (* just add constraint *)
-          let lvl = max (Atom.level diseqn) (Term.level other) in
-          Actions.on_backtrack acts lvl (fun () -> Actions.mark_dirty acts t);
+          let add_tbl tbl =
+            if not (Value.Tbl.mem tbl v) then (
+              Actions.on_backtrack acts (fun () -> Value.Tbl.remove tbl v);
+              let lvl = max (Atom.level diseqn) (Term.level other) in
+              Value.Tbl.add tbl v {other;atom=diseqn;lvl};
+            )
+          in
           (* add constraint *)
-          let tbl = match ds.c_list with
-            | C_eq _ -> assert false
-            | C_diseq {tbl} -> tbl
+          begin match ds.c_list with
+            | C_eq _ -> ()
+            | C_diseq {tbl} -> add_tbl tbl
             | C_none ->
+              (* lazy initialization *)
               let tbl = Value.Tbl.create 6 in
               ds.c_list <- C_diseq {tbl};
-              tbl
-          in
-          let l = Value.Tbl.get_or ~default:[] tbl v in
-          Value.Tbl.replace tbl v ({other;atom=diseqn;lvl} :: l);
+              add_tbl tbl
+          end
         | _ -> assert false
       end
 
@@ -374,7 +366,7 @@ let build ~propagate p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       tc_term.tct_map <- map
 
     (* find a value that is authorized by the list of constraints *)
-    let[@inline] find_value (l:constraint_list): value = match l with
+    let[@inline] find_value (l:unit_constraints): value = match l with
       | C_none -> V.mk 0
       | C_eq {value;_} -> value
       | C_diseq {tbl} ->
@@ -412,40 +404,8 @@ let build ~propagate p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let[@inline] filter_r_list level : reason list -> reason list =
       CCList.filter (fun {lvl;_} -> lvl <= level)
 
-    (* filter constraints of level bigger than [lvl] *)
-    let rec filter_lvl_ lvl (l:constraint_list) : constraint_list =
-      begin match l with
-        | C_none -> C_none
-        | C_eq {value;l;diseq_tbl} ->
-          let l = filter_r_list lvl l in
-          if CCList.is_empty l then (
-            (* no equality anymore, fallback to diseq *)
-            if Lazy.is_val diseq_tbl then
-              filter_lvl_ lvl (C_diseq {tbl=Lazy.force diseq_tbl})
-            else C_none
-          ) else C_eq {value;l;diseq_tbl}
-        | C_diseq {tbl} ->
-          Value.Tbl.iter
-            (fun v l ->
-               let l = filter_r_list lvl l in
-               if CCList.is_empty l then Value.Tbl.remove tbl v
-               else Value.Tbl.replace tbl v l)
-            tbl;
-          if Value.Tbl.length tbl = 0 then C_none else C_diseq{tbl}
-      end
-
-    (* refresh the state of terms whose type is uninterpreted *)
-    let refresh_state (lvl:level) (t:term) : unit =
-      begin match t.t_var with
-        | Var_semantic {v_decide_state=DS ds; _} ->
-          ds.c_list <- filter_lvl_ lvl ds.c_list;
-          Log.debugf 15 (fun k->k"(@[%s.refresh_state :lvl %d@ %a@ :clist %a@])"
-              name lvl Term.debug t pp_c_list ds.c_list);
-        | _ -> assert false
-      end
-
     let tc_ty : tc_ty =
-      Type.tc_mk ~refresh_state ~pp:pp_ty ~decide ~mk_state ~eq:mk_eq ()
+      Type.tc_mk ~pp:pp_ty ~decide ~mk_state ~eq:mk_eq ()
 
     (* make a concrete instance of the type *)
     let make_sort (id:ID.t) (args:Type.t list) : Type.t =

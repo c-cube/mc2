@@ -61,10 +61,6 @@ val subterms : t -> t list
 val decide_state_exn : t -> decide_state
 (** Obtain decide state, or raises if the variable is not semantic *)
 
-val recompute_state : level -> t -> unit
-(** Recompute internal {!decide_state}, assuming the set of unit
-    constraints changed (typically, after some backtracking) *)
-
 val weight : t -> float (** Heuristic weight *)
 val set_weight : t -> float -> unit
 
@@ -79,10 +75,6 @@ val mk_eq : t -> t -> t
 val gc_unmark : t -> unit (** Unmark just this term *)
 val gc_marked : t -> bool
 val gc_mark : t -> unit (** Non recursive *)
-
-val dirty : t -> bool
-val dirty_mark : t -> unit
-val dirty_unmark : t -> unit
 
 val field_get : Term_fields.field -> t -> bool
 val field_set : Term_fields.field -> t -> unit

@@ -20,9 +20,7 @@ val propagate_val_eval : t -> term -> value -> subs:(term * value) list -> unit
 
 val propagate_val_lemma : t -> term -> value -> rw_into:term -> atom list -> lemma -> unit
 
-val mark_dirty : t -> term -> unit
-
 val raise_conflict : t -> atom list -> lemma -> 'a
 
-val on_backtrack : t -> level -> (unit -> unit) -> unit
+val on_backtrack : t -> (unit -> unit) -> unit
 

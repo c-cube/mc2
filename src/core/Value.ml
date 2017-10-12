@@ -44,8 +44,10 @@ let[@inline] bool_neg = function
   | V_false -> true_
   | v -> v
 
-module Tbl = CCHashtbl.Make(struct
-    type t = value
-    let equal = equal
-    let hash = hash
-  end)
+module As_key = struct
+  type t = value
+  let equal = equal
+  let hash = hash
+end
+
+module Tbl = CCHashtbl.Make(As_key)
