@@ -117,9 +117,9 @@ module Make(X : sig end) : S = struct
 
   type field = int (* a mask *)
 
-  let get field x = (x land field) <> 0
+  let[@inline] get field x = (x land field) <> 0
 
-  let set field b x =
+  let[@inline] set field b x =
     if b then x lor field else x land (lnot field)
 
   let mk_field () =
