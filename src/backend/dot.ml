@@ -33,7 +33,7 @@ end
 
 module Default = struct
 
-  let print_atom = Atom.pp
+  let print_atom out a = Fmt.fprintf out "@[<h>%a@]" Atom.pp a
 
   let hyp_info c =
     "hypothesis", Some "LIGHTBLUE",
