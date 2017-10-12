@@ -105,7 +105,7 @@ module V = struct
   let[@inline] mk (i:int) : value = Value.make tc_value (V_unin i)
 end
 
-let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
+let build ~propagate p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
   (* equality literals *)
   let module Term_alloc = Term.Term_allocator(struct
       let initial_size = 64
@@ -262,7 +262,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                 "(@[<hv>%s.add_singleton.done@ :to %a@ :c_list %a@])"
                 name Term.debug t pp_c_list ds.c_list);
           (* also, propagate, if not assigned yet ! *)
-          if not (Term.has_some_value t) then (
+          if propagate && not (Term.has_some_value t) then (
             let lemma = Lemma.make Equality tc_lemma in
             Actions.propagate_val_lemma acts t v ~rw_into:other [eqn] lemma;
           )
@@ -468,11 +468,11 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
   in
   (module P : Plugin.S)
 
-let plugin =
+let plugin ~propagate =
   Plugin.Factory.make
     ~priority:5
     ~name
     ~requires:Plugin.(K_cons (Builtins.k_true, K_nil))
-    ~build
+    ~build:(build ~propagate)
     ()
 

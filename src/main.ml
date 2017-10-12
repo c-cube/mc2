@@ -20,6 +20,7 @@ let p_dot_proof = ref ""
 let p_proof_print = ref false
 let p_model = ref false
 let check = ref true
+let unin_sort_propagate = ref false
 let time_limit = ref 300.
 let size_limit = ref 1000_000_000.
 let restarts = ref true
@@ -92,6 +93,8 @@ let argspec = Arg.align [
     "-size", Arg.String (int_arg size_limit), " <s>[kMGT] sets the size limit for the sat solver";
     "-time", Arg.String (int_arg time_limit), " <t>[smhd] sets the time limit for the sat solver";
     "-v", Arg.Int Log.set_debug, "<lvl> sets the debug verbose level";
+    "-unin-sort-prop", Arg.Set unin_sort_propagate, " propagations in unin-sort";
+    "-no-unin-sort-prop", Arg.Clear unin_sort_propagate, " no propagations in unin-sort";
   ]
 
 type syntax =
@@ -119,7 +122,7 @@ let main () =
         ]
       | Smtlib ->
         [ Mc2_propositional.plugin;
-          Mc2_unin_sort.plugin;
+          Mc2_unin_sort.plugin ~propagate:!unin_sort_propagate;
           Mc2_uf.plugin;
         ]
     in

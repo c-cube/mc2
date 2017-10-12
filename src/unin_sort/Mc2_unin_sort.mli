@@ -13,4 +13,4 @@ val k_make : (ID.t -> Type.t list -> Type.t) Service.Key.t
 val k_eq : (term -> term -> term) Service.Key.t
 (** Equality between terms of unintepreted sorts *)
 
-val plugin : Plugin.Factory.t
+val plugin : propagate:bool -> Plugin.Factory.t
