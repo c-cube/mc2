@@ -178,9 +178,9 @@ and atom = {
 and term_assignment =
   | TA_none
   | TA_assign of {
-      mutable level : int; (** Decision level of the assignment *)
-      mutable value: value;
-      mutable reason: reason;
+      level : int; (** Decision level of the assignment *)
+      value: value;
+      reason: reason;
     }
 
 and clause = {
