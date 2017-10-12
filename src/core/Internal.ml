@@ -549,6 +549,8 @@ let cancel_until (env:t) (lvl:int) : unit =
   assert (Vec.size env.decision_levels = Vec.size env.backtrack_levels);
   ()
 
+exception Conflict of clause
+
 (* Unsatisfiability is signaled through an exception, since it can happen
    in multiple places (adding new clauses, or solving for instance). *)
 let report_unsat (env:t) (confl:clause) : _ =
@@ -618,7 +620,15 @@ let enqueue_bool (env:t) (a:atom) ~level:level (reason:reason) : unit =
 (* atom [a] evaluates to [true] because of [terms] *)
 let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
   if Atom.is_true a then ()
-  else (
+  else if Atom.is_false a then (
+    (* conflict *)
+    begin match Term.reason_exn a.a_term with
+      | Bcp c | Bcp_lazy (lazy c) ->
+        raise (Conflict c)
+      | Decision -> assert false
+      | Eval _ -> assert false
+    end
+  ) else (
     assert (List.for_all Term.is_added terms);
     (* level of propagations is [max_{t in terms} t.level] *)
     let lvl =
@@ -753,8 +763,6 @@ module Conflict = struct
     (Array.fold_left[@inlined])
       (fun acc p -> max acc (Atom.level p)) 0 c.c_atoms
 end
-
-exception Conflict of Conflict.t
 
 module Conflict_res = struct
   (* result of conflict analysis, containing the learnt clause and some
@@ -1306,24 +1314,7 @@ end = struct
           "(@[<hv>solver.@{<yellow>semantic_propagate_bool@}@ %a@ :val %B@ :subs %a@])"
           Term.debug t b pp_subs subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
-    if Atom.is_false a then (
-      (* conflict! *)
-      assert false
-      (* FIXME
-      let lvl_eval = decision_level env in
-      let value_assign = if Atom.is_pos a then Value.false_ else Value.true_ in
-      let lvl_assign = Atom.level a in
-      let value_eval = Value.of_bool b in
-      assert (not @@ Value.equal value_eval value_assign);
-      let c = Conflict.Conflict_eval {
-          term=a.a_term; subs; value_assign; lvl_assign;
-          value_eval; reason_assign=Term.reason_exn a.a_term; lvl_eval;
-        } in
-      raise (Conflict c)
-           *)
-    ) else (
-      enqueue_semantic_bool_eval env a subs
-    )
+    enqueue_semantic_bool_eval env a subs
 
   let propagate_bool_lemma (env:t) t (v:bool) atoms lemma : unit =
     let a = if v then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
