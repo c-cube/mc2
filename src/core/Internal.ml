@@ -513,8 +513,7 @@ let cancel_until (env:t) (lvl:int) : unit =
     (* We set the head of the solver and theory queue to what it was. *)
     let top = Vec.get env.decision_levels lvl in
     let backtrack_top = Vec.get env.backtrack_levels lvl in
-    env.bcp_head <- top; (* will need to repropagate from there *)
-    env.th_head <- top;
+    env.th_head <- top; (* will need to repropagate from there *)
     let head = ref top in
     (* Now we need to cleanup the vars that are not valid anymore
        (i.e to the right of propagate_head in the queue).
@@ -536,6 +535,8 @@ let cancel_until (env:t) (lvl:int) : unit =
         )
       )
     done;
+    (* elements we kept are already BCP, update pointers accordingly *)
+    env.bcp_head <- !head;
     (* Resize the vectors according to their new size. *)
     Vec.shrink env.trail !head;
     Vec.shrink env.decision_levels lvl;
@@ -655,7 +656,6 @@ let enqueue_bool_theory_propagate (env:t) (a:atom)
 (* MCsat semantic assignment *)
 let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) ~(level:int) : unit =
   if Term.has_some_value t then (
-    (* FIXME: check for conflict instead *)
     Log.debugf error
       (fun k -> k "Trying to assign an already assigned literal: %a" Term.debug t);
     assert false
@@ -759,7 +759,7 @@ module Conflict = struct
 
   let[@inline] pp out (c:t) = Clause.debug out c
 
-  let level (c:t) : level =
+  let[@inline] level (c:t) : level =
     (Array.fold_left[@inlined])
       (fun acc p -> max acc (Atom.level p)) 0 c.c_atoms
 end
@@ -784,7 +784,6 @@ module Analyze : sig
 end = struct
   (* state for conflict analysis *)
   type state = {
-    cs_env: t;
     cs_conflict_level: int; (* conflict level *)
     mutable cs_continue: bool;
     mutable cs_n_to_analyze: int; (* number of atoms yet to analyze *)
@@ -792,18 +791,20 @@ end = struct
     mutable cs_clause: clause option; (* current clause to analyze *)
     mutable cs_learnt: atom list; (* resulting clause to be learnt *)
     mutable cs_history: raw_premise_step list; (* proof object *)
-    cs_t_seen: term Vec.t; (** terms seen so far, for cleanup *)
   }
+
+  (** terms seen so far, for cleanup *)
+  let[@inline] seen (env:t) = env.tmp_term_vec
 
   (* find which level to backtrack to, given a conflict clause
      and a boolean stating whether it is a UIP ("Unique Implication Point")
      precondition: the atoms with highest decision level are first in the array *)
-  let backtrack_lvl (st:state) (a:atom array) : int * bool =
+  let backtrack_lvl (env:t) (a:atom array) : int * bool =
     if Array.length a <= 1 then (
       0, true (* unit or empty clause *)
     ) else (
-      assert (Atom.level a.(0) >= base_level st.cs_env);
-      assert (Atom.level a.(1) >= base_level st.cs_env);
+      assert (Atom.level a.(0) >= base_level env);
+      assert (Atom.level a.(1) >= base_level env);
       if Atom.level a.(0) > Atom.level a.(1) then (
         (* backtrack below [a], so we can propagate [not a] *)
         Atom.level a.(1), true
@@ -815,8 +816,8 @@ end = struct
         (* NOTE: clauses can be deduced that are not semantic splits
            nor regular conflict clause, thanks to paramodulation *)
         assert (Atom.level a.(0) >= Atom.level a.(1));
-        assert (Atom.level a.(0) >= base_level st.cs_env);
-        max (Atom.level a.(0) - 1) (base_level st.cs_env), false
+        assert (Atom.level a.(0) >= base_level env);
+        max (Atom.level a.(0) - 1) (base_level env), false
       )
     )
 
@@ -832,7 +833,7 @@ end = struct
      propagated it. Note that there cannot be two decision literals
      above the conflict_level.
   *)
-  let analyze_loop (st:state) : unit =
+  let analyze_loop (env:t) (st:state) : unit =
     while st.cs_continue do
       (* if we have a clause, do resolution on it by marking all its
          literals that are not "seen" yet. *)
@@ -844,7 +845,7 @@ end = struct
             (fun k->k "(@[analyze_conflict.resolving@ :clause %a@])" Clause.debug clause);
           (* increase activity since [c] participates in a conflict *)
           begin match clause.c_premise with
-            | P_raw_steps _ | P_steps _ -> bump_clause_activity st.cs_env clause
+            | P_raw_steps _ | P_steps _ -> bump_clause_activity env clause
             | Hyp | Local | Simplify _ | Lemma _ -> ()
           end;
           st.cs_history <- clause :: st.cs_history;
@@ -868,11 +869,11 @@ end = struct
                to resolution with another clause *)
             if not (Term.marked q.a_term) then (
               Term.mark q.a_term;
-              Vec.push st.cs_t_seen q.a_term;
+              Vec.push (seen env) q.a_term;
               (* only atoms above level 0 can participate to the conflict,
                  these proved at level 0 would bring no information *)
               if Atom.level q > 0 then (
-                bump_term_activity st.cs_env q.a_term;
+                bump_term_activity env q.a_term;
                 if Atom.level q >= st.cs_conflict_level then (
                   st.cs_n_to_analyze <- 1 + st.cs_n_to_analyze;
                 ) else (
@@ -886,7 +887,7 @@ end = struct
 
       (* look for the next node to expand by going down the trail *)
       while
-        let t = Vec.get st.cs_env.trail st.cs_ptr_trail in
+        let t = Vec.get env.trail st.cs_ptr_trail in
         Log.debugf 30 (fun k -> k "(@[conflict_analyze.at_trail_elt@ %a@])" Term.debug t);
         begin match t.t_var with
           | Var_none -> assert false
@@ -902,7 +903,7 @@ end = struct
         st.cs_ptr_trail <- st.cs_ptr_trail - 1;
       done;
       (* now [t] is the term to analyze. *)
-      let t = Vec.get st.cs_env.trail st.cs_ptr_trail in
+      let t = Vec.get env.trail st.cs_ptr_trail in
       let p = Term.Bool.assigned_atom_exn t in
       st.cs_n_to_analyze <- st.cs_n_to_analyze - 1;
       st.cs_ptr_trail <- st.cs_ptr_trail - 1;
@@ -932,30 +933,28 @@ end = struct
     assert (decision_level env > 0);
     let conflict_level = Conflict.level c in
     let st = {
-      cs_env=env;
       cs_n_to_analyze=0;
       cs_learnt=[];
       cs_continue=true;
-      cs_t_seen=env.tmp_term_vec;
       cs_clause=Some c;
       cs_ptr_trail=(Vec.size env.trail - 1);
       cs_history=[];
       cs_conflict_level=conflict_level;
     } in
-    Vec.clear st.cs_t_seen;
+    Vec.clear (seen env);
     Log.debugf 15
       (fun k -> k "(@[analyze_conflict (%d/%d)@ :conflict %a@])"
           conflict_level (decision_level env) Clause.debug c);
     assert (conflict_level >= 0);
-    analyze_loop st;
-    Vec.iter Term.unmark st.cs_t_seen;
-    Vec.clear st.cs_t_seen;
+    analyze_loop env st;
+    Vec.iter Term.unmark (seen env);
+    Vec.clear (seen env);
     (* put high level atoms first *)
     let learnt_a = Array.of_list st.cs_learnt in
     put_high_level_atoms_first learnt_a;
     Log.debugf debug
       (fun k -> k "(@[analyze_conflict.learnt@ %a@])" Clause.debug_atoms_a learnt_a);
-    let level, is_uip = backtrack_lvl st learnt_a in
+    let level, is_uip = backtrack_lvl env learnt_a in
     {Conflict_res.
       cr_backtrack_lvl = level;
       cr_learnt = learnt_a;
@@ -1024,7 +1023,9 @@ let add_conflict (env:t) (confl:clause): unit =
   env.conflicts <- env.conflicts + 1;
   assert (decision_level env >= base_level env);
   if decision_level env = base_level env ||
-     Conflict.level confl <= base_level env
+     CCArray.for_all
+       (fun a -> Atom.level a <= base_level env)
+       confl.c_atoms
   then (
     report_unsat env confl (* Top-level conflict *)
   );
@@ -1214,8 +1215,7 @@ let[@inline] propagate_in_watching_term (env:t) (t:term) ~watch =
   t.t_tc.tct_update_watches (actions env) t ~watch
 
 (* propagate in every term that watches [t] *)
-let propagate_term (env:t) (t:term): unit =
-  let lazy watched = t.t_watches in
+let propagate_term_real (env:t) (t:term) watched: unit =
   let i = ref 0 in
   while !i < Vec.size watched do
     let u = Vec.get watched !i in
@@ -1230,6 +1230,14 @@ let propagate_term (env:t) (t:term): unit =
            inspect [!i] again since it's now another term *)
     end
   done
+
+(* propagate term by notifying all watchers. This is the fast path
+   in case there are no watchers. *)
+let[@inline] propagate_term (env:t) (t:term) : unit =
+  let lazy watched = t.t_watches in
+  if Vec.size watched > 0 then (
+    propagate_term_real env t watched
+  )
 
 (* some terms were decided/propagated. Now we
    need to inform the plugins about these assignments, so they can do their job.
