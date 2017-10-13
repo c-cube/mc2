@@ -261,7 +261,11 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
           let old_c_list = ds.c_list in
           Actions.on_backtrack acts (fun () -> ds.c_list <- old_c_list);
           let r = {other;atom=eqn;lvl} in
-          ds.c_list <- C_eq {value=v;reason=r};
+          begin match ds.c_list with
+            | C_none -> ds.c_list <- C_eq {value=v;reason=r};
+            | C_eq _ -> () (* do not change *)
+            | C_diseq _ -> ds.c_list <- C_eq {value=v;reason=r};
+          end;
           Log.debugf 30
             (fun k->k
                 "(@[<hv>%s.add_singleton.done@ :to %a@ :c_list %a@])"
@@ -293,14 +297,11 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
             | Conflict_none -> ()
           end;
           let add_tbl tbl =
-            let old = Value.Tbl.get tbl v in
-            let lvl = max (Atom.level diseqn) (Term.level other) in
-            Value.Tbl.replace tbl v {other;atom=diseqn;lvl};
-            (* restore to previous state on backtrack *)
-            Actions.on_backtrack acts
-              (fun () -> match old with
-                 | None -> Value.Tbl.remove tbl v
-                 | Some old_e -> Value.Tbl.replace tbl v old_e);
+            if not (Value.Tbl.mem tbl v) then (
+              Actions.on_backtrack acts (fun () -> Value.Tbl.remove tbl v);
+              let lvl = max (Atom.level diseqn) (Term.level other) in
+              Value.Tbl.add tbl v {other;atom=diseqn;lvl};
+            )
           in
           (* add constraint *)
           begin match ds.c_list with

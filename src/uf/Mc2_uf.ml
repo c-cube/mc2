@@ -178,42 +178,34 @@ let build p_id Plugin.S_nil : Plugin.t =
           let sigtr = { sig_head=id; sig_args=Array.map Term.value_exn args } in
           Log.debugf 15
             (fun k->k "(@[uf.check_sig@ :sig %a@ :term %a@])" pp_sig sigtr Term.debug t);
-          (* new entry *)
-          let lev_back = Term.max_level (Term.level t) (Term.level_semantic t) in
-          let reason = {e_level=lev_back; e_term=t} in
-          let entry = {
-            e_sig=sigtr;
-            e_value=v;
-            e_reason=reason;
-          } in
-          (* check current state *)
           begin match Sig_tbl.get tbl_ sigtr with
             | None ->
+              let lev_back = Term.max_level (Term.level t) (Term.level_semantic t) in
+              let reason = {e_level=lev_back; e_term=t} in
+              (* add new entry *)
+              let entry = {
+                e_sig=sigtr;
+                e_value=v;
+                e_reason=reason;
+              } in
               Sig_tbl.add tbl_ sigtr entry;
               assert (lev_back>=0);
-              (* on backtracking, remove the whole entry *)
+              (* on backtracking, remove [t] from reasons, and possibly remove
+                 the whole entry *)
               Actions.on_backtrack acts
                 (fun () ->
                    Log.debugf 15
                      (fun k->k "(@[<hv>uf.remove_entry@ :sig %a@ :lev %d@ :yields (@[%a@])@])"
                          pp_sig sigtr lev_back pp_reason entry.e_reason);
                    Sig_tbl.remove tbl_ sigtr)
-            | Some old_entry ->
-              if Value.equal v old_entry.e_value then (
-                (* compatible, replace *)
-                Sig_tbl.replace tbl_ sigtr entry;
-                (* on backtracking, restore old entry *)
-                Actions.on_backtrack acts
-                  (fun () ->
-                     Log.debugf 15
-                       (fun k->k "(@[<hv>uf.restore_entry@ :sig %a@ :lev %d@ :yields (@[%a@])@])"
-                           pp_sig sigtr lev_back pp_reason old_entry.e_reason);
-                     Sig_tbl.replace tbl_ sigtr old_entry)
+            | Some entry ->
+              if Value.equal v entry.e_value then (
+                () (* compatible *)
               ) else (
                 (* conflict *)
                 (*Format.printf "tbl: %a@ entry %a@."
                     (Sig_tbl.print pp_sig pp_entry) tbl_ pp_entry entry;*)
-                let u = old_entry.e_reason.e_term in
+                let u = entry.e_reason.e_term in
                 Log.debugf 5
                   (fun k->k
                       "(@[<hv>uf.congruence_conflict@ :sig %a@ :t %a@ :u %a@ \
@@ -221,7 +213,7 @@ let build p_id Plugin.S_nil : Plugin.t =
                       pp_sig sigtr Term.debug t Term.debug u
                       (Fmt.Dump.list Term.debug) (Term.subterms t)
                       (Fmt.Dump.list Term.debug) (Term.subterms u));
-                if Term.is_bool t then (
+                if Type.is_bool (Term.ty t) then (
                   let c = mk_conflict_clause_bool t u in
                   Actions.raise_conflict acts c lemma_congruence_bool
                 ) else (
