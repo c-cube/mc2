@@ -87,17 +87,6 @@ val add_watch : t -> t -> unit
 (** [add_watch t u] adds [u] to the list of watches of [t]. [u] will be
     notified whenever [t] is assigned *)
 
-(** Make a new typeclass *)
-val tc_mk :
-  ?init:(actions -> term -> unit) ->
-  ?update_watches:(actions -> term -> watch:term -> watch_res) ->
-  ?delete:(term -> unit) ->
-  ?subterms:(term_view -> (term->unit) -> unit) ->
-  ?eval:(term -> eval_res) ->
-  pp:term_view CCFormat.printer ->
-  unit ->
-  tc
-
 (** {2 Bool terms} *)
 
 module Bool : sig
@@ -211,6 +200,47 @@ module Unsafe : sig
 end
 (**/**)
 
+(** {2 Typeclass} *)
+module TC : sig
+  type t = tc
+
+  (** Make a new typeclass, directly *)
+  val make :
+    ?init:(actions -> term -> unit) ->
+    ?update_watches:(actions -> term -> watch:term -> watch_res) ->
+    ?delete:(term -> unit) ->
+    ?subterms:(term_view -> (term->unit) -> unit) ->
+    ?eval:(term -> eval_res) ->
+    pp:term_view CCFormat.printer ->
+    unit ->
+    t
+
+  (** Lazy builder *)
+
+  type lazy_tc
+
+  val lazy_from_val : t -> lazy_tc
+
+  val lazy_make : unit -> lazy_tc
+  (** Make a new typeclass, without providing the actual functions *)
+
+  val lazy_get : lazy_tc -> tc
+  (** Obtain the underlying typeclass;
+      call only after {!lazy_complete} *)
+
+  val lazy_complete :
+    ?init:(actions -> term -> unit) ->
+    ?update_watches:(actions -> term -> watch:term -> watch_res) ->
+    ?delete:(term -> unit) ->
+    ?subterms:(term_view -> (term->unit) -> unit) ->
+    ?eval:(term -> eval_res) ->
+    pp:term_view CCFormat.printer ->
+    lazy_tc ->
+    unit
+    (** Now provide functions for this TC.
+        @raise Failure if the TC is already defined *)
+end
+
 (** {2 Hashconsing of terms belonging to a Plugin} *)
 
 module type TERM_ALLOC_OPS = sig
@@ -218,10 +248,11 @@ module type TERM_ALLOC_OPS = sig
   val initial_size: int (** initial size of table *)
   val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
   val hash : view -> int (** Shallow hash of a view of the plugin *)
+  val tc : TC.lazy_tc (** Typeclass for terms *)
 end
 
 module type TERM_ALLOC = sig
-  val make : view -> Type.t -> tc_term -> t (** Make a term of the theory *)
+  val make : view -> Type.t -> t (** Make a term of the theory *)
   val delete : t -> unit (** Delete a term of the theory *)
   val iter_terms : term Sequence.t (** All terms *)
   val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)

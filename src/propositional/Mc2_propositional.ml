@@ -23,7 +23,7 @@ let pp out = function
   | _ -> assert false
 
 (* typeclass for terms *)
-let t_tc : tc_term = Term.tc_mk ~pp ()
+let t_tc : tc_term = Term.TC.make ~pp ()
 
 let k_cnf = Service.Key.make "propositional.cnf"
 let k_fresh = Service.Key.make "propositional.fresh"
@@ -35,6 +35,7 @@ let plugin =
       let name = name
       (* term allocator *)
       module T_alloc = Term.Term_allocator(struct
+          let tc = Term.TC.lazy_from_val t_tc
           let p_id = p_id
           let initial_size=64
           let[@inline] equal v1 v2 = match v1, v2 with
@@ -53,7 +54,7 @@ let plugin =
         fun () ->
           let view = Fresh !n in
           incr n;
-          let t = T_alloc.make view Type.bool t_tc in
+          let t = T_alloc.make view Type.bool in
           Term.Bool.pa t
 
       let[@inline] cnf ?simplify (f:F.t) : t list list = F.cnf ~fresh ?simplify f

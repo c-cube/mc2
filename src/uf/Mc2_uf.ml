@@ -28,12 +28,14 @@ type lemma_view +=
   | Congruence_bool
 
 let build p_id Plugin.S_nil : Plugin.t =
+  let tc = Term.TC.lazy_make () in
   let module P : Plugin.S = struct
     let id = p_id
     let name = name
 
     (* term allocator *)
     module T_alloc = Term.Term_allocator(struct
+        let tc = tc
         let p_id = p_id
         let initial_size=256
         let[@inline] equal v1 v2 = match v1, v2 with
@@ -251,10 +253,6 @@ let build p_id Plugin.S_nil : Plugin.t =
           ~on_all_set:(fun () -> check_sig acts t)
       | _ -> assert false
 
-    let tc : tc_term =
-      Term.tc_mk
-        ~pp ~update_watches ~init ~subterms ()
-
     let check_if_sat _ = Sat
     let gc_all = T_alloc.gc_all
     let iter_terms = T_alloc.iter_terms
@@ -294,7 +292,7 @@ let build p_id Plugin.S_nil : Plugin.t =
     (* constant builder *)
     let[@inline] const id : term =
       let ty = app_ty id [] in
-      T_alloc.make (Const {id;ty}) ty tc
+      T_alloc.make (Const {id;ty}) ty
 
     (* application builder *)
     let[@inline] app id l : term = match l with
@@ -304,7 +302,10 @@ let build p_id Plugin.S_nil : Plugin.t =
         let ty = app_ty id l in
         let args = Array.of_list l in
         let watches = Term.Watch1.dummy in
-        T_alloc.make (App {id;ty;args;watches}) ty tc
+        T_alloc.make (App {id;ty;args;watches}) ty
+
+    let () =
+      Term.TC.lazy_complete tc ~pp ~update_watches ~init ~subterms
 
     let provided_services =
       [ Service.Any (k_app, app);

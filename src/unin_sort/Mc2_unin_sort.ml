@@ -97,8 +97,11 @@ module V = struct
 end
 
 let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
+  let tc = Term.TC.lazy_make () in
+  let ty_tc = Type.TC.lazy_make () in
   (* equality literals *)
   let module Term_alloc = Term.Term_allocator(struct
+      let tc = tc
       let initial_size = 64
       let p_id = p_id
       let equal a b = match a, b with
@@ -111,6 +114,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
   in
   (* uninterpreted types *)
   let module Ty_alloc = Type.Alloc(struct
+      let tc = ty_tc
       let initial_size = 16
       let hash = function
         | Unin {id;args;_} ->
@@ -153,6 +157,24 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     let subterms v yield = match v with
       | Eq(a,b) -> yield a; yield b
       | _ -> assert false
+
+    (* make an equality literal *)
+    let mk_eq (t:term) (u:term): term =
+      if not (is_unin_sort (Term.ty t)) then (
+        Util.errorf
+          "unin_sort.eq:@ expected term of an uninterpreted sort,@ got %a"
+          Term.debug t
+      );
+      if not (Type.equal (Term.ty t) (Term.ty u)) then (
+        Util.errorf
+          "unin_sort.eq:@ terms should have same type,@ got %a@ and %a"
+          Term.debug t Term.debug u
+      );
+      if Term.equal t u then true_ (* auto-simplify *)
+      else (
+        let view = if Term.id t < Term.id u then Eq (t,u) else Eq (u,t) in
+        Term_alloc.make view Type.bool
+      )
 
     (* evaluate equality *)
     let eval (t:term) : eval_res = match Term.view t with
@@ -326,27 +348,6 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         Term.add_watch t t;
       | _ -> assert false
 
-    let tc_term : tc_term =
-      Term.tc_mk ~pp ~subterms ~update_watches ~init ~eval ()
-
-    (* make an equality literal *)
-    let mk_eq (t:term) (u:term): term =
-      if not (is_unin_sort (Term.ty t)) then (
-        Util.errorf
-          "unin_sort.eq:@ expected term of an uninterpreted sort,@ got %a"
-          Term.debug t
-      );
-      if not (Type.equal (Term.ty t) (Term.ty u)) then (
-        Util.errorf
-          "unin_sort.eq:@ terms should have same type,@ got %a@ and %a"
-          Term.debug t Term.debug u
-      );
-      if Term.equal t u then true_ (* auto-simplify *)
-      else (
-        let view = if Term.id t < Term.id u then Eq (t,u) else Eq (u,t) in
-        Term_alloc.make view Type.bool tc_term
-      )
-
     (* find a value that is authorized by the list of constraints *)
     let[@inline] find_value (l:unit_constraints): value = match l with
       | C_none -> V.mk 0
@@ -383,20 +384,23 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     (* new state: empty list of constraints *)
     let[@inline] mk_state () = DS {c_list=C_none}
 
-    let tc_ty : tc_ty =
-      Type.tc_mk ~pp:pp_ty ~decide ~mk_state ~eq:mk_eq ()
-
     (* make a concrete instance of the type *)
     let make_sort (id:ID.t) (args:Type.t list) : Type.t =
       begin match ID.Tbl.get tbl_ id with
         | Some ar when ar=List.length args ->
-          Ty_alloc.make (Unin {id;args}) tc_ty
+          Ty_alloc.make (Unin {id;args})
         | Some ar ->
           Util.errorf "wrong arity for sort %a:@ need %d args,@ got (@[%a@])"
             ID.pp id ar (Util.pp_list Type.pp) args
         | None ->
           Util.errorf "no uninterpreted sort for %a" ID.pp id
       end
+
+    let () =
+      Term.TC.lazy_complete
+        ~pp ~subterms ~update_watches ~init ~eval tc;
+      Type.TC.lazy_complete ~pp:pp_ty ~decide ~mk_state ~eq:mk_eq ty_tc;
+      ()
 
     let provided_services =
       [ Service.Any (k_decl_sort, decl_sort);

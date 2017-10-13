@@ -14,10 +14,11 @@ let tc_term =
     | Atom i -> Format.fprintf out "P%d" i
     | _ -> assert false
   in
-  Term.tc_mk ~pp ()
+  Term.TC.make ~pp ()
 
 let build p_id Plugin.S_nil : Plugin.t =
   let module T = Term.Term_allocator(struct
+      let tc = Term.TC.lazy_from_val tc_term
       let p_id = p_id
       let initial_size = 64
       let equal a b = match a, b with
@@ -30,7 +31,7 @@ let build p_id Plugin.S_nil : Plugin.t =
     let name = name
     let mk_atom i : atom =
       let sign = i>0 in
-      let t = T.make (Atom (abs i)) Type.bool tc_term in
+      let t = T.make (Atom (abs i)) Type.bool in
       if sign then Term.Bool.pa t else Term.Bool.na t
 
     let provided_services =

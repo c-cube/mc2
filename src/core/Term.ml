@@ -170,22 +170,6 @@ let[@inline] add_watch (t:t) (u:t) : unit =
   let lazy vec = t.t_watches in
   Vec.push vec u
 
-let tc_mk
-    ?(init=fun _ _ -> ())
-    ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
-    ?(delete=fun _ -> ())
-    ?(subterms=fun _ _ -> ())
-    ?(eval=fun _ -> Eval_unknown)
-    ~pp
-    () : tc =
-  { tct_init=init;
-    tct_update_watches=update_watches;
-    tct_delete=delete;
-    tct_subterms=subterms;
-    tct_pp=pp;
-    tct_eval=eval;
-  }
-
 let marked t = Term_fields.get field_t_seen t.t_fields
 let mark t = t.t_fields <- Term_fields.set field_t_seen true t.t_fields
 let unmark t = t.t_fields <- Term_fields.set field_t_seen false t.t_fields
@@ -340,6 +324,74 @@ module Watch2 = struct
     )
 end
 
+(** {2 Typeclass} *)
+
+module TC = struct
+  type t = tc
+
+  let make
+      ?(init=fun _ _ -> ())
+      ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
+      ?(delete=fun _ -> ())
+      ?(subterms=fun _ _ -> ())
+      ?(eval=fun _ -> Eval_unknown)
+      ~pp
+      () : t =
+    { tct_init=init;
+      tct_update_watches=update_watches;
+      tct_delete=delete;
+      tct_subterms=subterms;
+      tct_pp=pp;
+      tct_eval=eval;
+    }
+
+  type lazy_tc = {
+    mutable l_tc: tc option; (* filled by {!complete} *)
+    l_get: tc_term lazy_t;
+  }
+
+  let[@inline] lazy_from_val (tc:tc) : lazy_tc = {
+    l_tc=Some tc;
+    l_get=Lazy.from_val tc;
+  }
+
+  let lazy_make () : lazy_tc =
+    let rec t = {
+      l_tc=None;
+      l_get=lazy (
+        begin match t.l_tc with
+          | Some tc -> tc
+          | None -> failwith "TC_build: uninitialized TC"
+        end
+      );
+    } in
+    t
+
+  let[@inline] lazy_get {l_get=lazy t;_} = t
+
+  let lazy_complete
+      ?(init=fun _ _ -> ())
+      ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
+      ?(delete=fun _ -> ())
+      ?(subterms=fun _ _ -> ())
+      ?(eval=fun _ -> Eval_unknown)
+      ~pp
+      (t:lazy_tc) : unit =
+    begin match t.l_tc with
+      | Some _ -> failwith "TC_build.complete: already defined"
+      | None ->
+        let tc = {
+          tct_init=init;
+          tct_update_watches=update_watches;
+          tct_delete=delete;
+          tct_subterms=subterms;
+          tct_pp=pp;
+          tct_eval=eval;
+        } in
+        t.l_tc <- Some tc;
+    end
+end
+
 (** {2 Hashconsing of a Theory Terms} *)
 
 module type TERM_ALLOC_OPS = sig
@@ -347,15 +399,15 @@ module type TERM_ALLOC_OPS = sig
   val initial_size: int (** initial size of table *)
   val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
   val hash : view -> int (** Shallow hash of a view of the plugin *)
+  val tc : TC.lazy_tc (** Typeclass for terms *)
 end
 
 module type TERM_ALLOC = sig
-  val make : view -> Type.t -> tc_term -> t (** Make a term of the theory *)
+  val make : view -> Type.t -> t (** Make a term of the theory *)
   val delete : t -> unit (** Delete a term of the theory *)
   val iter_terms : term Sequence.t (** All terms *)
   val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)
 end
-
 
 module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) : TERM_ALLOC = struct
   module H = CCHashtbl.Make(struct
@@ -388,16 +440,17 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) : TERM_ALLOC = struct
       n
 
   (* build a fresh term *)
-  let make_term_ t_view t_ty t_tc : t =
+  let make_term_ t_view t_ty : t =
+    let t_tc = TC.lazy_get Ops.tc in
     let p_specific_id = get_fresh_id () in
     let t_id = Ops.p_id lor (p_specific_id lsl plugin_id_width) in
     Unsafe.make_term t_id t_view t_ty t_tc
 
   (* inline make function *)
-  let[@inline] make (view:view) (ty:Type.t) (tc:tc_term) : t =
+  let[@inline] make (view:view) (ty:Type.t) : t =
     try H.find tbl view
     with Not_found ->
-      let t = make_term_ view ty tc in
+      let t = make_term_ view ty in
       H.add tbl view t;
       t
 

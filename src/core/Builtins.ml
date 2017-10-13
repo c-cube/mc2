@@ -50,7 +50,7 @@ let build p_id Plugin.S_nil : Plugin.t =
         | _ -> assert false
       end
 
-    let tc : tc_term = Term.tc_mk ~eval ~init ~pp ()
+    let tc : tc_term = Term.TC.make ~eval ~init ~pp ()
 
     (* the main "true" term *)
     let t_true : term = Term.Unsafe.make_term p_id True Type.bool tc

@@ -53,16 +53,51 @@ let[@inline] mk_eq (ty:t) t u : term = match ty with
   | Bool -> assert false
   | Ty {tc; _} -> tc.tcty_eq t u
 
-let tc_mk
-    ~decide ~eq ~mk_state ~pp
-    () : tc =
-  { tcty_decide=decide;
-    tcty_eq=eq;
-    tcty_mk_state=mk_state;
-    tcty_pp=pp;
+module TC = struct
+  type t = tc
+  let make
+      ~decide ~eq ~mk_state ~pp
+      () : t =
+    { tcty_decide=decide;
+      tcty_eq=eq;
+      tcty_mk_state=mk_state;
+      tcty_pp=pp;
+    }
+
+  type lazy_tc = {
+    mutable l_tc: t option;
+    l_get: t lazy_t;
   }
 
+  let lazy_make() =
+    let rec t = {
+      l_tc=None;
+      l_get=lazy (
+        begin match t.l_tc with
+          | None -> failwith "Type.TC: lazy tc not defined"
+          | Some tc -> tc
+        end
+      );
+    } in
+    t
+
+  let[@inline] lazy_get {l_get=lazy t;_} = t
+  let[@inline] lazy_from_val (tc:t) : lazy_tc =
+    { l_tc=Some tc; l_get=Lazy.from_val tc }
+
+  let lazy_complete
+      ~decide ~eq ~mk_state ~pp
+      (ltc:lazy_tc) : unit =
+    begin match ltc.l_tc with
+      | Some _ -> failwith "Type.TC: lazy TC already complete"
+      | None ->
+        let tc = make ~decide ~eq ~mk_state ~pp () in
+        ltc.l_tc <- Some tc
+    end
+end
+
 module type TY_ALLOC_OPS = sig
+  val tc : TC.lazy_tc
   val initial_size: int (** initial size of table *)
   val equal : view -> view -> bool (** Shallow equality of two views of the plugin *)
   val hash : view -> int (** Shallow hash of a view of the plugin *)
@@ -86,7 +121,8 @@ module Alloc(Arg : TY_ALLOC_OPS) = struct
 
   let tbl = H.create Arg.initial_size
 
-  let make view tc =
+  let make view =
+    let tc = TC.lazy_get Arg.tc in
     let ty = Ty {id= ~-1; view; tc; } in
     let u = H.merge tbl ty in
     if ty == u then begin[@warning "-8"]
