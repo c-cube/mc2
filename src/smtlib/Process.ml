@@ -62,10 +62,7 @@ let conv_ty (reg:Reg.t) (ty:A.Ty.t) : Type.t =
 let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   let decl = Reg.find_exn reg Mc2_uf.k_decl in
   (* polymorphic equality *)
-  let mk_eq_ t u =
-    assert (Type.equal (Term.ty t)(Term.ty u));
-    Type.mk_eq (Term.ty t) t u
-  in
+  let[@inline] mk_eq_ t u = Term.mk_eq t u in
   let mk_app = Reg.find_exn reg Mc2_uf.k_app in
   let mk_const = Reg.find_exn reg Mc2_uf.k_const in
   let fresh = Reg.find_exn reg Mc2_propositional.k_fresh in
@@ -76,6 +73,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   (* adaptative equality *)
   let mk_eq_t_tf (t:term) (u:term_or_form) : F.t = match u with
     | F u -> F.equiv (F.atom (Term.Bool.pa t)) u
+    | T u when Term.is_bool u ->
+      F.equiv (F.atom (Term.Bool.pa t)) (F.atom (Term.Bool.pa u))
     | T u -> mk_eq t u |> F.atom
     | Rat u -> mk_eq t (t_of_ra u) |> F.atom
   and mk_eq_tf_tf (t:term_or_form) (u:term_or_form) = match t, u with
