@@ -181,7 +181,7 @@ end = struct
       let premise =
         Array.fold_left
           (fun acc a ->
-             assert (Atom.is_false a);
+             assert (Atom.is_false a || Atom.can_eval_to_false a);
              recompute_update_proof_of_atom a Value.false_ :: acc)
           [] conflict.c_atoms
       in

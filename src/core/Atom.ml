@@ -40,6 +40,7 @@ let[@inline] has_some_value (a:t): bool = Term.has_some_value a.a_term
 let[@inline] is_undef (a:t): bool = not (has_some_value a)
 
 let[@inline] reason (a:t) : reason option = Term.reason a.a_term
+let[@inline] reason_exn (a:t) : reason = Term.reason_exn a.a_term
 
 let[@inline] term (a:t) = a.a_term
 let[@inline] level (a:t) = Term.level a.a_term
@@ -72,6 +73,10 @@ let[@inline] eval (a:t) : eval_res =
 
 let[@inline] is_absurd (a:t) : bool = match eval a with
   | Eval_into (V_false,[]) -> true
+  | _ -> false
+
+let[@inline] can_eval_to_false a = match eval a with
+  | Eval_into (V_false, _) -> true
   | _ -> false
 
 let pp_value fmt a =

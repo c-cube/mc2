@@ -703,7 +703,13 @@ let debug_eval out = function
    Evaluate it, save its value, and ensure it is indeed false. *)
 let eval_atom_to_false ~save (env:t) (a:atom): unit =
   if Atom.has_some_value a then (
-    assert (Atom.is_false a);
+    Log.debugf debug (fun k->k "(@[atom_must_be_false@ %a@])" Atom.debug a);
+    assert (
+      let ok = Atom.is_false a || Atom.can_eval_to_false a in
+      if not ok then (
+        Log.debugf 0 (fun k->k "(@[<2>atom should be false:@ %a@])" Atom.debug a);
+      );
+      ok);
   ) else (
     let v = Atom.eval a in
     Log.debugf debug (fun k->k "(@[atom_must_be_false@ %a@ :eval_to %a@])"
@@ -714,7 +720,9 @@ let eval_atom_to_false ~save (env:t) (a:atom): unit =
         if save then (
           enqueue_semantic_bool_eval env (Atom.neg a) subs
         )
-      | _ -> assert false
+      | _ ->
+        Log.debugf 0 (fun k->k "(@[<2>atom should be false:@ %a@])" Atom.debug a);
+        assert false
     end
   )
 
@@ -858,9 +866,10 @@ end = struct
                  of the conflict clause, because it will be useless,
                  but we still keep track of it in the proof. *)
               assert (Atom.level q=0 && Atom.is_false q);
-              begin match Atom.reason q with
-                | Some (Bcp cl | Bcp_lazy (lazy cl)) ->
+              begin match Atom.reason_exn q with
+                | Bcp cl | Bcp_lazy (lazy cl) ->
                   st.cs_history <- cl :: st.cs_history
+                | Eval [] -> () (* absurd *)
                 | _ -> assert false
               end
             );
@@ -1174,7 +1183,8 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
           | None -> (* clause is unit, keep the same watches, but propagate *)
             env.propagations <- env.propagations + 1;
             Log.debugf 30
-              (fun k->k "(@[<hv>solver.propagate_bool@ %a@ :clause %a@])"
+              (fun k->k
+                  "(@[<hv>solver.propagate_in_clause.@{<yellow>propagate_bool@}@ %a@ :in-clause %a@])"
                   Atom.debug first Clause.debug c);
             enqueue_bool env first ~level:(decision_level env) (Bcp c)
           | Some V_true -> ()
@@ -1306,7 +1316,12 @@ end = struct
         Clause.debug_atoms atoms Lemma.pp lemma);
     env.bcp_head <- Vec.size env.trail;
     env.th_head <- Vec.size env.trail;
-    let atoms = Atom.Set.of_list atoms |> Atom.Set.to_list in
+    (* cleanup list of atoms, removing duplicates and absurd lits *)
+    let atoms =
+      Atom.Set.of_list atoms
+      |> Atom.Set.to_list
+      |> List.filter (fun a -> not (Atom.is_absurd a))
+    in
     (* add atoms, also evaluate them if not already false *)
     List.iter
       (fun a ->

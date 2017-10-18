@@ -24,6 +24,7 @@ val unmark_neg : t -> unit (** Unmark negation of the atom *)
 
 val level : t -> int (** decision level of the variable *)
 val reason : t -> reason option
+val reason_exn : t -> reason
 val is_true : t -> bool (** True in current model? *)
 val is_false : t -> bool
 val is_undef : t -> bool
@@ -31,6 +32,7 @@ val has_some_value : t -> bool
 
 val eval : t -> eval_res (** Semantically evaluate atom *)
 val is_absurd : t -> bool
+val can_eval_to_false : t -> bool
 
 val term : t -> term
 val watched : t -> clause Vec.t
