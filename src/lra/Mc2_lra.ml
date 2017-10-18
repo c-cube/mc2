@@ -146,8 +146,8 @@ let pp_state out = function
 let[@inline] flatten_le (e:LE.t) : LE.t =
   LE.flatten e
     ~f:(fun t -> match Term.view t with
-       | Expr {expr=e;_} -> Some e
-       | _ -> None)
+      | Expr {expr=e;_} -> Some e
+      | _ -> None)
 
 let[@inline] subterms (t:term_view) : term Sequence.t = match t with
   | Expr {expr=e;_} -> LE.terms e
@@ -300,7 +300,7 @@ let build
           | B_some low, B_some up, EC_neq {l} when
               Q.equal low.num up.num &&
               List.exists (fun (n,_,_) -> Q.equal low.num n) l
-            -> 
+            ->
             assert (not low.strict);
             assert (not up.strict);
             let reason_neq =
@@ -310,7 +310,7 @@ let build
             in
             (* conflict should be:
                [low <= t & t <= up & low=up => t = neq]. *)
-            raise_conflict acts 
+            raise_conflict acts
               ~sign:false ~op:Eq0 ~pivot:t
               ~expr_up_bound:up.expr ~expr_low_bound:low.expr
               ~reasons:[up.reason; low.reason; reason_neq] ()
@@ -467,7 +467,7 @@ let build
       | _ -> assert false
 
     (* add a unit constraint to [t]. The constraint is [reason],
-      which is valued to [b] *)
+       which is valued to [b] *)
     let add_unit_constr acts op expr (t:term) ~(reason:atom) (b:bool) : unit =
       assert (t != Atom.term reason);
       let constr, expr, num = constr_of_unit op expr t b in

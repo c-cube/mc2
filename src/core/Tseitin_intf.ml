@@ -39,9 +39,9 @@ module type S = sig
     | True
     | Lit of atom
     | Comb of combinator * t list
-  (** The type of arbitrary boolean formulas. Arbitrary boolean formulas
-      can be built using functions in this module, and then converted
-      to a CNF, which is a list of clauses that only use atomic formulas. *)
+    (** The type of arbitrary boolean formulas. Arbitrary boolean formulas
+        can be built using functions in this module, and then converted
+        to a CNF, which is a list of clauses that only use atomic formulas. *)
 
   val true_ : t
   (** The [true] formula, i.e a formula that is always satisfied. *)

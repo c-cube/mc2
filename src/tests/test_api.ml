@@ -85,7 +85,7 @@ module Test = struct
     | Fail of string
 
   let run (t:t): result =
-  (* Interesting stuff happening *)
+    (* Interesting stuff happening *)
     let (module S: BASIC_SOLVER) = mk_solver () in
     try
       List.iter
@@ -178,10 +178,10 @@ let main () =
     (fun test ->
        Printf.printf "%-10s... %!" test.Test.name;
        match Test.run test with
-       | Test.Pass -> Printf.printf "ok\n%!"
-       | Test.Fail msg ->
-         failed := true;
-         Printf.printf "fail (%s)\n%!" msg)
+         | Test.Pass -> Printf.printf "ok\n%!"
+         | Test.Fail msg ->
+           failed := true;
+           Printf.printf "fail (%s)\n%!" msg)
     Test.suite;
   if !failed then exit 1
 

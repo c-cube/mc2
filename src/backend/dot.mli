@@ -49,15 +49,15 @@ module type Arg = sig
 end
 
 module Default : Arg with type atom := Atom.t
-                                 and type hyp := Clause.t
-                                 and type lemma := Clause.t
-                                 and type assumption := Clause.t
+                      and type hyp := Clause.t
+                      and type lemma := Clause.t
+                      and type assumption := Clause.t
 (** Provides a reasonnable default to instantiate the [Make] functor, assuming
     the original printing functions are compatible with DOT html labels. *)
 
 module Make(A : Arg with type atom := Atom.t
-                                and type hyp := Clause.t
-                                and type lemma := Clause.t
-                                and type assumption := Clause.t)
+                     and type hyp := Clause.t
+                     and type lemma := Clause.t
+                     and type assumption := Clause.t)
   : S with type t := Proof.t
 (** Functor for making a module to export proofs to the DOT format. *)

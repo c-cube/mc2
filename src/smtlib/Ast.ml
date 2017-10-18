@@ -248,8 +248,8 @@ let pp_term =
   in pp
 
 (* FIXME
-let pp_data out d =
-  let cstors =
+   let pp_data out d =
+   let cstors =
     ID.Map.fold
       (fun c ty acc ->
          let ty_args, _ = unfold ty in
@@ -259,9 +259,9 @@ let pp_data out d =
          in
          c_sexp :: acc)
       d.data_cstors []
-  in
-  S.of_list (ID.to_sexp d.data_id :: cstors)
-   *)
+   in
+   S.of_list (ID.to_sexp d.data_id :: cstors)
+*)
 
 (** {2 Constructors} *)
 
@@ -318,7 +318,7 @@ let match_ t m =
        if not (Ty.equal rhs1.ty rhs.ty)
        then Ty.ill_typed
            "match: cases %a and %a disagree on return type,@ \
-           between %a and %a"
+            between %a and %a"
            ID.pp c1 ID.pp c Ty.pp rhs1.ty Ty.pp rhs.ty)
     m;
   mk_ (Match (t,m)) rhs1.ty
@@ -439,18 +439,18 @@ module Ctx = struct
     | K_ty of ty_kind
     | K_fun of Ty.t
     | K_var of var (* local *)
-          (* FIXME
-    | K_cstor of Ty.t
-    | K_select of Ty.t * select
-             *)
+  (* FIXME
+     | K_cstor of Ty.t
+     | K_select of Ty.t * select
+  *)
 
   and ty_kind =
     | K_uninterpreted (* uninterpreted type *)
     | K_other
     | K_bool
-      (* FIXME
-    | K_data (* data type *)
-         *)
+    (* FIXME
+       | K_data (* data type *)
+    *)
 
   type t = {
     names: ID.t StrTbl.t;
@@ -631,77 +631,77 @@ and conv_term_aux ctx t : term = match t with
     imply a b
   | A.Match (_lhs, _l) ->
     assert false
-    (* FIXME
-    (* convert a regular case *)
-    let conv_case c vars rhs =
-      let c_id = find_id_ ctx c in
-      (* obtain the type *)
-      let ty_args, _ty_ret = match Ctx.find_kind ctx c_id with
-        | Ctx.K_cstor ty -> Ty.unfold ty
-        | _ ->
-          errorf_ctx ctx "expected `@[%a@]`@ to be a constructor" ID.pp c_id
+  (* FIXME
+     (* convert a regular case *)
+     let conv_case c vars rhs =
+     let c_id = find_id_ ctx c in
+     (* obtain the type *)
+     let ty_args, _ty_ret = match Ctx.find_kind ctx c_id with
+      | Ctx.K_cstor ty -> Ty.unfold ty
+      | _ ->
+        errorf_ctx ctx "expected `@[%a@]`@ to be a constructor" ID.pp c_id
+     in
+     (* pair variables with their type *)
+     if List.length vars <> List.length ty_args
+     then
+      errorf_ctx ctx
+        "in @[%a@] for case %a,@ wrong number of arguments (expected %d)"
+        A.pp_term t ID.pp c_id (List.length ty_args);
+     let vars = List.combine vars ty_args in
+     Ctx.with_vars ctx vars
+      (fun vars ->
+         let rhs = conv_term ctx rhs in
+         c_id, vars, rhs)
+     in
+     (* convert default case, where [m] contains the partial map. We have
+     to complete this map *)
+     let lhs = conv_term ctx lhs in
+     let default, cases =
+     List.fold_left
+      (fun (def,cases) branch -> match branch with
+         | A.Match_case (c,vars,rhs) ->
+           let c, vars, rhs = conv_case c vars rhs in
+           (* no duplicate *)
+           if ID.Map.mem c cases
+           then errorf_ctx ctx "constructor %a occurs twice" ID.pp c;
+           def, ID.Map.add c (vars,rhs) cases
+        | A.Match_default rhs ->
+          (* check there is only one "default" case *)
+          match def with
+            | Some _ -> errorf_ctx ctx "cannot have two `default` cases"
+            | None ->
+              let rhs = conv_term ctx rhs in
+              Some rhs, cases)
+      (None,ID.Map.empty) l
+     in
+     (* now fill the blanks, check exhaustiveness *)
+     let all_cstors = Ctx.as_data ctx lhs.ty in
+     let cases = match default with
+     | None ->
+      (* check exhaustiveness *)
+      let missing =
+        all_cstors
+        |> List.filter (fun (cstor,_) -> not (ID.Map.mem cstor cases))
+        |> List.map fst
       in
-      (* pair variables with their type *)
-      if List.length vars <> List.length ty_args
-      then
-        errorf_ctx ctx
-          "in @[%a@] for case %a,@ wrong number of arguments (expected %d)"
-          A.pp_term t ID.pp c_id (List.length ty_args);
-      let vars = List.combine vars ty_args in
-      Ctx.with_vars ctx vars
-        (fun vars ->
-           let rhs = conv_term ctx rhs in
-           c_id, vars, rhs)
-    in
-    (* convert default case, where [m] contains the partial map. We have
-       to complete this map *)
-    let lhs = conv_term ctx lhs in
-    let default, cases =
+      if missing<>[]
+      then errorf_ctx ctx
+          "missing cases in `@[%a@]`: @[%a@]"
+          A.pp_term t (Util.pp_list ID.pp) missing;
+      cases
+     | Some def_rhs ->
       List.fold_left
-        (fun (def,cases) branch -> match branch with
-           | A.Match_case (c,vars,rhs) ->
-             let c, vars, rhs = conv_case c vars rhs in
-             (* no duplicate *)
-             if ID.Map.mem c cases
-             then errorf_ctx ctx "constructor %a occurs twice" ID.pp c;
-             def, ID.Map.add c (vars,rhs) cases
-          | A.Match_default rhs ->
-            (* check there is only one "default" case *)
-            match def with
-              | Some _ -> errorf_ctx ctx "cannot have two `default` cases"
-              | None ->
-                let rhs = conv_term ctx rhs in
-                Some rhs, cases)
-        (None,ID.Map.empty) l
-    in
-    (* now fill the blanks, check exhaustiveness *)
-    let all_cstors = Ctx.as_data ctx lhs.ty in
-    let cases = match default with
-      | None ->
-        (* check exhaustiveness *)
-        let missing =
-          all_cstors
-          |> List.filter (fun (cstor,_) -> not (ID.Map.mem cstor cases))
-          |> List.map fst
-        in
-        if missing<>[]
-        then errorf_ctx ctx
-            "missing cases in `@[%a@]`: @[%a@]"
-            A.pp_term t (Util.pp_list ID.pp) missing;
-        cases
-      | Some def_rhs ->
-        List.fold_left
-          (fun cases (cstor,ty_cstor) ->
-             if ID.Map.mem cstor cases then cases
-             else (
-               let args, _ = Ty.unfold ty_cstor in
-               let vars = List.mapi (fun i ty -> Var.makef ~ty "_%d" i) args in
-               ID.Map.add cstor (vars, def_rhs) cases
-             ))
-          cases all_cstors
-    in
-    match_ lhs cases
-    *)
+        (fun cases (cstor,ty_cstor) ->
+           if ID.Map.mem cstor cases then cases
+           else (
+             let args, _ = Ty.unfold ty_cstor in
+             let vars = List.mapi (fun i ty -> Var.makef ~ty "_%d" i) args in
+             ID.Map.add cstor (vars, def_rhs) cases
+           ))
+        cases all_cstors
+     in
+     match_ lhs cases
+  *)
   | A.App (s, args) ->
     let id = find_id_ ctx s in
     let args = List.map (conv_term ctx) args in
@@ -804,79 +804,79 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     [Decl (id, ty)]
   | A.Stmt_data ([],_l) ->
     assert false
-    (* FIXME
-    (* first, read and declare each datatype (it can occur in the other
-       datatypes' construtors) *)
-    let pre_parse (data_name,cases) =
-      let data_id = Ctx.add_id ctx data_name (Ctx.K_ty Ctx.K_data) in
-      data_id, cases
-    in
-    let l = List.map pre_parse l in
-    (* now parse constructors *)
-    let l =
-      List.map
-        (fun (data_id, cstors) ->
-           let data_ty = Ty.const data_id in
-           let parse_case (c, ty_args) =
-             let selectors =
-               List.map (fun (n,ty) -> n, conv_ty_fst ctx ty) ty_args
-             in
-             let ty_args = List.map snd selectors in
-             (* declare cstor *)
-             let ty_c = Ty.arrow_l ty_args data_ty in
-             let id_c = Ctx.add_id ctx c (Ctx.K_cstor ty_c) in
-             (* now declare selectors *)
-             List.iteri
-               (fun i (name_opt,ty) -> match name_opt with
-                  | None -> ()
-                  | Some select_str ->
-                    (* declare this selector *)
-                    let rec select_name = lazy
-                      (Ctx.add_id ctx select_str
-                         (Ctx.K_select (ty,
-                            {select_name; select_cstor=id_c; select_i=i})))
-                    in
-                    ignore (Lazy.force select_name))
-               selectors;
-             (* return cstor *)
-             id_c, ty_c
+  (* FIXME
+     (* first, read and declare each datatype (it can occur in the other
+     datatypes' construtors) *)
+     let pre_parse (data_name,cases) =
+     let data_id = Ctx.add_id ctx data_name (Ctx.K_ty Ctx.K_data) in
+     data_id, cases
+     in
+     let l = List.map pre_parse l in
+     (* now parse constructors *)
+     let l =
+     List.map
+      (fun (data_id, cstors) ->
+         let data_ty = Ty.const data_id in
+         let parse_case (c, ty_args) =
+           let selectors =
+             List.map (fun (n,ty) -> n, conv_ty_fst ctx ty) ty_args
            in
-           let cstors = List.map parse_case cstors in
-           (* update info on [data] *)
-           Ctx.add_data ctx data_id cstors;
-           {Ty.data_id; data_cstors=ID.Map.of_list cstors})
-        l
-    in
-    [Data l]
-    *)
+           let ty_args = List.map snd selectors in
+           (* declare cstor *)
+           let ty_c = Ty.arrow_l ty_args data_ty in
+           let id_c = Ctx.add_id ctx c (Ctx.K_cstor ty_c) in
+           (* now declare selectors *)
+           List.iteri
+             (fun i (name_opt,ty) -> match name_opt with
+                | None -> ()
+                | Some select_str ->
+                  (* declare this selector *)
+                  let rec select_name = lazy
+                    (Ctx.add_id ctx select_str
+                       (Ctx.K_select (ty,
+                          {select_name; select_cstor=id_c; select_i=i})))
+                  in
+                  ignore (Lazy.force select_name))
+             selectors;
+           (* return cstor *)
+           id_c, ty_c
+         in
+         let cstors = List.map parse_case cstors in
+         (* update info on [data] *)
+         Ctx.add_data ctx data_id cstors;
+         {Ty.data_id; data_cstors=ID.Map.of_list cstors})
+      l
+     in
+     [Data l]
+  *)
   | A.Stmt_data _ ->
     errorf_ctx ctx "not implemented: parametric datatypes" A.pp_stmt stmt
   | A.Stmt_funs_rec _defs ->
     errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
-    (* FIXME
-    let {A.fsr_decls=decls; fsr_bodies=bodies} = defs in
-    if List.length decls <> List.length bodies then (
-      errorf_ctx ctx "declarations and bodies should have same length";
-    );
-    let l = List.map2 (conv_fun_def ctx) decls bodies in
-    [def ?loc l |> CCOpt.return
-    (* parse id,ty and declare them before parsing the function bodies *)
-    let preparse fd =
-      let name, ty, rhs = conv_fun_def ctx
-      let ty, _ = conv_ty ctx ty in
-      let id = Ctx.add_id ctx name (Ctx.K_fun ty) in
-      id, ty, rhs
-    in
-    let defs = List.map preparse defs in
-    let defs =
-      List.map
-        (fun (id,ty,rhs) ->
-           let rhs = conv_term ctx rhs in
-           id,ty,rhs)
-        defs
-    in
-    [Define defs]
-    *)
+  (* FIXME
+     let {A.fsr_decls=decls; fsr_bodies=bodies} = defs in
+     if List.length decls <> List.length bodies then (
+     errorf_ctx ctx "declarations and bodies should have same length";
+     );
+     let l = List.map2 (conv_fun_def ctx) decls bodies in
+     [def ?loc l |> CCOpt.return
+     (* parse id,ty and declare them before parsing the function bodies *)
+     let preparse fd =
+     let name, ty, rhs = conv_fun_def ctx
+     let ty, _ = conv_ty ctx ty in
+     let id = Ctx.add_id ctx name (Ctx.K_fun ty) in
+     id, ty, rhs
+     in
+     let defs = List.map preparse defs in
+     let defs =
+     List.map
+      (fun (id,ty,rhs) ->
+         let rhs = conv_term ctx rhs in
+         id,ty,rhs)
+      defs
+     in
+     [Define defs]
+  *)
   | A.Stmt_fun_rec _def ->
     errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
   | A.Stmt_fun_def _def ->

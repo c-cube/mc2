@@ -185,11 +185,11 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
             mk_expr e |> ret_t
           | A.Mult, _::_::_ ->
             let coeffs, terms =
-                CCList.partition_map
-                  (fun t -> match RLE.as_const t with
-                     | None -> `Right t
-                     | Some c -> `Left c)
-                  l
+              CCList.partition_map
+                (fun t -> match RLE.as_const t with
+                   | None -> `Right t
+                   | Some c -> `Left c)
+                l
             in
             begin match coeffs, terms with
               | c::c_tail, [] ->
@@ -264,15 +264,15 @@ let check_model state : bool =
         (fun a ->
            Log.debugf 15
              (fun k -> k "(@[check.atom@ %a@])" Term.debug (Atom.term a));
-         let b = Solver.Sat_state.eval state a in
-         (* check consistency with eval_bool *)
-         begin match Term.eval (Atom.term a) with
-           | Eval_unknown -> ()
-           | Eval_into (b', _) ->
-             assert (Value.equal b'
-                 (Value.of_bool (if Atom.is_pos a then b else not b)));
-         end;
-         b)
+           let b = Solver.Sat_state.eval state a in
+           (* check consistency with eval_bool *)
+           begin match Term.eval (Atom.term a) with
+             | Eval_unknown -> ()
+             | Eval_into (b', _) ->
+               assert (Value.equal b'
+                   (Value.of_bool (if Atom.is_pos a then b else not b)));
+           end;
+           b)
         c
     in
     if not ok then (

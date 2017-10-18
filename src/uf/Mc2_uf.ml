@@ -272,7 +272,7 @@ let build p_id Plugin.S_nil : Plugin.t =
                if not (Type.equal ty_arg (Term.ty arg)) then (
                  Util.errorf
                    "uf: type mismatch:@ cannot apply `%a`@ :to (@[%a@])@ \
-                   expected %a,@ got %a"
+                    expected %a,@ got %a"
                    ID.pp f (Util.pp_list Term.pp) l Type.pp ty_arg Term.pp arg;
                ))
             ty_args l;

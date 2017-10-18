@@ -137,10 +137,10 @@ module Watch1 : sig
     watch:term ->
     on_all_set:(unit -> unit) ->
     watch_res
-  (** [update w t ~watch ~on_all_set] updates [w] after [watch]
-      has been assigned. It looks for another term in [w] for [t] to watch.
-      If all terms are set, then it calls [on_all_set ()]
-  *)
+    (** [update w t ~watch ~on_all_set] updates [w] after [watch]
+        has been assigned. It looks for another term in [w] for [t] to watch.
+        If all terms are set, then it calls [on_all_set ()]
+    *)
 end
 
 (** {2 2-terms Watch Scheme} *)
@@ -174,11 +174,11 @@ module Watch2 : sig
     on_unit:(term -> unit) ->
     on_all_set:(unit -> unit) ->
     watch_res
-  (** [update w t ~watch ~on_all_set] updates [w] after [watch]
-      has been assigned. It looks for another term in [w] for [t] to watch.
-      If exactly one term [u] is not set, then it calls [on_unit u].
-      If all terms are set, then it calls [on_all_set ()]
-  *)
+    (** [update w t ~watch ~on_all_set] updates [w] after [watch]
+        has been assigned. It looks for another term in [w] for [t] to watch.
+        If exactly one term [u] is not set, then it calls [on_unit u].
+        If all terms are set, then it calls [on_all_set ()]
+    *)
 end
 
 (** {2 Assignment view} *)
