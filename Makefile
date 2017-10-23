@@ -61,7 +61,7 @@ logitest-full:
 	$(TESTTOOL) run -c src/tests/conf.toml $(FULL_TEST) $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
 	  --meta `git rev-parse HEAD` --summary snapshots/full-$(FULL_TEST)-$(DATE).txt \
-	  --csv snapshots/full-$(DATE).csv
+	  --csv snapshots/full-$(FULL_TEST)-$(DATE).csv
 
 reinstall: | uninstall install
 
