@@ -67,7 +67,6 @@
 %token <string>IDENT
 %token <string>QUOTED
 %token <string>ESCAPED
-%token <string>NUM
 
 %start <Parse_ast.term> parse_term
 %start <Parse_ast.ty> parse_ty
@@ -312,7 +311,6 @@ term:
   | FALSE { A.false_ }
   | s=QUOTED { A.const s }
   | s=id { A.const s }
-  | s=NUM { A.num s }
   | t=composite_term { t }
   | error
     {

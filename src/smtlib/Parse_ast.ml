@@ -44,7 +44,6 @@ type term =
   | True
   | False
   | Const of string
-  | Num of string
   | Arith of arith_op * term list
   | App of string * term list
   | HO_app of term * term (* higher-order application *)
@@ -141,7 +140,6 @@ let rec not_ t = match t with
   | _ -> Not t
 
 let arith op l = Arith (op,l)
-let num s = Num s
 
 let _mk ?loc stmt = { loc; stmt }
 
@@ -198,7 +196,6 @@ let pp_arith out = function
 let rec pp_term out (t:term) = match t with
   | True -> pp_str out "true"
   | False -> pp_str out "false"
-  | Num s -> pp_str out s
   | Arith (op,l) ->
     Fmt.fprintf out "(@[<hv>%a@ %a@])" pp_arith op (Util.pp_list pp_term) l
   | Const s -> pp_str out s

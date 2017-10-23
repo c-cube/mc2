@@ -1,4 +1,6 @@
 
+module Fmt = CCFormat
+
 type t = {
   id: int;
   name: string;
@@ -22,7 +24,7 @@ let equal a b = a.id=b.id
 let compare a b = CCInt.compare a.id b.id
 let hash a = CCHash.int a.id
 let pp out a = Format.fprintf out "%s/%d" a.name a.id
-let pp_name out a = CCFormat.string out a.name
+let pp_name out a = Fmt.string out a.name
 let to_string_full a = Printf.sprintf "%s/%d" a.name a.id
 
 module AsKey = struct
@@ -37,3 +39,16 @@ module Map = CCMap.Make(AsKey)
 module Set = CCSet.Make(AsKey)
 module Tbl = CCHashtbl.Make(AsKey)
 
+module Smtlib = struct
+  let needs_escaping_ =
+    CCString.exists
+      (function
+        | '|' | ' ' | '(' | ')' -> true
+        | _ -> false)
+
+  let pp out i =
+    if needs_escaping_ i.name
+    then Fmt.fprintf out "|%s|" i.name
+    else Fmt.string out i.name
+
+end

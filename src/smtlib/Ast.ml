@@ -148,7 +148,8 @@ type term = {
 and term_cell =
   | Var of var
   | Const of ID.t
-  | Num of Z.t
+  | Num_z of Z.t
+  | Num_q of Q.t
   | App of term * term list
   | If of term * term * term
   | Select of select * term
@@ -242,7 +243,8 @@ let pp_term =
         pp_binder b Var.pp v Ty.pp (Var.ty v) pp u
     | Let (v,t,u) ->
       Fmt.fprintf out "(@[<1>let ((@[%a@ %a@]))@ %a@])" Var.pp v pp t pp u
-    | Num z -> Z.pp_print out z
+    | Num_z z -> Z.pp_print out z
+    | Num_q z -> Q.pp_print out z
     | Arith (op, l) ->
       Fmt.fprintf out "(@[<hv>%a@ %a@])" pp_arith op (Util.pp_list pp) l
   in pp
@@ -337,8 +339,42 @@ let bind ~ty b v t = mk_ (Bind(b,v,t)) ty
 
 let arith ty op l = mk_ (Arith (op,l)) ty
 
-let num ty z = mk_ (Num z) ty
-let num_str ty s = num ty (Z.of_string s)
+let num_q ty z = mk_ (Num_q z) ty
+let num_z ty z = mk_ (Num_z z) ty
+
+let parse_num ~where (s:string) : [`Q of Q.t | `Z of Z.t] =
+  let fail() =
+    errorf "%sexpected number, got `%s`" (Lazy.force where) s
+  in
+  begin match Z.of_string s with
+    | n -> `Z n
+    | exception _ ->
+      begin match Q.of_string s with
+        | n -> `Q n
+        | exception _ ->
+          if String.contains s '.' then (
+            let p1, p2 = CCString.Split.left_exn ~by:"." s in
+            let n1, n2 =
+              try Z.of_string p1, Z.of_string p2
+              with _ -> fail()
+            in
+            let factor_10 = Z.pow (Z.of_int 10) (String.length p2) in
+            (* [(p1·10^{length p2}+p2) / 10^{length p2}] *)
+            let n =
+              Q.div
+                (Q.of_bigint (Z.add n2 (Z.mul n1 factor_10)))
+                (Q.of_bigint factor_10)
+            in
+            `Q n
+          ) else fail()
+      end
+  end
+
+let num_str ty s =
+  begin match parse_num ~where:(Lazy.from_val "") s with
+    | `Q x -> num_q ty x
+    | `Z x -> num_z ty x
+  end
 
 let fun_ v t =
   let ty = Ty.arrow (Var.ty v) t.ty in
@@ -524,6 +560,7 @@ module Ctx = struct
       (ID.Tbl.print ID.pp pp_kind) t.kinds
 end
 
+let error_loc ctx : string = Fmt.sprintf "at %a: " Locations.pp_opt (Ctx.loc ctx)
 let errorf_ctx ctx msg =
   errorf ("at %a:@ " ^^ msg) Locations.pp_opt (Ctx.loc ctx)
 
@@ -554,6 +591,12 @@ and conv_ty_fst ctx t = fst (conv_ty ctx t)
 
 let conv_vars ctx l = List.map (fun (v,ty) -> v, conv_ty_fst ctx ty) l
 
+let is_num s =
+  let is_digit_or_dot = function '0' .. '9' | '.' -> true | _ -> false in
+  if s.[0] = '-'
+  then CCString.for_all is_digit_or_dot (String.sub s 1 (String.length s-1))
+  else CCString.for_all is_digit_or_dot s
+
 let rec conv_term ctx (t:A.term) : term =
   try conv_term_aux ctx t
   with Ill_typed msg ->
@@ -562,6 +605,12 @@ let rec conv_term ctx (t:A.term) : term =
 and conv_term_aux ctx t : term = match t with
   | A.True -> true_
   | A.False -> false_
+  | A.Const s when is_num s ->
+    (* numeral *)
+    begin match parse_num ~where:(lazy (error_loc ctx)) s with
+      | `Q n -> num_q Ty.rat n
+      | `Z n -> num_z Ty.rat n
+    end
   | A.Const s ->
     let id = find_id_ ctx s in
     begin match Ctx.find_kind ctx id with
@@ -722,11 +771,6 @@ and conv_term_aux ctx t : term = match t with
     let f = conv_term ctx f in
     let arg = conv_term ctx arg in
     app f [arg]
-  | A.Num s ->
-    begin match Z.of_string s with
-      | n -> num Ty.rat n
-      | exception _ -> errorf_ctx ctx "expected integer, got `%s`" s
-    end
   | A.Arith (op, l) ->
     let l = List.map (conv_term ctx) l in
     List.iter

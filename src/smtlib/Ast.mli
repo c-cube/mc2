@@ -97,7 +97,8 @@ type term = private {
 and term_cell =
   | Var of var
   | Const of ID.t
-  | Num of Z.t
+  | Num_z of Z.t
+  | Num_q of Q.t
   | App of term * term list
   | If of term * term * term
   | Select of select * term
@@ -169,7 +170,8 @@ val imply : term -> term -> term
 val imply_l : term list -> term
 val true_ : term
 val false_ : term
-val num : Ty.t -> Z.t -> term
+val num_z : Ty.t -> Z.t -> term
+val num_q : Ty.t -> Q.t -> term
 val num_str : Ty.t -> string -> term (** parses int + {!num} *)
 val arith : Ty.t -> arith_op -> term list -> term
 

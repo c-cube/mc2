@@ -8,12 +8,6 @@
   module Loc = Locations
   open Parser (* for tokens *)
 
-  let is_num s =
-    let is_digit = function '0' .. '9' -> true | _ -> false in
-    if s.[0] = '-'
-    then CCString.for_all is_digit (String.sub s 1 (String.length s-1))
-    else CCString.for_all is_digit s
-
 }
 
 let printable_char = [^ '\n']
@@ -77,7 +71,7 @@ rule token = parse
   | "exit" { EXIT }
   | ident {
     let s = Lexing.lexeme lexbuf in
-    if is_num s then NUM(s) else IDENT(s)
+    IDENT(s)
   }
   | quoted {
       (* TODO: unescape *)

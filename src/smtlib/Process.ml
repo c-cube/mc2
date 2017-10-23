@@ -150,7 +150,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
       | A.Not f -> F.not_ (aux_form subst f) |> ret_f
       | A.Bool true -> ret_f F.true_
       | A.Bool false -> ret_f F.false_
-      | A.Num n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
+      | A.Num_q n -> Mc2_lra.LE.const n |> ret_rat
+      | A.Num_z n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
       | A.Arith (op, l) ->
         let mk_pred = Reg.find_exn reg Mc2_lra.k_make_pred in
         let mk_expr = Reg.find_exn reg Mc2_lra.k_make_expr in
