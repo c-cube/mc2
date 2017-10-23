@@ -45,6 +45,7 @@ test:
 TESTOPTS ?= -j $(J)
 TESTTOOL=logitest
 DATE=$(shell date +%FT%H:%M)
+FULL_TEST?=QF_UF
 
 logitest-quick:
 	@mkdir -p snapshots
@@ -56,9 +57,10 @@ logitest-quick:
 logitest-full:
 	@mkdir -p snapshots
 	@DATE=`date +%F.%H:%M`
-	$(TESTTOOL) run -c src/tests/conf.toml QF_UF $(TESTOPTS) \
+	@echo "full test on FULL_TEST=$(FULL_TEST)"
+	$(TESTTOOL) run -c src/tests/conf.toml $(FULL_TEST) $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
-	  --meta `git rev-parse HEAD` --summary snapshots/full-$(DATE).txt \
+	  --meta `git rev-parse HEAD` --summary snapshots/full-$(FULL_TEST)-$(DATE).txt \
 	  --csv snapshots/full-$(DATE).csv
 
 reinstall: | uninstall install
