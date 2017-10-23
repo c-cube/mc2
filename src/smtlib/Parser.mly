@@ -82,24 +82,24 @@ parse_term: t=term EOI { t }
 parse_ty: t=ty EOI { t }
 
 cstor_arg:
-  | LEFT_PAREN name=IDENT ty=ty RIGHT_PAREN { name, ty }
+  | LEFT_PAREN name=id ty=ty RIGHT_PAREN { name, ty }
 
 cstor:
-  | LEFT_PAREN c=IDENT RIGHT_PAREN { A.mk_cstor c [] }
-  | LEFT_PAREN c=IDENT l=cstor_arg+ RIGHT_PAREN
+  | LEFT_PAREN c=id RIGHT_PAREN { A.mk_cstor c [] }
+  | LEFT_PAREN c=id l=cstor_arg+ RIGHT_PAREN
     { A.mk_cstor c l }
 
 data:
-  | LEFT_PAREN s=IDENT l=cstor+ RIGHT_PAREN { s,l }
+  | LEFT_PAREN s=id l=cstor+ RIGHT_PAREN { s,l }
 
 fun_def_mono:
-  | f=IDENT
+  | f=id
     LEFT_PAREN args=typed_var* RIGHT_PAREN
     ret=ty
     { f, args, ret }
 
 fun_decl_mono:
-  | f=IDENT
+  | f=id
     LEFT_PAREN args=ty* RIGHT_PAREN
     ret=ty
     { f, args, ret }
@@ -153,23 +153,23 @@ assert_not:
   | t=term
   { [], t }
 
-option_arg:
+id:
   | s=IDENT { s }
   | s=QUOTED { s }
   | s=ESCAPED { s }
 
 stmt:
-  | LEFT_PAREN SET_LOGIC s=IDENT RIGHT_PAREN
+  | LEFT_PAREN SET_LOGIC s=id RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in
       A.set_logic ~loc s
     }
-  | LEFT_PAREN SET_OPTION l=option_arg+ RIGHT_PAREN
+  | LEFT_PAREN SET_OPTION l=id+ RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in
       A.set_option ~loc l
     }
-  | LEFT_PAREN SET_INFO l=option_arg+ RIGHT_PAREN
+  | LEFT_PAREN SET_INFO l=id+ RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in
       A.set_info ~loc l
@@ -184,7 +184,7 @@ stmt:
       let loc = Loc.mk_pos $startpos $endpos in
       A.lemma ~loc t
     }
-  | LEFT_PAREN DECLARE_SORT s=IDENT n=IDENT RIGHT_PAREN
+  | LEFT_PAREN DECLARE_SORT s=id n=id RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in
       try
@@ -207,7 +207,7 @@ stmt:
       let tyvars, f, args, ret = tup in
       A.decl_fun ~loc ~tyvars f args ret
     }
-  | LEFT_PAREN DECLARE_CONST f=IDENT ty=ty RIGHT_PAREN
+  | LEFT_PAREN DECLARE_CONST f=id ty=ty RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in
       A.decl_fun ~loc ~tyvars:[] f [] ty
@@ -260,19 +260,19 @@ stmt:
     }
 
 var:
-  | s=IDENT { s }
+  | s=id { s }
 tyvar:
-  | s=IDENT { s }
+  | s=id { s }
 
 ty:
-  | s=IDENT {
+  | s=id {
     begin match s with
       | "Bool" -> A.ty_bool
       | "Real" -> A.ty_real
       | _ -> A.ty_const s
     end
     }
-  | LEFT_PAREN s=IDENT args=ty+ RIGHT_PAREN
+  | LEFT_PAREN s=id args=ty+ RIGHT_PAREN
     { A.ty_app s args }
   | LEFT_PAREN ARROW tup=ty_arrow_args RIGHT_PAREN
     {
@@ -284,18 +284,18 @@ ty_arrow_args:
   | a=ty tup=ty_arrow_args { a :: fst tup, snd tup }
 
 typed_var:
-  | LEFT_PAREN s=IDENT ty=ty RIGHT_PAREN { s, ty }
+  | LEFT_PAREN s=id ty=ty RIGHT_PAREN { s, ty }
 
 case:
   | LEFT_PAREN
       CASE
-      c=IDENT
+      c=id
       rhs=term
     RIGHT_PAREN
     { A.Match_case (c, [], rhs) }
   | LEFT_PAREN
       CASE
-      LEFT_PAREN c=IDENT vars=var+ RIGHT_PAREN
+      LEFT_PAREN c=id vars=var+ RIGHT_PAREN
       rhs=term
     RIGHT_PAREN
     { A.Match_case (c, vars, rhs) }
@@ -311,7 +311,7 @@ term:
   | TRUE { A.true_ }
   | FALSE { A.false_ }
   | s=QUOTED { A.const s }
-  | s=IDENT { A.const s }
+  | s=id { A.const s }
   | s=NUM { A.num s }
   | t=composite_term { t }
   | error
@@ -339,7 +339,7 @@ composite_term:
   | LEFT_PAREN DISTINCT l=term+ RIGHT_PAREN { A.distinct l }
   | LEFT_PAREN EQ a=term b=term RIGHT_PAREN { A.eq a b }
   | LEFT_PAREN ARROW a=term b=term RIGHT_PAREN { A.imply a b }
-  | LEFT_PAREN f=IDENT args=term+ RIGHT_PAREN { A.app f args }
+  | LEFT_PAREN f=id args=term+ RIGHT_PAREN { A.app f args }
   | LEFT_PAREN o=arith_op args=term+ RIGHT_PAREN { A.arith o args }
   | LEFT_PAREN f=composite_term args=term+ RIGHT_PAREN { A.ho_app_l f args }
   | LEFT_PAREN AT f=term arg=term RIGHT_PAREN { A.ho_app f arg }
