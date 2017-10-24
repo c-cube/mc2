@@ -37,6 +37,10 @@ let mk_sub_form =
   let n = ref 0 in
   fun () -> ID.makef "sub_form_%d" (CCRef.incr_then_get n)
 
+let mk_lra_id =
+  let n = ref 0 in
+  fun () -> ID.makef "lra_%d" (CCRef.incr_then_get n)
+
 type term_or_form =
   | T of term
   | F of F.t
@@ -68,19 +72,33 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   let fresh = Reg.find_exn reg Mc2_propositional.k_fresh in
   let mk_eq t u = Term.Bool.pa (mk_eq_ t u) in
   let mk_neq t u = Term.Bool.na (mk_eq_ t u) in
-  let t_of_ra t = Reg.find_exn reg Mc2_lra.k_make_expr t in
+  let mk_lra_pred = Reg.find_exn reg Mc2_lra.k_make_pred in
+  let mk_lra_eq t u = mk_lra_pred Mc2_lra.Eq0 (RLE.diff t u) |> Term.Bool.pa in
   let side_clauses : atom list list ref = ref [] in
+  (* introduce intermediate variable for LRA sub-expression *)
+  let mk_lra_expr (e:RLE.t): term = match RLE.as_const e, RLE.as_singleton e with
+    | Some n, _ -> Reg.find_exn reg Mc2_lra.k_make_const n
+    | None, Some (n,t) when Q.equal n Q.one -> t
+    | _ ->
+      let id = mk_lra_id() in
+      Log.debugf 30
+        (fun k->k"(@[smtlib.name_lra@ %a@ :as %a@])" RLE.pp e ID.pp id);
+      decl id [] (Reg.find_exn reg Mc2_lra.k_rat);
+      let t = mk_const id in
+      side_clauses := [mk_lra_eq (RLE.singleton1 t) e] :: !side_clauses;
+      t
+  in
   (* adaptative equality *)
   let mk_eq_t_tf (t:term) (u:term_or_form) : F.t = match u with
     | F u -> F.equiv (F.atom (Term.Bool.pa t)) u
     | T u when Term.is_bool u ->
       F.equiv (F.atom (Term.Bool.pa t)) (F.atom (Term.Bool.pa u))
     | T u -> mk_eq t u |> F.atom
-    | Rat u -> mk_eq t (t_of_ra u) |> F.atom
+    | Rat u -> mk_lra_eq (RLE.singleton1 t) u |> F.atom
   and mk_eq_tf_tf (t:term_or_form) (u:term_or_form) = match t, u with
     | T t, T u -> mk_eq t u |> F.atom
-    | T t, Rat u | Rat u, T t -> mk_eq t (t_of_ra u) |> F.atom
-    | Rat t, Rat u -> mk_eq (t_of_ra t) (t_of_ra u) |> F.atom
+    | T t, Rat u | Rat u, T t -> mk_lra_eq (RLE.singleton1 t) u |> F.atom
+    | Rat t, Rat u -> mk_lra_eq t u |> F.atom
     | F t, F u -> F.equiv t u
     | _ -> assert false
   in
@@ -109,6 +127,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
           | Rat _ -> Reg.find_exn reg Mc2_lra.k_rat
         in
         let placeholder_id = mk_ite_id () in
+        Log.debugf 30
+          (fun k->k"(@[smtlib.name_term@ %a@ :as %a@])" A.pp_term t ID.pp placeholder_id);
         decl placeholder_id [] ty_b;
         let placeholder = mk_const placeholder_id in
         (* add [f_a => placeholder=b] and [¬f_a => placeholder=c] *)
@@ -153,8 +173,6 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
       | A.Num_q n -> Mc2_lra.LE.const n |> ret_rat
       | A.Num_z n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
       | A.Arith (op, l) ->
-        let mk_pred = Reg.find_exn reg Mc2_lra.k_make_pred in
-        let mk_expr = Reg.find_exn reg Mc2_lra.k_make_expr in
         let l = List.map (aux_rat subst) l in
         begin match op, l with
           | A.Minus, [a] -> RLE.neg a |> ret_rat
@@ -162,28 +180,28 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
             Util.errorf "ill-formed arith expr:@ %a@ (need ≥ 2 args)" A.pp_term t
           | A.Leq, [a;b] ->
             let e = RLE.diff a b in
-            mk_pred Mc2_lra.Leq0 e |> ret_any
+            mk_lra_pred Mc2_lra.Leq0 e |> ret_any
           | A.Geq, [a;b] ->
             let e = RLE.diff b a in
-            mk_pred Mc2_lra.Leq0 e |> ret_any
+            mk_lra_pred Mc2_lra.Leq0 e |> ret_any
           | A.Lt, [a;b] ->
             let e = RLE.diff a b in
-            mk_pred Mc2_lra.Lt0 e |> ret_any
+            mk_lra_pred Mc2_lra.Lt0 e |> ret_any
           | A.Gt, [a;b] ->
             let e = RLE.diff b a in
-            mk_pred Mc2_lra.Lt0 e |> ret_any
+            mk_lra_pred Mc2_lra.Lt0 e |> ret_any
           | (A.Leq | A.Lt | A.Geq | A.Gt), _ ->
             Util.errorf "ill-formed arith expr:@ %a@ (binary operator)" A.pp_term t
           | A.Add, _ ->
             let e = List.fold_left (fun n t -> RLE.add t n) RLE.empty l in
-            mk_expr e |> ret_t
+            mk_lra_expr e |> ret_t
           | A.Minus, a::tail ->
             let e =
               List.fold_left
                 (fun n t -> RLE.diff n t)
                 a tail
             in
-            mk_expr e |> ret_t
+            mk_lra_expr e |> ret_t
           | A.Mult, _::_::_ ->
             let coeffs, terms =
               CCList.partition_map
@@ -220,7 +238,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   (* expect a term *)
   and aux_t subst (t:A.term) : term = match aux subst t with
     | T t -> t
-    | Rat e -> t_of_ra e
+    | Rat e -> mk_lra_expr e
     | F (F.Lit a) when Atom.is_pos a -> a.a_term
     | F f ->
       (* name the sub-formula and add CNF *)

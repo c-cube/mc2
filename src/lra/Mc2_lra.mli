@@ -17,8 +17,8 @@ type op =
 val k_rat : ty Service.Key.t
 (** Type of rationals *)
 
-val k_make_expr : (Linexp.t -> term) Service.Key.t
-(** Build rational expression *)
+val k_make_const : (num -> term) Service.Key.t
+(** Constant as a term *)
 
 val k_make_pred : (op -> Linexp.t -> term) Service.Key.t
 (** Build constraint *)

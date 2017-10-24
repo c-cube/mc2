@@ -54,10 +54,7 @@ type decide_state +=
     }
 
 type term_view +=
-  | Expr of {
-      expr: LE.t;
-      mutable watches: Term.Watch1.t;
-    } (** subterm that is a linear expression *)
+  | Const of num
   | Pred of {
       op: op;
       expr: LE.t;
@@ -68,7 +65,7 @@ type lemma_view +=
   | Lemma_lra
 
 let k_rat = Service.Key.makef "%s.rat" name
-let k_make_expr = Service.Key.makef "%s.make_expr" name
+let k_make_const = Service.Key.makef "%s.make_const" name
 let k_make_pred = Service.Key.makef "%s.make_pred" name
 
 let[@inline] equal_op a b =
@@ -90,6 +87,21 @@ let[@inline] eval_le (e:LE.t) : (num * term list) option =
     ~f:(fun t -> match Term.value t with
       | Some (V_value {view=V_rat n;_}) -> Some n
       | _ -> None)
+
+let tc_value =
+  let tcv_pp out = function
+    | V_rat q -> Q.pp_print out q
+    | _ -> assert false
+  and tcv_equal a b = match a, b with
+  | V_rat a, V_rat b -> Q.equal a b
+  | _ -> false
+  and tcv_hash = function
+  | V_rat r -> LE.hash_q r
+  | _ -> assert false
+  in
+  {tcv_pp; tcv_hash; tcv_equal}
+
+let[@inline] mk_val (n:num) : value = Value.make tc_value (V_rat n)
 
 (* evaluate the linear expression
    precondition: all terms in it are assigned *)
@@ -141,16 +153,8 @@ let pp_state out = function
       pp_bound s.low pp_bound s.up pp_eq s.eq
   | _ -> assert false
 
-(* flatten the expression by "inlining" terms that are themselves
-   linear expressions *)
-let[@inline] flatten_le (e:LE.t) : LE.t =
-  LE.flatten e
-    ~f:(fun t -> match Term.view t with
-      | Expr {expr=e;_} -> Some e
-      | _ -> None)
-
 let[@inline] subterms (t:term_view) : term Sequence.t = match t with
-  | Expr {expr=e;_} -> LE.terms e
+  | Const _ -> Sequence.empty
   | Pred {expr=e;_} -> LE.terms e
   | _ -> assert false
 
@@ -160,7 +164,7 @@ let pp_op out = function
   | Lt0 -> Fmt.string out "< 0"
 
 let pp_term out = function
-  | Expr {expr=e;_} -> LE.pp out e
+  | Const n -> Q.pp_print out n
   | Pred {op;expr;_} ->
     Fmt.fprintf out "(@[%a@ %a@])" LE.pp_no_paren expr pp_op op
   | _ -> assert false
@@ -176,6 +180,7 @@ let[@inline] eval_bool_const op n : bool =
 
 (* evaluate an arithmetic boolean expression *)
 let eval (t:term) = match Term.view t with
+  | Const n -> Eval_into (mk_val n, [])
   | Pred {op;expr=e;_} ->
     begin match eval_le e with
       | None -> Eval_unknown
@@ -204,11 +209,11 @@ let build
       let initial_size = 64
       let p_id = p_id
       let equal a b = match a, b with
-        | Expr e1, Expr e2 -> LE.equal e1.expr e2.expr
+        | Const n1, Const n2 -> Q.equal n1 n2
         | Pred p1, Pred p2 -> p1.op = p2.op && LE.equal p1.expr p2.expr
         | _ -> false
       let hash = function
-        | Expr e -> LE.hash e.expr
+        | Const n -> LE.hash_q n
         | Pred {op;expr;_} -> CCHash.combine3 10 (hash_op op) (LE.hash expr)
         | _ -> assert false
     end)
@@ -226,13 +231,8 @@ let build
       Type.make_static Ty_rat tc
     )
 
-    (* make linear expression and flatten *)
-    let[@inline] mk_expr_view (e:LE.t) : term_view =
-      Expr {expr=flatten_le e; watches=Term.Watch1.dummy}
-
     (* build a predicate on a linear expression *)
     let mk_pred (op:op) (e:LE.t) : term =
-      let e = flatten_le e in
       begin match LE.as_const e with
         | Some n ->
           (* directly evaluate *)
@@ -249,7 +249,7 @@ let build
           T.make view Type.bool
       end
 
-    let[@inline] mk_expr e = T.make (mk_expr_view e) (Lazy.force ty_rat)
+    let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
 
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
        eval to [false]) from [reasons] *)
@@ -490,12 +490,7 @@ let build
     (* [t] should evaluate or propagate. Add constraint to its state or
             propagate *)
     let check_consistent _acts (t:term) : unit = match Term.view t with
-      | Expr {expr=e;_} ->
-        assert (begin match Term.value_exn t with
-          | V_value{view=V_rat n;_} -> Q.equal n (eval_le_num_exn e)
-          | _ -> false
-        end);
-        ()
+      | Const _ -> ()
       | Pred _ ->
         (* check consistency *)
         begin match eval t, Term.value t with
@@ -515,6 +510,7 @@ let build
     (* [u] is [t] or one of its subterms. All the other watches are up-to-date,
        so we can add a constraint or even propagate [t] *)
     let check_or_propagate acts (t:term) ~(u:term) : unit = match Term.view t with
+      | Const _ -> ()
       | Pred p ->
         begin match Term.value t with
           | None ->
@@ -535,15 +531,10 @@ let build
             add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
           | Some _ -> assert false
         end
-      | Expr _ -> assert false (* propagation only for assigned predicates *)
       | _ -> assert false
 
     let init acts t : unit = match Term.view t with
-      | Expr e ->
-        let watches = Term.Watch1.make (t :: LE.terms_l e.expr) in
-        e.watches <- watches;
-        Term.Watch1.init e.watches t
-          ~on_all_set:(fun () -> check_consistent acts t)
+      | Const _ -> ()
       | Pred p ->
         let watches = Term.Watch2.make (t :: LE.terms_l p.expr) in
         p.watches <- watches;
@@ -553,30 +544,14 @@ let build
       | _ -> assert false
 
     let update_watches acts t ~watch : watch_res = match Term.view t with
-      | Expr e ->
-        Term.Watch1.update e.watches t ~watch
-          ~on_all_set:(fun () -> check_consistent acts t)
       | Pred p ->
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
+      | Const _ -> assert false
       | _ -> assert false
 
     let mk_eq t u = mk_pred Eq0 (LE.singleton1 t -.. LE.singleton1 u)
-
-    let tcv_pp out = function
-      | V_rat q -> Q.pp_print out q
-      | _ -> assert false
-
-    let tcv_equal a b = match a, b with
-      | V_rat a, V_rat b -> Q.equal a b
-      | _ -> false
-
-    let tcv_hash = function
-      | V_rat r -> LE.hash_q r
-      | _ -> assert false
-
-    let tc_value = {tcv_pp; tcv_hash; tcv_equal}
 
     (* can [t] be equal to [v] consistently with unit constraints? *)
     let can_be_eq (t:term) (n:num) : bool = match Term.decide_state_exn t with
@@ -657,7 +632,7 @@ let build
               Term.debug t Q.pp_print n pp_state st);
         assert (can_be_eq t n);
         r.last_val <- n; (* save *)
-        Value.make tc_value (V_rat n)
+        mk_val n
       | _ -> assert false
 
     let () =
@@ -669,7 +644,7 @@ let build
 
     let provided_services = [
       Service.Any (k_rat, Lazy.force ty_rat);
-      Service.Any (k_make_expr, mk_expr);
+      Service.Any (k_make_const, mk_const);
       Service.Any (k_make_pred, mk_pred);
     ]
   end in
