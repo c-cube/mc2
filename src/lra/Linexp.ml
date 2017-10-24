@@ -48,7 +48,7 @@ let[@inline] is_const n : bool = TM.is_empty n.terms
 let[@inline] is_zero n : bool = is_const n && Q.sign n.const=0
 
 let[@inline] as_singleton (e:t) =
-  if Q.sign e.const = 0 then (
+  if Q.sign e.const = 0 && not (TM.is_empty e.terms) then (
     let t, n = TM.choose e.terms in
     if TM.is_empty (TM.remove t e.terms)
     then Some (n, t)
