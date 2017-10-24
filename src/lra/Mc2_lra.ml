@@ -345,9 +345,9 @@ let build
             s.up <- B_some {strict;num;reason;expr};
             check_tight_bound acts t;
           | B_some b ->
-            (* only replace if more strict *)
+            (* only replace if more tight *)
             if Q.compare b.num num > 0 ||
-               (strict && not b.strict && Q.compare b.num num = 0) then (
+               (strict && not b.strict && Q.equal b.num num) then (
               s.up <- B_some {strict;num;reason;expr};
               check_tight_bound acts t;
             )
@@ -381,9 +381,9 @@ let build
             s.low <- B_some {strict;num;reason;expr};
             check_tight_bound acts t;
           | B_some b ->
-            (* only replace if more strict *)
+            (* only replace if more tight *)
             if Q.compare b.num num < 0 ||
-               (strict && not b.strict && Q.compare b.num num = 0) then (
+               (strict && not b.strict && Q.equal b.num num) then (
               s.low <- B_some {strict;num;reason;expr};
               check_tight_bound acts t;
             )
@@ -393,8 +393,6 @@ let build
     (* add exact bound *)
     let add_eq acts t num ~expr ~reason : unit = match Term.decide_state_exn t with
       | State s ->
-        let old_b = s.eq in
-        Actions.on_backtrack acts (fun () -> s.eq <- old_b);
         (* check compatibility with bounds *)
         begin match s.low, s.up with
           | B_some b, _ when
@@ -411,7 +409,7 @@ let build
               ~reasons:[reason; b.reason] ()
           | _ -> ()
         end;
-        (* check other equality constraints *)
+        (* check other equality constraints, and update *)
         begin match s.eq with
           | EC_none -> s.eq <- EC_eq {num;reason;expr}
           | EC_neq {l;_} ->
@@ -426,6 +424,8 @@ let build
                  ))
               l;
             (* erase *)
+            let old_b = s.eq in
+            Actions.on_backtrack acts (fun () -> s.eq <- old_b);
             s.eq <- EC_eq {num;reason;expr}
           | EC_eq eq ->
             if Q.equal eq.num num then (
