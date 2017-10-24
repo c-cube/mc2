@@ -410,6 +410,8 @@ let build
           | _ -> ()
         end;
         (* check other equality constraints, and update *)
+        let old_b = s.eq in
+        Actions.on_backtrack acts (fun () -> s.eq <- old_b);
         begin match s.eq with
           | EC_none -> s.eq <- EC_eq {num;reason;expr}
           | EC_neq {l;_} ->
@@ -424,8 +426,6 @@ let build
                  ))
               l;
             (* erase *)
-            let old_b = s.eq in
-            Actions.on_backtrack acts (fun () -> s.eq <- old_b);
             s.eq <- EC_eq {num;reason;expr}
           | EC_eq eq ->
             if Q.equal eq.num num then (
