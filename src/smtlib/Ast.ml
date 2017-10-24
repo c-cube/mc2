@@ -921,9 +921,18 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
      in
      [Define defs]
   *)
-  | A.Stmt_fun_rec _def ->
+  | A.Stmt_fun_def
+      {A.fr_decl={A.fun_ty_vars=[]; fun_args=[]; fun_name; fun_ret}; fr_body} ->
+    (* turn [def f : ret := body] into [decl f : ret; assert f=body] *)
+    let ret = conv_ty_fst ctx fun_ret in
+    let id = Ctx.add_id ctx fun_name (Ctx.K_fun ret) in
+    let rhs = conv_term ctx fr_body in
+    [ Decl (id,ret);
+      Assert (eq (const id ret) rhs);
+    ]
+  | A.Stmt_fun_def _ ->
     errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
-  | A.Stmt_fun_def _def ->
+  | A.Stmt_fun_rec _def ->
     errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
   | A.Stmt_assert t ->
     let t = conv_term ctx t in

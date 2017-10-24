@@ -214,7 +214,7 @@ stmt:
   | LEFT_PAREN DEFINE_FUN f=fun_rec RIGHT_PAREN
     {
       let loc = Loc.mk_pos $startpos $endpos in
-      A.fun_rec ~loc f
+      A.fun_def ~loc f
     }
   | LEFT_PAREN
     DEFINE_FUN_REC
@@ -277,6 +277,11 @@ ty:
     {
       let args, ret = tup in
       A.ty_arrow_l args ret }
+  | error
+    {
+      let loc = Loc.mk_pos $startpos $endpos in
+      A.parse_errorf ~loc "expected type"
+    }
 
 ty_arrow_args:
   | a=ty ret=ty { [a], ret }
@@ -309,7 +314,6 @@ binding:
 term:
   | TRUE { A.true_ }
   | FALSE { A.false_ }
-  | s=QUOTED { A.const s }
   | s=id { A.const s }
   | t=composite_term { t }
   | error
@@ -329,7 +333,6 @@ term:
   | GT { A.Gt }
 
 composite_term:
-  | LEFT_PAREN t=term RIGHT_PAREN { t }
   | LEFT_PAREN IF a=term b=term c=term RIGHT_PAREN { A.if_ a b c }
   | LEFT_PAREN OR l=term+ RIGHT_PAREN { A.or_ l }
   | LEFT_PAREN AND l=term+ RIGHT_PAREN { A.and_ l }
