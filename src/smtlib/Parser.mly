@@ -25,6 +25,7 @@
 %token FALSE
 %token OR
 %token AND
+%token XOR
 %token DISTINCT
 %token NOT
 %token EQ
@@ -340,6 +341,7 @@ composite_term:
   | LEFT_PAREN DISTINCT l=term+ RIGHT_PAREN { A.distinct l }
   | LEFT_PAREN EQ a=term b=term RIGHT_PAREN { A.eq a b }
   | LEFT_PAREN ARROW a=term b=term RIGHT_PAREN { A.imply a b }
+  | LEFT_PAREN XOR a=term b=term RIGHT_PAREN { A.xor a b }
   | LEFT_PAREN f=id args=term+ RIGHT_PAREN { A.app f args }
   | LEFT_PAREN o=arith_op args=term+ RIGHT_PAREN { A.arith o args }
   | LEFT_PAREN f=composite_term args=term+ RIGHT_PAREN { A.ho_app_l f args }

@@ -56,6 +56,7 @@ type term =
   | And of term list
   | Or of term list
   | Not of term
+  | Xor of term * term
   | Distinct of term list
   | Cast of term * ty (* type cast *)
   | Forall of (var * ty) list * term
@@ -128,6 +129,7 @@ let fun_l = List.fold_right fun_
 let let_ l t = Let (l,t)
 let eq a b = Eq (a,b)
 let imply a b = Imply(a,b)
+let xor a b = Xor (a,b)
 let and_ l = And l
 let or_ l = Or l
 let distinct l = Distinct l
@@ -218,6 +220,7 @@ let rec pp_term out (t:term) = match t with
     fpf out "(@[let@ (@[%a@])@ %a@])" (Util.pp_list pp_binding) l pp_term t
   | Eq (a,b) -> fpf out "(@[=@ %a@ %a@])" pp_term a pp_term b
   | Imply (a,b) -> fpf out "(@[=>@ %a@ %a@])" pp_term a pp_term b
+  | Xor(a,b) -> fpf out "(@[xor@ %a@ %a@])" pp_term a pp_term b
   | And l -> fpf out "(@[<hv>and@ %a@])" (Util.pp_list pp_term) l
   | Or l -> fpf out "(@[<hv>or@ %a@])" (Util.pp_list pp_term) l
   | Not t -> fpf out "(not %a)" pp_term t

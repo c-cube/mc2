@@ -678,6 +678,10 @@ and conv_term_aux ctx t : term = match t with
     let a = conv_term ctx a in
     let b = conv_term ctx b in
     imply a b
+  | A.Xor (a,b) ->
+    let a = conv_term ctx a in
+    let b = conv_term ctx b in
+    or_ (and_ a (not_ b)) (and_ (not_ a) b)
   | A.Match (_lhs, _l) ->
     assert false
   (* FIXME

@@ -32,6 +32,7 @@ rule token = parse
   | "or" { OR }
   | "and" { AND }
   | "not" { NOT }
+  | "xor" { XOR }
   | "distinct" { DISTINCT }
   | "ite" { IF }
   | "as" { AS }
