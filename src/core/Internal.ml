@@ -461,8 +461,11 @@ let partition_atoms (atoms:atom array) : atom list * raw_premise_step list =
             | Some (Bcp cl | Bcp_lazy (lazy cl)) ->
               partition_aux trues unassigned falses
                 (cl :: history) (i + 1)
-            | Some (Eval _) ->
+            | Some (Eval []) ->
               partition_aux trues unassigned falses history (i + 1)
+            | Some (Eval l) when List.for_all (fun t->Term.level t=0) l ->
+              partition_aux trues unassigned falses history (i + 1)
+            | Some (Eval _) -> assert false
             (* Evaluation at level 0 are, well not easy to deal with,
                this shouldn't really happen actually (because semantic propagations
                at level 0 should come with a proof). *)
@@ -880,6 +883,7 @@ end = struct
                 | Bcp cl | Bcp_lazy (lazy cl) ->
                   st.cs_history <- cl :: st.cs_history
                 | Eval [] -> () (* absurd *)
+                | Eval l -> assert (List.for_all (fun t->Term.level t=0) l);
                 | _ -> assert false
               end
             );
