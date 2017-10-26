@@ -636,7 +636,7 @@ let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
       List.fold_left
         (fun acc t ->
            let t_lvl = Term.level t in
-           assert (t_lvl > 0); max acc t_lvl)
+           assert (t_lvl >= 0); max acc t_lvl)
         0 terms
     in
     env.propagations <- env.propagations + 1;

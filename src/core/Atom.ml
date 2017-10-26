@@ -73,6 +73,7 @@ let[@inline] eval (a:t) : eval_res =
 
 let[@inline] is_absurd (a:t) : bool = match eval a with
   | Eval_into (V_false,[]) -> true
+  | Eval_into (V_false,l) -> List.for_all (fun u -> Term.level u=0) l
   | _ -> false
 
 let[@inline] can_eval_to_false a = match eval a with
