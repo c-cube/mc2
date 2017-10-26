@@ -17,11 +17,12 @@ let fresh_pcl_name () = incr _c; "R" ^ (string_of_int !_c)
 let find_duplicates (c:clause) : atom list =
   let r =
     Array.fold_left
-      (fun acc a -> if Atom.marked a then a :: acc else (Atom.mark a; acc))
-      [] c.c_atoms
+      (fun acc a ->
+         if Atom.marked a then Atom.Set.add a acc else (Atom.mark a; acc))
+      Atom.Set.empty c.c_atoms
   in
   Array.iter Atom.unmark c.c_atoms;
-  r
+  Atom.Set.to_list r
 
 let find_absurd (c:clause) : atom list =
   Array.fold_left
