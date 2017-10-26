@@ -1839,7 +1839,8 @@ let check_clause (c:clause) : unit =
   )
 
 let check_term (t:term) : unit = match Term.value t, Term.eval t with
-  | None, Eval_unknown -> bad_modelf "term `%a` does not have a value" Term.debug t
+  | None, Eval_unknown ->
+    () (* no value, can happen if atom only occurs in trivial clauses *)
   | None, Eval_into (_,[]) -> () (* builtins *)
   | None, Eval_into (v,_) ->
     bad_modelf "@[<hv>term `%a`@ :eval-into %a@ :but-not-assigned@]"
