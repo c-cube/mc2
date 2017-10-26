@@ -1833,13 +1833,7 @@ let bad_modelf msg = Fmt.ksprintf ~f:bad_model msg
 
 (* Check satisfiability *)
 let check_clause (c:clause) : unit =
-  let res =
-    CCArray.exists
-      (fun a ->
-         if Atom.is_undef a then err_undecided_lit a.a_term
-         else Atom.is_true a)
-      c.c_atoms
-  in
+  let res = CCArray.exists Atom.is_true c.c_atoms in
   if not res then (
     bad_modelf "Clause not satisfied: @[<hov>%a@]" Clause.debug c
   )
@@ -1847,12 +1841,7 @@ let check_clause (c:clause) : unit =
 let check_term (t:term) : unit = match Term.value t, Term.eval t with
   | None, Eval_unknown ->
     () (* no value, can happen if atom only occurs in trivial clauses *)
-  | None, Eval_into (_,[]) -> () (* builtins *)
-  | None, Eval_into (_,l) when List.for_all (fun t->Term.level t=0) l ->
-    () (* eval at lvl 0 *)
-  | None, Eval_into (v,_) ->
-    bad_modelf "@[<hv>term `%a`@ :eval-into %a@ :but-not-assigned@]"
-      Term.debug t Value.pp v
+  | None, Eval_into _ -> ()
   | Some _, Eval_unknown -> ()
   | Some v1, Eval_into (v2,_) ->
     if not (Value.equal v1 v2) then (
