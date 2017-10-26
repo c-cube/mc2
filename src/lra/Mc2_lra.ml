@@ -93,11 +93,11 @@ let tc_value =
     | V_rat q -> Q.pp_print out q
     | _ -> assert false
   and tcv_equal a b = match a, b with
-  | V_rat a, V_rat b -> Q.equal a b
-  | _ -> false
+    | V_rat a, V_rat b -> Q.equal a b
+    | _ -> false
   and tcv_hash = function
-  | V_rat r -> LE.hash_q r
-  | _ -> assert false
+    | V_rat r -> LE.hash_q r
+    | _ -> assert false
   in
   {tcv_pp; tcv_hash; tcv_equal}
 
