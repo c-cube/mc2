@@ -104,6 +104,9 @@ module Sat_state : sig
 
   val model: t -> assignment_view list
   (** Returns the model found if the formula is satisfiable. *)
+
+  val check_model : t -> bool
+  (** Check model, or fail *)
 end
 
 module Unsat_state : sig

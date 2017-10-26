@@ -76,6 +76,16 @@ module Sat_state = struct
   let eval (St_sat _s) t = S.eval t
   let eval_level (St_sat _s) t = S.eval_level t
   let model (St_sat s) = S.model s
+
+  let check_model (s:t) : bool =
+    let St_sat s = s in
+    begin match S.check s with
+      | Ok _ -> true
+      | Error msg ->
+        Log.debugf 0
+          (fun k->k "(@[solver.check_model.fail:@ %a@])" Format.pp_print_text msg);
+        false
+    end
 end
 
 module Unsat_state = struct

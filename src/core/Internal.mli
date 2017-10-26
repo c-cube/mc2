@@ -95,7 +95,7 @@ val local : t -> atom list -> unit
       removed after the callback returns a value
     @raise Invalid_argument if no levels were {!push}ed *)
 
-(** {2 Propositional models} *)
+(** {2 Proofs and Models} *)
 
 val eval : atom -> bool
 (** Returns the valuation of a term in the current state
@@ -112,11 +112,9 @@ val eval_level : atom -> bool * int
 val model : t -> assignment_view list
 (** Returns the model found if the term is satisfiable. *)
 
-val check : t -> bool
+val check : t -> (unit,string) result
 (** Check the satisfiability of the current model. Only has meaning
     if the solver finished proof search and has returned [Sat]. *)
-
-(** {2 Proofs and Models} *)
 
 type proof = Proof.t
 

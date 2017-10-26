@@ -1810,8 +1810,13 @@ let local (env:t) (l:atom list) : unit =
       Log.debug warn "Cannot add local assumption (already unsat)"
   end
 
+exception Bad_model of string
+
+let bad_model msg = raise (Bad_model msg)
+let bad_modelf msg = Fmt.ksprintf ~f:bad_model msg
+
 (* Check satisfiability *)
-let check_clause (c:clause) : bool =
+let check_clause (c:clause) : unit =
   let res =
     CCArray.exists
       (fun a ->
@@ -1819,25 +1824,39 @@ let check_clause (c:clause) : bool =
          else Atom.is_true a)
       c.c_atoms
   in
-  if res then true
-  else (
-    Log.debugf debug
-      (fun k -> k "Clause not satisfied: @[<hov>%a@]" Clause.debug c);
-    false
+  if not res then (
+    bad_modelf "Clause not satisfied: @[<hov>%a@]" Clause.debug c
   )
 
-let[@inline] check_vec v = Vec.for_all check_clause v
+let check_term (t:term) : unit = match Term.value t, Term.eval t with
+  | None, Eval_unknown -> bad_modelf "term `%a` does not have a value" Term.debug t
+  | None, Eval_into (_,[]) -> () (* builtins *)
+  | None, Eval_into (v,_) ->
+    bad_modelf "@[<hv>term `%a`@ :eval-into %a@ :but-not-assigned@]"
+      Term.debug t Value.pp v
+  | Some _, Eval_unknown -> ()
+  | Some v1, Eval_into (v2,_) ->
+    if not (Value.equal v1 v2) then (
+      bad_modelf "@[<hv>inconsistency: term `%a`@ :assigned-to %a@ :eval-to %a@]"
+        Term.debug t Value.pp v1 Value.pp v2
+    )
 
-let[@inline] check_stack s =
-  Sequence.of_stack s
-  |> Sequence.for_all check_clause
+let[@inline] check_terms (env:t) = iter_terms env check_term
 
-let check (env:t) : bool =
-  Stack.is_empty env.clauses_to_add &&
-  check_stack env.clauses_root &&
-  check_vec env.clauses_hyps &&
-  check_vec env.clauses_learnt &&
-  check_vec env.clauses_temp
+let[@inline] check_vec v = Vec.iter check_clause v
+
+let[@inline] check_stack s = Stack.iter check_clause s
+
+let check (env:t) : (unit,string) result =
+  try
+    assert (Stack.is_empty env.clauses_to_add);
+    check_stack env.clauses_root;
+    check_vec env.clauses_hyps;
+    check_vec env.clauses_learnt;
+    check_vec env.clauses_temp;
+    check_terms env;
+    Ok ()
+  with Bad_model msg -> Error msg
 
 (* Unsafe access to internal data *)
 

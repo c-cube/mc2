@@ -278,28 +278,14 @@ let check_model state : bool =
   let check_clause c =
     Log.debugf 15
       (fun k -> k "(@[check.clause@ %a@])" Clause.debug_atoms c);
-    let ok =
-      List.exists
-        (fun a ->
-           Log.debugf 15
-             (fun k -> k "(@[check.atom@ %a@])" Term.debug (Atom.term a));
-           let b = Solver.Sat_state.eval state a in
-           (* check consistency with eval_bool *)
-           begin match Term.eval (Atom.term a) with
-             | Eval_unknown -> ()
-             | Eval_into (b', _) ->
-               assert (Value.equal b'
-                   (Value.of_bool (if Atom.is_pos a then b else not b)));
-           end;
-           b)
-        c
-    in
+    let ok = List.exists (Solver.Sat_state.eval state) c in
     if not ok then (
       Log.debugf 0
         (fun k->k "(@[check.fail:@ clause %a@ not satisfied in model@])" Clause.debug_atoms c);
     );
     ok
   in
+  Solver.Sat_state.check_model state &&
   List.for_all check_clause !hyps
 
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
