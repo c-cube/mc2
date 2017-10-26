@@ -68,6 +68,7 @@ module Make(A : Arg with type atom := atom
         | '<' -> Buffer.add_string buf "&lt;"
         | '&' -> Buffer.add_string buf "&amp;"
         | '"' -> Buffer.add_string buf "&quot;"
+        | '\n' -> Buffer.add_string buf "<br align=\"left\" />"
         | c -> Buffer.add_char buf c)
       s;
     Buffer.contents buf
@@ -83,11 +84,13 @@ module Make(A : Arg with type atom := atom
       Format.fprintf fmt "⊥"
     ) else (
       let n = Array.length v in
+      Format.fprintf fmt "@[<hov>";
       for i = 0 to n - 1 do
-        Format.fprintf fmt "%a" (with_escape A.print_atom) v.(i);
+        Format.fprintf fmt "%a" A.print_atom v.(i);
         if i < n - 1 then
-          Format.fprintf fmt ", "
-      done
+          Format.fprintf fmt ",@ "
+      done;
+      Format.fprintf fmt "@]";
     )
 
   let print_edge fmt i j = Format.fprintf fmt "%s -> %s;@\n" j i
@@ -104,7 +107,7 @@ module Make(A : Arg with type atom := atom
     Format.fprintf fmt "BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" BGCOLOR=\"%s\"" color
 
   let table fmt (c, rule, color, l) =
-    Format.fprintf fmt "<TR><TD colspan=\"2\">%a</TD></TR>" print_clause c;
+    Format.fprintf fmt "<TR><TD colspan=\"2\">%a</TD></TR>" (with_escape print_clause) c;
     match l with
       | [] ->
         Format.fprintf fmt "<TR><TD BGCOLOR=\"%s\" colspan=\"2\">%s</TD></TR>" color rule
