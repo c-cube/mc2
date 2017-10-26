@@ -417,8 +417,8 @@ let eliminate_duplicates_and_absurd (clause:clause) : clause * bool =
 
 (* simplify clause by removing duplicates *)
 let simplify_clause (c:clause) : clause =
-  let c', has_dedup = eliminate_duplicates_and_absurd c in
-  if has_dedup then (
+  let c', has_simplified = eliminate_duplicates_and_absurd c in
+  if has_simplified then (
     Log.debugf 15
       (fun k -> k "(@[solver.simplify_clause@ :into %a@ :from %a@])"
           Clause.debug c' Clause.debug c);
@@ -1071,8 +1071,10 @@ let add_clause (env:t) (c0:clause) : unit =
      trivial clause could end up being not decided on, which is a bug. *)
   let vec = vec_to_insert_clause_into env c0 in
   try
+    (* add atoms first, so as to evaluate absurd ones, etc. *)
+    Array.iter (add_atom env) c0.c_atoms;
+    (* now simplify *)
     let c = simplify_clause c0 in
-    Array.iter (add_atom env) c.c_atoms;
     let atoms, history = partition_atoms c.c_atoms in
     let clause =
       if history = []
