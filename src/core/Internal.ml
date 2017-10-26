@@ -1138,9 +1138,11 @@ let add_clause (env:t) (c0:clause) : unit =
         )
     end
   with Trivial ->
-    Vec.push vec c0;
+    (* ignore clause. *)
     Log.debugf info
-      (fun k->k "(@[solver.add_clause: trivial clause ignored@ :c %a@])" Clause.debug c0)
+      (fun k->k "(@[solver.add_clause: trivial clause ignored@ :c %a@])" Clause.debug c0);
+    (*Vec.push vec c0;*)
+    ()
 
 (* really add clauses pushed by plugins to the solver *)
 let flush_clauses (env:t) =
