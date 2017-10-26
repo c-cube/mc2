@@ -249,7 +249,15 @@ let[@unrolled 1] rec add_term (env:t) (t:term): unit =
     Term.field_set field_t_is_added t;
     Term.setup_var t;
     Term.iter_subterms t (add_term env); (* add subterms, recursively *)
-    H.insert env.term_heap t; (* add to priority queue for decision *)
+    (* does the term have a value, or do we need to decide on it? *)
+    begin match Term.eval t with
+      | Eval_into (value, []) ->
+        t.t_assign <- TA_assign {value;reason=Eval [];level=0};
+      | Eval_into (value, l) when List.for_all (fun t -> Term.level t=0) l ->
+        t.t_assign <- TA_assign {value;reason=Eval l;level=0};
+      | _ ->
+        H.insert env.term_heap t; (* add to priority queue for decision *)
+    end;
     term_init env t; (* setup watches, possibly propagating already *)
   )
 
@@ -381,14 +389,16 @@ let[@inline] arr_to_list arr i : _ list =
   if i >= Array.length arr then []
   else Array.to_list (Array.sub arr i (Array.length arr - i))
 
-(* Eliminates atom duplicates in clauses.
+(* Eliminates atom duplicates in clauses, and remove absurd atoms.
    returns [true] if something changed. *)
-let eliminate_duplicates (clause:clause) : clause * bool =
+let eliminate_duplicates_and_absurd (clause:clause) : clause * bool =
   let duplicates = ref [] in
+  let removed_absurd = ref false in
   let res = ref [] in
   Array.iter
     (fun a ->
        if Atom.marked a then duplicates := a :: !duplicates
+       else if Atom.is_absurd a then removed_absurd := true
        else (Atom.mark a; res := a :: !res))
     (Clause.atoms clause);
   (* cleanup *)
@@ -398,7 +408,7 @@ let eliminate_duplicates (clause:clause) : clause * bool =
   Array.iter Atom.unmark clause.c_atoms;
   if trivial then (
     raise Trivial
-  ) else if !duplicates = [] then (
+  ) else if not !removed_absurd && !duplicates = [] then (
     clause, false
   ) else (
     (* make a new clause, simplified *)
@@ -407,10 +417,10 @@ let eliminate_duplicates (clause:clause) : clause * bool =
 
 (* simplify clause by removing duplicates *)
 let simplify_clause (c:clause) : clause =
-  let c', has_dedup = eliminate_duplicates c in
+  let c', has_dedup = eliminate_duplicates_and_absurd c in
   if has_dedup then (
     Log.debugf 15
-      (fun k -> k "(@[solver.deduplicate@ :into %a@ :from %a@])"
+      (fun k -> k "(@[solver.simplify_clause@ :into %a@ :from %a@])"
           Clause.debug c' Clause.debug c);
   );
   c'
@@ -1051,14 +1061,14 @@ let[@unrolled 1] rec vec_to_insert_clause_into env c = match c.c_premise with
 
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
-let add_clause (env:t) (init:clause) : unit =
-  Log.debugf debug (fun k -> k "(@[solver.add_clause@ %a@])" Clause.debug init);
+let add_clause (env:t) (c0:clause) : unit =
+  Log.debugf debug (fun k -> k "(@[solver.add_clause@ %a@])" Clause.debug c0);
   (* Insertion of new lits is done before simplification. Indeed, else a lit in a
      trivial clause could end up being not decided on, which is a bug. *)
-  Array.iter (add_atom env) init.c_atoms;
-  let vec = vec_to_insert_clause_into env init in
+  let vec = vec_to_insert_clause_into env c0 in
   try
-    let c = simplify_clause init in
+    let c = simplify_clause c0 in
+    Array.iter (add_atom env) c.c_atoms;
     let atoms, history = partition_atoms c.c_atoms in
     let clause =
       if history = []
@@ -1124,9 +1134,9 @@ let add_clause (env:t) (init:clause) : unit =
         )
     end
   with Trivial ->
-    Vec.push vec init;
+    Vec.push vec c0;
     Log.debugf info
-      (fun k->k "(@[solver.add_clause: trivial clause ignored@ :c %a@])" Clause.debug init)
+      (fun k->k "(@[solver.add_clause: trivial clause ignored@ :c %a@])" Clause.debug c0)
 
 (* really add clauses pushed by plugins to the solver *)
 let flush_clauses (env:t) =

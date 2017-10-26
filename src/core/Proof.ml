@@ -23,6 +23,10 @@ let find_duplicates (c:clause) : atom list =
   Array.iter Atom.unmark c.c_atoms;
   r
 
+let find_absurd (c:clause) : atom list =
+  Array.fold_left
+    (fun acc a -> if Atom.is_absurd a then a::acc else acc) [] c.c_atoms
+
 (* Comparison of clauses by their lists of atoms *)
 let[@inline] cl_list_eq c d = CCList.equal Atom.equal c d
 let[@inline] prove conclusion = conclusion
@@ -37,7 +41,11 @@ and step =
   | Hypothesis
   | Assumption
   | Lemma of lemma
-  | Deduplicate of t * atom list
+  | Simplify of {
+      init: t;
+      duplicates: atom list;
+      absurd: atom list;
+    }
   | Hyper_res of {
       init: t;
       steps: premise_step list; (* list of steps to apply to [init] *)
@@ -54,9 +62,10 @@ let debug_step out (s:step) : unit = match s with
   | Hypothesis -> Fmt.string out "hypothesis"
   | Assumption -> Fmt.string out "assumption"
   | Lemma l -> Fmt.fprintf out "(@[lemma %a@])" Lemma.pp l
-  | Deduplicate (c,l) ->
-    Fmt.fprintf out "(@[<hv>dedup@ :from %a@ :on (@[%a@])@])" Clause.debug c
-      Clause.debug_atoms l
+  | Simplify s ->
+    Fmt.fprintf out "(@[<hv>simplify@ :from %a@ :dups (@[%a@])@ :absurd (@[%a@])@])"
+      Clause.debug s.init
+      Clause.debug_atoms s.duplicates Clause.debug_atoms s.absurd
   | Hyper_res {init;steps} ->
     Fmt.fprintf out "(@[<hv>hyper_res@ :init %a@ %a@])"
       Clause.debug init (Util.pp_list pp_clause_step) steps
@@ -113,7 +122,8 @@ end = struct
         mk_node conclusion step
       | Simplify c ->
         let duplicates = find_duplicates c in
-        mk_node conclusion (Deduplicate (c, duplicates))
+        let absurd = find_absurd c in
+        mk_node conclusion (Simplify {init=c; duplicates; absurd})
       | P_raw_steps [] ->
         Util.errorf "proof: resolution error (no premise)@ %a@ :premise %a"
           Clause.debug conclusion Premise.pp conclusion.c_premise
@@ -207,7 +217,7 @@ let is_leaf = function
   | Hypothesis
   | Assumption
   | Lemma _ -> true
-  | Deduplicate _ | Hyper_res _ -> false
+  | Simplify _ | Hyper_res _ -> false
 
 let[@inline] parents_steps l : t list =
   List.map
@@ -220,7 +230,7 @@ let parents = function
   | Hypothesis
   | Assumption
   | Lemma _ -> []
-  | Deduplicate (p, _) -> [p]
+  | Simplify {init=p;_} -> [p]
   | Hyper_res {init;steps} ->
     init :: parents_steps steps
 
@@ -228,7 +238,7 @@ let expl = function
   | Hypothesis -> "hypothesis"
   | Assumption -> "assumption"
   | Lemma _ -> "lemma"
-  | Deduplicate  _ -> "deduplicate"
+  | Simplify _ -> "simplify"
   | Hyper_res _ -> "hyper_res"
 
 (* Compute unsat-core *)
@@ -283,7 +293,7 @@ let rec fold_aux s h f acc =
         Stack.push (Leaving c) s;
         let node = expand c in
         begin match node.step with
-          | Deduplicate (p1, _) ->
+          | Simplify {init=p1;_} ->
             Stack.push (Enter p1) s
           | Hyper_res {init;steps} ->
             Stack.push (Enter init) s;
@@ -359,9 +369,6 @@ end = struct
           pp_a_set (Atom.Set.diff d c)
       );
     in
-    let check_same_c ~ctx ~expect:c1 c2 =
-      check_same_set ~ctx ~expect:(set_of_c c1) (set_of_c c2)
-    in
     iter
       (fun n ->
          let concl = conclusion n in
@@ -372,15 +379,26 @@ end = struct
            | Lemma _ -> () (* TODO: check lemmas *)
            | Hypothesis -> ()
            | Assumption -> ()
-           | Deduplicate (c, dups) ->
-             let dups' = find_duplicates c in
-             if not (Atom.Set.equal (Atom.Set.of_list dups) (Atom.Set.of_list dups')) then (
+           | Simplify s ->
+             let dups' = find_duplicates s.init in
+             if not (Atom.Set.equal
+                   (Atom.Set.of_list s.duplicates) (Atom.Set.of_list dups')) then (
                Util.errorf
                  "(@[<hv>proof.check.invalid_simplify_step@ :from %a@ :to %a@ :dups1 %a@ :dups2 %a@])"
-                 Clause.debug c Clause.debug concl Clause.debug_atoms dups
+                 Clause.debug s.init Clause.debug concl Clause.debug_atoms s.duplicates
                  Clause.debug_atoms dups'
              );
-             check_same_c ~ctx:"in-dedup" c ~expect:concl
+             begin match CCList.find_pred (fun a -> not (Atom.is_absurd a)) s.absurd with
+               | None -> ()
+               | Some a ->
+                 Util.errorf
+                   "(@[<hv>proof.check.invalid_simplify_step@ :in %a@ :not-absurd %a@])"
+                   Clause.debug s.init Atom.debug a
+             end;
+             (* remove absurd literals, and check equality modulo duplicates *)
+             let c = set_of_c s.init in
+             let c = Atom.Set.diff c (Atom.Set.of_list s.absurd) in
+             check_same_set ~ctx:"in-dedup" c ~expect:(set_of_c concl)
            | Hyper_res {init;steps} ->
              let st = perform_hyper_step init steps in
              check_same_set ~ctx:"in-res" st.cur ~expect:(set_of_c concl);

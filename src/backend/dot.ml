@@ -128,11 +128,12 @@ module Make(A : Arg with type atom := atom
         print_dot_node fmt (node_id n) "LIGHTBLUE" Proof.(n.conclusion) rule color l
 
       (* Tree nodes *)
-      | Proof.Deduplicate (p, l) ->
-        print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Duplicate" "GREY"
+      | Proof.Simplify {init;duplicates;absurd} ->
+        print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Simplify" "GREY"
           ((fun fmt () -> (Format.fprintf fmt "%s" (node_id n))) ::
-             List.map (ttify A.print_atom) l);
-        print_edge fmt (node_id n) (node_id (Proof.expand p))
+             List.map (ttify A.print_atom) duplicates @
+             List.map (ttify A.print_atom) absurd);
+        print_edge fmt (node_id n) (node_id (Proof.expand init))
       | Proof.Hyper_res {steps;_} ->
         print_dot_node fmt (node_id n) "GREY" Proof.(n.conclusion) "Hyper_res" "GREY"
           [(fun fmt () -> Format.fprintf fmt "%s" (node_id n))];

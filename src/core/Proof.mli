@@ -29,9 +29,13 @@ and step =
   (** The conclusion has been locally assumed by the user *)
   | Lemma of lemma
   (** The conclusion is a tautology provided by the theory, with associated proof *)
-  | Deduplicate of t * atom list
-  (** The conclusion is obtained by eliminating multiple occurrences of the atom in
-      the conclusion of the provided proof. *)
+  | Simplify of {
+      init: t;
+      duplicates: atom list;
+      absurd: atom list;
+    }
+  (** The conclusion is obtained by eliminating multiple occurrences of atoms in
+      the conclusion of the provided proof, and removing some absurd atoms. *)
   | Hyper_res of {
       init: t;
       steps: premise_step list; (* list of steps to apply to [init] *)
