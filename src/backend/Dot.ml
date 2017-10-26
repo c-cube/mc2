@@ -59,6 +59,24 @@ module Make(A : Arg with type atom := atom
   let[@inline] res_node_id n = node_id n ^ "_res"
   let[@inline] proof_id p = node_id (Proof.expand p)
 
+  (* html escaping *)
+  let escape_str (s:string): string =
+    let buf = Buffer.create (String.length s) in
+    String.iter
+      (function
+        | '>' -> Buffer.add_string buf "&gt;"
+        | '<' -> Buffer.add_string buf "&lt;"
+        | '&' -> Buffer.add_string buf "&amp;"
+        | '"' -> Buffer.add_string buf "&quot;"
+        | c -> Buffer.add_char buf c)
+      s;
+    Buffer.contents buf
+
+  (* print like [f], but escaping *)
+  let with_escape f out x =
+    let s = Fmt.sprintf "%a" f x |> escape_str in
+    Fmt.string out s
+
   let print_clause fmt c =
     let v = c.c_atoms in
     if Array.length v = 0 then (
@@ -66,7 +84,7 @@ module Make(A : Arg with type atom := atom
     ) else (
       let n = Array.length v in
       for i = 0 to n - 1 do
-        Format.fprintf fmt "%a" A.print_atom v.(i);
+        Format.fprintf fmt "%a" (with_escape A.print_atom) v.(i);
         if i < n - 1 then
           Format.fprintf fmt ", "
       done
@@ -103,13 +121,13 @@ module Make(A : Arg with type atom := atom
     | Inf_pivot of atom
 
   let pp_inf_on out = function
-    | Inf_pivot a -> A.print_atom out a
+    | Inf_pivot a -> with_escape A.print_atom out a
 
   let print_dot_res_node fmt id (inf_on:inf_on list) =
     Format.fprintf fmt "%s [label=<%a>];@\n"
       id (Util.pp_list ~sep:";" pp_inf_on) inf_on
 
-  let ttify f c = fun fmt () -> f fmt c
+  let ttify f c = fun fmt () -> with_escape f fmt c
 
   let print_contents fmt n =
     begin match n.Proof.step with
