@@ -229,6 +229,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
                 l
             in
             List.fold_right RLE.mult coeffs first |> ret_rat
+          (* TODO: ajouter support pour ReLU *)
         end
       | A.Select _ -> assert false (* TODO *)
       | A.Match _ -> assert false (* TODO *)
