@@ -53,6 +53,7 @@ rule token = parse
   | "<" { LT }
   | ">=" { GEQ }
   | ">" { GT }
+  | "ReLU" {RELU}
   | "declare-datatypes" { DATA }
   | "assert" { ASSERT }
   | "lemma" { LEMMA }
