@@ -83,6 +83,7 @@ type arith_op =
   | Minus
   | Mult
   | Div
+  | ReLU
 
 type binder =
   | Fun

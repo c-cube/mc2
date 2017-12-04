@@ -134,6 +134,7 @@ type arith_op =
   | Minus
   | Mult
   | Div
+  | ReLU
 
 type binder =
   | Fun
@@ -217,6 +218,7 @@ let pp_arith out = function
   | Minus -> Fmt.string out "-"
   | Mult -> Fmt.string out "*"
   | Div -> Fmt.string out "/"
+  | ReLU -> Fmt.string out "ReLU"
 
 let pp_term =
   let rec pp out t = match t.term with
@@ -792,6 +794,7 @@ and conv_term_aux ctx t : term = match t with
       | A.Minus -> Ty.rat, Minus
       | A.Mult -> Ty.rat, Mult
       | A.Div -> Ty.rat, Div
+      | A.ReLU -> Ty.rat, ReLU
     in
     arith ty op l
   | A.Cast (t, ty_expect) ->

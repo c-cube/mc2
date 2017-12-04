@@ -1,0 +1,7 @@
+(declare-fun e () Real)
+(declare-fun buscore2dollarskuscore0 () Real)
+(declare-fun auscore2dollarskuscore0 () Real)
+(declare-fun cuscore2dollarskuscore0 () Real)
+(assert (>= (relu x) 0))
+(check-sat)
+(exit)

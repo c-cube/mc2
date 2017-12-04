@@ -46,6 +46,7 @@
 %token MINUS
 %token PROD
 %token DIV
+%token RELU
 
 %token SET_LOGIC
 %token SET_OPTION
@@ -332,6 +333,8 @@ term:
   | LT { A.Lt }
   | GEQ { A.Geq }
   | GT { A.Gt }
+  | RELU { A.ReLU }
+  
 
 composite_term:
   | LEFT_PAREN IF a=term b=term c=term RIGHT_PAREN { A.if_ a b c }

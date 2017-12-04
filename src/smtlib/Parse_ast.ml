@@ -38,6 +38,7 @@ type arith_op =
   | Minus
   | Mult
   | Div
+  | ReLU
 
 (** {2 AST: S-expressions with locations} *)
 type term =
@@ -194,6 +195,7 @@ let pp_arith out = function
   | Minus -> Fmt.string out "-"
   | Mult -> Fmt.string out "*"
   | Div -> Fmt.string out "/"
+  | ReLU -> Fmt.string out "ReLU"
 
 let rec pp_term out (t:term) = match t with
   | True -> pp_str out "true"
