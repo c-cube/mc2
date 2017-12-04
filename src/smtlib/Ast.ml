@@ -344,6 +344,8 @@ let arith ty op l = mk_ (Arith (op,l)) ty
 let num_q ty z = mk_ (Num_q z) ty
 let num_z ty z = mk_ (Num_z z) ty
 
+let zero_Q = (Q.of_string "0")
+
 let parse_num ~where (s:string) : [`Q of Q.t | `Z of Z.t] =
   let fail() =
     errorf "%sexpected number, got `%s`" (Lazy.force where) s
