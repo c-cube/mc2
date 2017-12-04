@@ -172,8 +172,30 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
       | A.Bool false -> ret_f F.false_
       | A.Num_q n -> Mc2_lra.LE.const n |> ret_rat
       | A.Num_z n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
-      | A.Arith (op, l) ->
-        let l = List.map (aux_rat subst) l in
+      | A.Arith (op, l) -> begin match op, l with
+        | A.ReLU, [x] ->
+          let zero = ret_rat (Mc2_lra.LE.const A.zero_Q ) in
+          let cond = match (ret_any (mk_lra_pred Mc2_lra.Lt0 (aux_rat subst x))) with
+              | T t -> F.atom (Term.Bool.pa t)
+              | F f -> f
+              | Rat _ -> Util.errorf "expected proposition,@ got %a" A.pp_term t
+            in
+          (* TODO: ajouter support pour ReLU *)
+          let ty_b = Reg.find_exn reg Mc2_lra.k_rat in
+          let placeholder_id = mk_ite_id () in
+          decl placeholder_id [] ty_b;
+          let placeholder = mk_const placeholder_id in
+          (* add [f_a => placeholder=b] and [¬f_a => placeholder=c] *)
+          let form =
+            F.and_
+              [ F.imply cond (mk_eq_t_tf placeholder zero);
+                F.imply (F.not_ cond) (mk_eq_t_tf placeholder (aux subst x));
+              ]            
+          in
+            side_clauses := List.rev_append (mk_cnf form) !side_clauses;
+            ret_t placeholder
+            
+        | _ -> let l = List.map (aux_rat subst) l in
         begin match op, l with
           | A.Minus, [a] -> RLE.neg a |> ret_rat
           | _, [] | _, [_] ->
@@ -229,8 +251,10 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
                 l
             in
             List.fold_right RLE.mult coeffs first |> ret_rat
-          (* TODO: ajouter support pour ReLU *)
+          | _ -> Util.errorf "ERRUEURUEUHREUHRUEHU"               
+                
         end
+      end
       | A.Select _ -> assert false (* TODO *)
       | A.Match _ -> assert false (* TODO *)
       | A.Bind _ -> assert false (* TODO *)
