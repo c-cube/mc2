@@ -173,7 +173,6 @@ val true_ : term
 val false_ : term
 val num_z : Ty.t -> Z.t -> term
 val num_q : Ty.t -> Q.t -> term
-val zero_Q : Q.t
 val num_str : Ty.t -> string -> term (** parses int + {!num} *)
 val arith : Ty.t -> arith_op -> term list -> term
 
