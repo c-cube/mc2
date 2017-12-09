@@ -573,7 +573,7 @@ let build
             add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
           | Some _ -> assert false
         end
-      | (* TODO: ReLU *)
+      (* TODO: ReLU *)
       | _ -> assert false
 
     let init acts t : unit = match Term.view t with
