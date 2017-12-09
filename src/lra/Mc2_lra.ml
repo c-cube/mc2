@@ -60,6 +60,7 @@ type term_view +=
       expr: LE.t;
       mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
+  | ReLU of {expr: LE.t;}
 
 type lemma_view +=
   | Lemma_lra
@@ -67,6 +68,7 @@ type lemma_view +=
 let k_rat = Service.Key.makef "%s.rat" name
 let k_make_const = Service.Key.makef "%s.make_const" name
 let k_make_pred = Service.Key.makef "%s.make_pred" name
+let k_make_relu = Service.Key.makef "%s.make_relu" name
 
 let[@inline] equal_op a b =
   begin match a, b with
@@ -156,6 +158,7 @@ let pp_state out = function
 let[@inline] subterms (t:term_view) : term Sequence.t = match t with
   | Const _ -> Sequence.empty
   | Pred {expr=e;_} -> LE.terms e
+  | ReLU {expr=e} -> LE.terms e
   | _ -> assert false
 
 let pp_op out = function
@@ -167,6 +170,8 @@ let pp_term out = function
   | Const n -> Q.pp_print out n
   | Pred {op;expr;_} ->
     Fmt.fprintf out "(@[%a@ %a@])" LE.pp_no_paren expr pp_op op
+  | ReLU {expr} ->
+    Fmt.fprintf out "(ReLU %a)" LE.pp_no_paren expr
   | _ -> assert false
 
 (* evaluate [op n] where [n] is a constant *)
@@ -178,6 +183,12 @@ let[@inline] eval_bool_const op n : bool =
     | _ -> false
   end
 
+let eval_relu n =
+  if n<=Q.zero
+    then Q.zero
+    else n
+
+  
 (* evaluate an arithmetic boolean expression *)
 let eval (t:term) = match Term.view t with
   | Const n -> Eval_into (mk_val n, [])
@@ -185,6 +196,11 @@ let eval (t:term) = match Term.view t with
     begin match eval_le e with
       | None -> Eval_unknown
       | Some (n,l) -> Eval_into (Value.of_bool @@ eval_bool_const op n, l)
+    end
+  | ReLU {expr=e} -> 
+    begin match eval_le e with
+      | None -> Eval_unknown
+      | Some (n,l) -> Eval_into (V_value {view=V_rat (eval_relu n); tc=tc_value}, l)
     end
   | _ -> assert false
 
@@ -215,6 +231,7 @@ let build
       let hash = function
         | Const n -> LE.hash_q n
         | Pred {op;expr;_} -> CCHash.combine3 10 (hash_op op) (LE.hash expr)
+        | ReLU {expr} -> CCHash.combine2 11 (LE.hash expr)
         | _ -> assert false
     end)
   in
@@ -248,8 +265,24 @@ let build
           let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
           T.make view Type.bool
       end
-
+    
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
+    
+    let mk_relu (e:LE.t) =
+      begin match LE.as_const e with
+        | Some n ->
+          if n>=Q.zero then mk_const n else mk_const Q.zero
+        | None ->
+          (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
+          let e = match LE.as_singleton e with
+            | None -> e
+            | Some (n,t) ->
+              let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
+              LE.singleton n t
+          in
+          let view = ReLU {expr=e} in
+          T.make view (Lazy.force ty_rat)
+      end
 
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
        eval to [false]) from [reasons] *)
@@ -505,6 +538,15 @@ let build
               Term.debug t
           | Eval_into _, _ -> assert false (* non boolean! *)
         end
+      | ReLU _ ->
+        begin match eval t, Term.value t with
+          | Eval_into ((V_value {view=V_rat n1;_}), _), Some (V_value {view=V_rat n2;_}) when Q.equal n1 n2 -> ()
+          | _, _ ->
+            Util.errorf "inconsistency in relu-lra: %a@"
+              Term.debug t
+        end
+          
+        
       | _ -> assert false
 
     (* [u] is [t] or one of its subterms. All the other watches are up-to-date,
@@ -531,6 +573,7 @@ let build
             add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
           | Some _ -> assert false
         end
+      | (* TODO: ReLU *)
       | _ -> assert false
 
     let init acts t : unit = match Term.view t with
@@ -541,6 +584,7 @@ let build
         Term.Watch2.init p.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
+      | ReLU _ -> () (*add something for relu?*)
       | _ -> assert false
 
     let update_watches acts t ~watch : watch_res = match Term.view t with
@@ -646,6 +690,7 @@ let build
       Service.Any (k_rat, Lazy.force ty_rat);
       Service.Any (k_make_const, mk_const);
       Service.Any (k_make_pred, mk_pred);
+      Service.Any (k_make_relu, mk_relu);
     ]
   end in
   (module P)

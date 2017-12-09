@@ -72,6 +72,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   let fresh = Reg.find_exn reg Mc2_propositional.k_fresh in
   let mk_eq t u = Term.Bool.pa (mk_eq_ t u) in
   let mk_neq t u = Term.Bool.na (mk_eq_ t u) in
+  let mk_lra_relu = Reg.find_exn reg Mc2_lra.k_make_relu in
   let mk_lra_pred = Reg.find_exn reg Mc2_lra.k_make_pred in
   let mk_lra_eq t u = mk_lra_pred Mc2_lra.Eq0 (RLE.diff t u) |> Term.Bool.pa in
   let side_clauses : atom list list ref = ref [] in
@@ -176,6 +177,10 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         let l = List.map (aux_rat subst) l in
         begin match op, l with
           | A.Minus, [a] -> RLE.neg a |> ret_rat
+          | A.ReLU,  [x] -> mk_lra_relu x |> ret_any (* plutôt comme mk_lra_pred Mc2_lra.Leq0 e |> ret_any *)
+            (* ReLU symbol *)
+          | A.ReLU, _ ->
+            Util.errorf "ill-formed arith expr:@ %a@ (unary operator)" A.pp_term t
           | _, [] | _, [_] ->
             Util.errorf "ill-formed arith expr:@ %a@ (need ≥ 2 args)" A.pp_term t
           | A.Leq, [a;b] ->
@@ -228,8 +233,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
                    | Some c -> Q.inv c)
                 l
             in
-            List.fold_right RLE.mult coeffs first |> ret_rat
-          (* TODO: ajouter support pour ReLU *)
+            List.fold_right RLE.mult coeffs first |> ret_rat        
         end
       | A.Select _ -> assert false (* TODO *)
       | A.Match _ -> assert false (* TODO *)
