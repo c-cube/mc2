@@ -1,6 +1,7 @@
 (set-info :smt-lib-version 2.6)
 (set-logic QF_UFLRA)
 (declare-fun z () Real)
+(assert (< z 0))
 (assert (>= (relu z) 0))
 (check-sat)
 (exit)

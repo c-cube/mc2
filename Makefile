@@ -8,6 +8,9 @@ TIMEOUT?=30
 TARGETS=src/main.exe
 OPTS= -j $(J)
 
+testrelu: build
+	./mc2 src/tests/reluplex/test_relu.smt2 -v 100
+	
 build:
 	jbuilder build $(TARGETS) $(OPTS)
 
@@ -40,7 +43,8 @@ test:
 	jbuilder runtest
 	@echo "run benchmarks…"
 	# @/usr/bin/time -f "%e" ./tests/run smt
-	@/usr/bin/time -f "%e" ./src/tests/run mcsat
+	# @/usr/bin/time -f "%e" ./src/tests/run mcsat
+	@/opt/local/bin/gtime -f "%e" ./src/tests/run
 
 TESTOPTS ?= -j $(J)
 TESTTOOL=logitest
