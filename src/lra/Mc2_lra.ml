@@ -60,7 +60,7 @@ type term_view +=
       expr: LE.t;
       mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
-  | ReLU of {expr: LE.t;}
+  | ReLU of {expr: LE.t; mutable watches: Term.Watch2.t;}
 
 type lemma_view +=
   | Lemma_lra
@@ -158,7 +158,7 @@ let pp_state out = function
 let[@inline] subterms (t:term_view) : term Sequence.t = match t with
   | Const _ -> Sequence.empty
   | Pred {expr=e;_} -> LE.terms e
-  | ReLU {expr=e} -> LE.terms e
+  | ReLU {expr=e;_} -> LE.terms e
   | _ -> assert false
 
 let pp_op out = function
@@ -170,8 +170,10 @@ let pp_term out = function
   | Const n -> Q.pp_print out n
   | Pred {op;expr;_} ->
     Fmt.fprintf out "(@[%a@ %a@])" LE.pp_no_paren expr pp_op op
-  | ReLU {expr} ->
+  | ReLU {expr;_} ->
     Fmt.fprintf out "(ReLU %a)" LE.pp_no_paren expr
+  | _ -> Log.debugf 0
+            (fun k->k "ereoreroeroeroeio"); assert false
   | _ -> assert false
 
 (* evaluate [op n] where [n] is a constant *)
@@ -197,7 +199,7 @@ let eval (t:term) = match Term.view t with
       | None -> Eval_unknown
       | Some (n,l) -> Eval_into (Value.of_bool @@ eval_bool_const op n, l)
     end
-  | ReLU {expr=e} -> 
+  | ReLU {expr=e;_} -> 
     begin match eval_le e with
       | None -> Eval_unknown
       | Some (n,l) -> Eval_into (V_value {view=V_rat (eval_relu n); tc=tc_value}, l)
@@ -227,11 +229,12 @@ let build
       let equal a b = match a, b with
         | Const n1, Const n2 -> Q.equal n1 n2
         | Pred p1, Pred p2 -> p1.op = p2.op && LE.equal p1.expr p2.expr
+        | ReLU r1, ReLU r2 -> LE.equal r1.expr r2.expr
         | _ -> false
       let hash = function
         | Const n -> LE.hash_q n
         | Pred {op;expr;_} -> CCHash.combine3 10 (hash_op op) (LE.hash expr)
-        | ReLU {expr} -> CCHash.combine2 11 (LE.hash expr)
+        | ReLU {expr;_} -> CCHash.combine2 11 (LE.hash expr)
         | _ -> assert false
     end)
   in
@@ -280,7 +283,9 @@ let build
               let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
               LE.singleton n t
           in
-          let view = ReLU {expr=e} in
+          let view = ReLU {expr=e; watches=Term.Watch2.dummy} in
+          Log.debugf 0
+            (fun k->k "mk_relu %a" pp_term view);
           T.make view (Lazy.force ty_rat)
       end
 
@@ -539,8 +544,14 @@ let build
           | Eval_into _, _ -> assert false (* non boolean! *)
         end
       | ReLU _ ->
+        Log.debugf 0
+          (fun k->k "test-check_consistent %a" pp_term (Term.view t));
         begin match eval t, Term.value t with
-          | Eval_into ((V_value {view=V_rat n1;_}), _), Some (V_value {view=V_rat n2;_}) when Q.equal n1 n2 -> ()
+          | Eval_into ((V_value {view=V_rat n1;_}), _), Some (V_value {view=V_rat n2;_}) when Q.equal n1 n2 ->
+            Log.debugf 0
+                      (fun k->k "test-check_consistent evals to %a" Q.pp_print n1);
+          | Eval_into ((V_value {view=V_rat n1;_}), _), Some (V_value {view=V_rat n2;_}) ->
+            Util.errorf "test-check_consistent evals to %a != %a" Q.pp_print n1 Q.pp_print n2
           | _, _ ->
             Util.errorf "inconsistency in relu-lra: %a@"
               Term.debug t
@@ -573,7 +584,26 @@ let build
             add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
           | Some _ -> assert false
         end
-      (* TODO: ReLU *)
+      | ReLU r -> Log.debugf 0
+          (* TODO: RELU *)
+          (fun k->k "test-check_or_propagate %a %a" pp_term (Term.view t) Term.debug u);
+          begin match Term.value t with
+            | None ->
+              (* term not assigned, means all subterms are. We can evaluate *)
+              assert (t == u);
+              assert (LE.terms r.expr |> Sequence.for_all Term.has_some_value);
+              begin match eval_le r.expr with
+                | None -> assert false
+                | Some (n,subs) ->
+                  Log.debugf 0
+                            (fun k->k "test-check_or_propagate1" );
+              end
+            | Some V_value {view=V_rat num;_} ->
+              assert (t != u);
+              Log.debugf 0
+                        (fun k->k "test-check_or_propagate2 %a evals to %a" pp_term t.t_view Q.pp_print num);
+            | Some _ -> assert false
+          end
       | _ -> assert false
 
     let init acts t : unit = match Term.view t with
@@ -584,11 +614,21 @@ let build
         Term.Watch2.init p.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
-      | ReLU _ -> () (*add something for relu?*)
+      | ReLU r ->  Log.debugf 0
+          (fun k->k "test-init-relu %a" pp_term (Term.view t));
+          let watches = Term.Watch2.make (t :: LE.terms_l r.expr) in
+          r.watches <- watches;
+          Term.Watch2.init r.watches t
+            ~on_unit:(fun u -> check_or_propagate acts t ~u)
+            ~on_all_set:(fun () -> check_consistent acts t)
       | _ -> assert false
 
     let update_watches acts t ~watch : watch_res = match Term.view t with
       | Pred p ->
+        Term.Watch2.update p.watches t ~watch
+          ~on_unit:(fun u -> check_or_propagate acts t ~u)
+          ~on_all_set:(fun () -> check_consistent acts t)
+      | ReLU p ->
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)

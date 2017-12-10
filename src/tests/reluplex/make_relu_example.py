@@ -79,15 +79,15 @@ def nn_to_smt2(clf, input_bounds=None, output_bounds=None):
     return ans
 
 
-n = 10
-k = 1
+n = 100
+k = 2
 X = np.random.rand(n, k)
 y = [1] * (n - 1) + [0]
 clf = MLPClassifier(solver='lbfgs', max_iter=100000,
-                    hidden_layer_sizes=(1,))
+                    hidden_layer_sizes=(64, 64))
 from sys import stderr
 
 clf.fit(X, y)
 print(clf.predict(X[-1:]) and 'unsat?' or 'sat?', file=stderr)
 print(nn_to_smt2(clf, input_bounds=[
-      (0, 1, None, None)] * k, output_bounds=[(None, None, None, 0)]))
+      (0, 1, None, None)] * k, output_bounds=[(None, None, None, None)]))
