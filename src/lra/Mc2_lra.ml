@@ -60,10 +60,11 @@ type term_view +=
       expr: LE.t;
       mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
-  | ReLU of {expr: LE.t; mutable watches: Term.Watch2.t;}
+  | ReLU of {expr: LE.t; mutable watches: Term.Watch1.t;}
 
 type lemma_view +=
   | Lemma_lra
+  | Lemma_relu
 
 let k_rat = Service.Key.makef "%s.rat" name
 let k_make_const = Service.Key.makef "%s.make_const" name
@@ -209,11 +210,13 @@ let eval (t:term) = match Term.view t with
 let tc_lemma : tc_lemma = {
   tcl_pp=(fun out l -> match l with
     | Lemma_lra -> Fmt.string out "lra"
+    | Lemma_relu -> Fmt.string out "relu"
     | _ -> assert false
   );
 }
 
 let lemma_lra = Lemma.make Lemma_lra tc_lemma
+let lemma_relu = Lemma.make Lemma_relu tc_lemma
 
 (* build plugin *)
 let build
@@ -283,7 +286,8 @@ let build
               let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
               LE.singleton n t
           in
-          let view = ReLU {expr=e; watches=Term.Watch2.dummy} in
+          (* TODO: maybe there is a way to use on_unit *)
+          let view = ReLU {expr=e; watches=Term.Watch1.dummy} in
           Log.debugf 0
             (fun k->k "mk_relu %a" pp_term view);
           T.make view (Lazy.force ty_rat)
@@ -544,6 +548,7 @@ let build
           | Eval_into _, _ -> assert false (* non boolean! *)
         end
       | ReLU _ ->
+        (* TODO: do the analysis for ReLU *)
         Log.debugf 0
           (fun k->k "test-check_consistent %a" pp_term (Term.view t));
         begin match eval t, Term.value t with
@@ -584,8 +589,7 @@ let build
             add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
           | Some _ -> assert false
         end
-      | ReLU r -> Log.debugf 0
-          (* TODO: RELU *)
+      (* | ReLU r -> Log.debugf 0
           (fun k->k "test-check_or_propagate %a %a" pp_term (Term.view t) Term.debug u);
           begin match Term.value t with
             | None ->
@@ -603,7 +607,7 @@ let build
               Log.debugf 0
                         (fun k->k "test-check_or_propagate2 %a evals to %a" pp_term t.t_view Q.pp_print num);
             | Some _ -> assert false
-          end
+          end *)
       | _ -> assert false
 
     let init acts t : unit = match Term.view t with
@@ -614,12 +618,17 @@ let build
         Term.Watch2.init p.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
-      | ReLU r ->  Log.debugf 0
+      | ReLU r ->
+        (*
+          TODO:
+          here we should use Actions.push_clause acts c
+          where c represents 0 ≤ y and x ≤ y
+        *)
+        Log.debugf 0
           (fun k->k "test-init-relu %a" pp_term (Term.view t));
-          let watches = Term.Watch2.make (t :: LE.terms_l r.expr) in
+          let watches = Term.Watch1.make (t :: LE.terms_l r.expr) in
           r.watches <- watches;
-          Term.Watch2.init r.watches t
-            ~on_unit:(fun u -> check_or_propagate acts t ~u)
+          Term.Watch1.init r.watches t
             ~on_all_set:(fun () -> check_consistent acts t)
       | _ -> assert false
 
@@ -629,8 +638,7 @@ let build
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
       | ReLU p ->
-        Term.Watch2.update p.watches t ~watch
-          ~on_unit:(fun u -> check_or_propagate acts t ~u)
+        Term.Watch1.update p.watches t ~watch
           ~on_all_set:(fun () -> check_consistent acts t)
       | Const _ -> assert false
       | _ -> assert false
