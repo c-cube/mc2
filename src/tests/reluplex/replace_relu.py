@@ -6,4 +6,4 @@ import re
 with fileinput.input() as f:
     txt = ''.join(f)
 
-print(re.sub(r'\(relu ([^) ]*)\)', r'(ite (>= \1 0) \1 0)', txt), end='')
+print(re.sub(r'\(relu ([^) ]*) ([^) ]*)\)', r'(= \2 (ite (>= \1 0) \1 0))', txt), end='')
