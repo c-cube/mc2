@@ -4,6 +4,12 @@
 (* Reference:
    http://smtlib.cs.uiowa.edu/logics-all.shtml#QF_LRA *)
 
+(* TODO:
+redefine ReLU(x, y) instead of ReLU(x) or else we have
+to handle a recursive structure of ReLU and linexp 
+*)
+
+
 open Mc2_core
 open Solver_types
 
@@ -48,6 +54,7 @@ type eq_cstr =
 type decide_state +=
   | State of {
       mutable last_val: num; (* phase saving *)
+      mutable last_decision_lvl: level;
       mutable low: bound;
       mutable up: bound;
       mutable eq: eq_cstr;
@@ -60,7 +67,8 @@ type term_view +=
       expr: LE.t;
       mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
-  | ReLU of {expr: LE.t; mutable watches: Term.Watch1.t;}
+  | ReLU of {x: LE.t; y: LE.t; mutable watches: Term.Watch1.t;}
+  (* maybe use Watch2 to have an update function that can further propagate *)
 
 type lemma_view +=
   | Lemma_lra
@@ -91,6 +99,26 @@ let[@inline] eval_le (e:LE.t) : (num * term list) option =
       | Some (V_value {view=V_rat n;_}) -> Some n
       | _ -> None)
 
+
+let lmax list = 
+  List.fold_left  
+    (fun max x -> Pervasives.max max (Some x))
+    None
+    list
+
+let term_decision_lvl (t:term) = 
+  match Term.decide_state_exn t with
+  | State s -> s.last_decision_lvl
+  | _ -> assert false
+  
+(* maximum decision level of a linexp *)
+let last_decision_lvl (e:LE.t) : level =
+  let lmax l = 
+    List.fold_left (fun max x -> Pervasives.max max x) (-1) l
+    in
+    List.map term_decision_lvl @@ LE.terms_l e |> lmax
+    
+
 let tc_value =
   let tcv_pp out = function
     | V_rat q -> Q.pp_print out q
@@ -117,6 +145,7 @@ let pp_ty out = function Ty_rat -> Fmt.fprintf out "@<1>ℚ" | _ -> assert false
 let mk_state _ : decide_state =
   State {
     last_val=Q.zero;
+    last_decision_lvl= -1;
     up=B_none;
     low=B_none;
     eq=EC_none;
@@ -152,14 +181,14 @@ let pp_eq out = function
 
 let pp_state out = function
   | State s ->
-    Fmt.fprintf out "(@[<hv>:low %a@ :up %a@ :eq %a@])"
-      pp_bound s.low pp_bound s.up pp_eq s.eq
+    Fmt.fprintf out "(@[<hv>:low %a@ :up %a@ :eq %a@ :last_val %a@ :last_decision_lvl %d@])"
+      pp_bound s.low pp_bound s.up pp_eq s.eq Q.pp_print s.last_val s.last_decision_lvl
   | _ -> assert false
 
 let[@inline] subterms (t:term_view) : term Sequence.t = match t with
   | Const _ -> Sequence.empty
   | Pred {expr=e;_} -> LE.terms e
-  | ReLU {expr=e;_} -> LE.terms e
+  | ReLU {x=e1;y=e2;_} -> Sequence.append (LE.terms e1) (LE.terms e2)
   | _ -> assert false
 
 let pp_op out = function
@@ -171,10 +200,8 @@ let pp_term out = function
   | Const n -> Q.pp_print out n
   | Pred {op;expr;_} ->
     Fmt.fprintf out "(@[%a@ %a@])" LE.pp_no_paren expr pp_op op
-  | ReLU {expr;_} ->
-    Fmt.fprintf out "(ReLU %a)" LE.pp_no_paren expr
-  | _ -> Log.debugf 0
-            (fun k->k "ereoreroeroeroeio"); assert false
+  | ReLU {x;y;_} ->
+    Fmt.fprintf out "(ReLU %a %a)" LE.pp_no_paren x LE.pp_no_paren y
   | _ -> assert false
 
 (* evaluate [op n] where [n] is a constant *)
@@ -186,7 +213,7 @@ let[@inline] eval_bool_const op n : bool =
     | _ -> false
   end
 
-let eval_relu n =
+let eval_relu (n:Q.t) : Q.t =
   if n<=Q.zero
     then Q.zero
     else n
@@ -200,10 +227,15 @@ let eval (t:term) = match Term.view t with
       | None -> Eval_unknown
       | Some (n,l) -> Eval_into (Value.of_bool @@ eval_bool_const op n, l)
     end
-  | ReLU {expr=e;_} -> 
-    begin match eval_le e with
-      | None -> Eval_unknown
-      | Some (n,l) -> Eval_into (V_value {view=V_rat (eval_relu n); tc=tc_value}, l)
+  | ReLU {x;y;_} -> 
+    begin match eval_le x, eval_le y with
+      | Some (nx,lx), Some (ny,ly) ->
+        Log.debugf 30
+          (fun k->k "eval relu %a, %a" Q.pp_print ny Q.pp_print @@ eval_relu nx);
+        Eval_into (Value.of_bool (Q.equal ny @@ eval_relu nx), lx @ ly)
+      | None, Some _ -> Eval_unknown
+      | Some _, None -> Eval_unknown
+      | None, None -> Eval_unknown      
     end
   | _ -> assert false
 
@@ -232,12 +264,12 @@ let build
       let equal a b = match a, b with
         | Const n1, Const n2 -> Q.equal n1 n2
         | Pred p1, Pred p2 -> p1.op = p2.op && LE.equal p1.expr p2.expr
-        | ReLU r1, ReLU r2 -> LE.equal r1.expr r2.expr
+        | ReLU r1, ReLU r2 -> (LE.equal r1.x r2.x) && LE.equal r1.y r2.y
         | _ -> false
       let hash = function
         | Const n -> LE.hash_q n
         | Pred {op;expr;_} -> CCHash.combine3 10 (hash_op op) (LE.hash expr)
-        | ReLU {expr;_} -> CCHash.combine2 11 (LE.hash expr)
+        | ReLU {x;y;_} -> CCHash.combine3 11 (LE.hash x) (LE.hash y)
         | _ -> assert false
     end)
   in
@@ -254,6 +286,14 @@ let build
       Type.make_static Ty_rat tc
     )
 
+    let simplify (e:LE.t) : LE.t =
+      (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
+      match LE.as_singleton e with
+        | None -> e
+        | Some (n,t) ->
+          let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
+          LE.singleton n t
+      
     (* build a predicate on a linear expression *)
     let mk_pred (op:op) (e:LE.t) : term =
       begin match LE.as_const e with
@@ -261,12 +301,7 @@ let build
           (* directly evaluate *)
           if eval_bool_const op n then true_ else false_
         | None ->
-          (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
-          let e = match LE.as_singleton e with
-            | None -> e
-            | Some (n,t) ->
-              let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
-              LE.singleton n t
+          let e = simplify e
           in
           let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
           T.make view Type.bool
@@ -274,23 +309,26 @@ let build
     
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
     
-    let mk_relu (e:LE.t) =
-      begin match LE.as_const e with
-        | Some n ->
-          if n>=Q.zero then mk_const n else mk_const Q.zero
+    let mk_relu (x:LE.t) (y:LE.t): term =
+      (* TODO: ensure they are equal to singletons *)
+      begin match LE.as_const x with
+        | Some nx ->
+          let ans = eval_relu nx
+          in mk_pred Eq0 (LE.diff y @@ LE.const ans)
         | None ->
-          (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
-          let e = match LE.as_singleton e with
-            | None -> e
-            | Some (n,t) ->
-              let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
-              LE.singleton n t
-          in
-          (* TODO: maybe there is a way to use on_unit *)
-          let view = ReLU {expr=e; watches=Term.Watch1.dummy} in
-          Log.debugf 0
-            (fun k->k "mk_relu %a" pp_term view);
-          T.make view (Lazy.force ty_rat)
+          begin match LE.as_const y with
+            | Some ny ->
+              if ny > Q.zero
+              then mk_pred Eq0 (LE.diff x @@ LE.const ny)
+              else mk_pred Lt0 x
+            | None ->
+              let x = simplify x and y = simplify y
+              in
+              let view = ReLU {x=x; y=y; watches=Term.Watch1.dummy} in
+              Log.debugf 0
+                (fun k->k "mk_relu %a" pp_term view);
+              T.make view Type.bool
+          end
       end
 
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
@@ -531,7 +569,7 @@ let build
 
     (* [t] should evaluate or propagate. Add constraint to its state or
             propagate *)
-    let check_consistent _acts (t:term) : unit = match Term.view t with
+    let check_consistent acts (t:term) : unit = match Term.view t with
       | Const _ -> ()
       | Pred _ ->
         (* check consistency *)
@@ -547,22 +585,80 @@ let build
               Term.debug t
           | Eval_into _, _ -> assert false (* non boolean! *)
         end
-      | ReLU _ ->
-        (* TODO: do the analysis for ReLU *)
+      | ReLU r ->
         Log.debugf 0
-          (fun k->k "test-check_consistent %a" pp_term (Term.view t));
-        begin match eval t, Term.value t with
-          | Eval_into ((V_value {view=V_rat n1;_}), _), Some (V_value {view=V_rat n2;_}) when Q.equal n1 n2 ->
-            Log.debugf 0
-                      (fun k->k "test-check_consistent evals to %a" Q.pp_print n1);
-          | Eval_into ((V_value {view=V_rat n1;_}), _), Some (V_value {view=V_rat n2;_}) ->
-            Util.errorf "test-check_consistent evals to %a != %a" Q.pp_print n1 Q.pp_print n2
-          | _, _ ->
-            Util.errorf "inconsistency in relu-lra: %a@"
-              Term.debug t
-        end
-          
+          (fun k->k "relu-check_consistent %a" pp_term (Term.view t));
+        (* here we suppose
+          - the relu is always true (could be checked or ensured in the input files)
+          - r.x is composed solely of x, r.y solely of y (could be checked)
+        *)
+        let x = List.hd (LE.terms_l r.x) and y = List.hd (LE.terms_l r.y) in
         
+        let vx = eval_le_num_exn r.x and vy = eval_le_num_exn r.y in
+        
+        Log.debugf 0
+          (fun k->k "x evals to %a, y evals to %a, lvl_x=%d, lvl_y=%d"
+          Q.pp_print vx Q.pp_print vy (last_decision_lvl r.x) (last_decision_lvl r.y));
+        Log.debugf 0
+          (fun k->k "x is %a"
+          (Util.pp_list Term.debug) (LE.terms_l r.x));
+          Log.debugf 0
+            (fun k->k "y is %a"
+            (Util.pp_list Term.debug) (LE.terms_l r.y));
+          
+        if Q.equal vy (eval_relu vx) then
+          ()
+        else
+          let conflict =
+          match Term.decide_state_exn x, Term.decide_state_exn y with
+          | State{last_val=x_val; last_decision_lvl=x_lvl; up=x_up; low=x_low; eq=x_eq},
+            State{last_val=y_val; last_decision_lvl=y_lvl; up=y_up; low=y_low; eq=y_eq} ->
+              Log.debugf 0
+                (fun k->k "y_low %a"
+                pp_bound y_low);
+              Log.debugf 0
+                (fun k->k "x_up %a"
+                pp_bound x_up);
+            if y_lvl > x_lvl then
+              match y_low with
+              | B_some{strict; num; expr=y_l; reason} ->
+                let op = 
+                  if strict then
+                    Lt0
+                  else
+                    Leq0
+                  in
+                  [
+                  Term.Bool.na (mk_pred op (y_l -.. r.y));
+                  Term.Bool.pa (mk_pred op y_l);
+                  Term.Bool.pa (mk_pred op (y_l -.. r.x));
+                  ]
+              | B_none -> []
+            else if x_lvl > y_lvl then
+              match x_up with
+              | B_some{strict; num; expr=x_u; reason} -> 
+                let op = 
+                  if strict then
+                    Lt0
+                  else
+                    Leq0
+                  in
+                  [
+                  Term.Bool.na (mk_pred op (r.x -.. x_u));
+                  Term.Bool.na (mk_pred op (LE.neg r.x));
+                  Term.Bool.pa (mk_pred op (r.y -.. x_u))
+                  ]
+              | B_none -> []
+            else assert false;
+          | _, _ -> assert false;
+          in
+          
+          Log.debugf 30
+            (fun k->k
+                "(@[<hv>lra.raise_conflict.ReLU@ :clause %a@])"
+                Clause.debug_atoms conflict);
+          Actions.raise_conflict acts conflict lemma_relu;
+          
       | _ -> assert false
 
     (* [u] is [t] or one of its subterms. All the other watches are up-to-date,
@@ -618,15 +714,19 @@ let build
         Term.Watch2.init p.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
-      | ReLU r ->
-        (*
-          TODO:
-          here we should use Actions.push_clause acts c
-          where c represents 0 ≤ y and x ≤ y
-        *)
-        Log.debugf 0
+      | ReLU r ->          
+          Log.debugf 0
           (fun k->k "test-init-relu %a" pp_term (Term.view t));
-          let watches = Term.Watch1.make (t :: LE.terms_l r.expr) in
+
+          (* 0 ≤ y *)
+          let c = Clause.make [Term.Bool.pa (mk_pred Leq0 (LE.mult Q.minus_one r.y))] (Lemma lemma_lra)
+          in Actions.push_clause acts c;
+          
+          (* x ≤ y *)
+          let c = Clause.make [Term.Bool.pa (mk_pred Leq0 (LE.diff r.x r.y))] (Lemma lemma_lra)
+          in Actions.push_clause acts c;          
+          
+          let watches = Term.Watch1.make (t :: LE.terms_l r.x @ LE.terms_l r.y) in
           r.watches <- watches;
           Term.Watch1.init r.watches t
             ~on_all_set:(fun () -> check_consistent acts t)
@@ -713,17 +813,18 @@ let build
       end
 
     (* decision, according to current constraints *)
-    let decide _ (t:term) : value = match t.t_var with
+    let decide acts (t:term) : value = match t.t_var with
       | Var_semantic {v_decide_state=State r as st; _} ->
         let n =
           if can_be_eq t r.last_val then r.last_val
           else find_val t
         in
         Log.debugf 30
-          (fun k->k"(@[<hv>lra.decide@ %a := %a@ :state %a@])"
-              Term.debug t Q.pp_print n pp_state st);
+          (fun k->k"(@[<hv>lra.decide@ %a := %a@ :state %a@ :lvl %d@])"
+              Term.debug t Q.pp_print n pp_state st (Actions.level acts));
         assert (can_be_eq t n);
         r.last_val <- n; (* save *)
+        r.last_decision_lvl <- Actions.level acts;
         mk_val n
       | _ -> assert false
 
