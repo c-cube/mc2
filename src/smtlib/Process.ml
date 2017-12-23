@@ -177,10 +177,10 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         let l = List.map (aux_rat subst) l in
         begin match op, l with
           | A.Minus, [a] -> RLE.neg a |> ret_rat
-          | A.ReLU,  [x] -> mk_lra_relu x |> ret_any (* plutôt comme mk_lra_pred Mc2_lra.Leq0 e |> ret_any *)
+          | A.ReLU,  [x;y] -> mk_lra_relu x y |> ret_any (* plutôt comme mk_lra_pred Mc2_lra.Leq0 e |> ret_any *)
             (* ReLU symbol *)
           | A.ReLU, _ ->
-            Util.errorf "ill-formed arith expr:@ %a@ (unary operator)" A.pp_term t
+            Util.errorf "ill-formed arith expr:@ %a@ (need ≥ 2 args)" A.pp_term t
           | _, [] | _, [_] ->
             Util.errorf "ill-formed arith expr:@ %a@ (need ≥ 2 args)" A.pp_term t
           | A.Leq, [a;b] ->

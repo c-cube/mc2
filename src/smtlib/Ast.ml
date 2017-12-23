@@ -794,7 +794,7 @@ and conv_term_aux ctx t : term = match t with
       | A.Minus -> Ty.rat, Minus
       | A.Mult -> Ty.rat, Mult
       | A.Div -> Ty.rat, Div
-      | A.ReLU -> Ty.rat, ReLU
+      | A.ReLU -> Ty.bool, ReLU
     in
     arith ty op l
   | A.Cast (t, ty_expect) ->
