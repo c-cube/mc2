@@ -5,8 +5,9 @@
    http://smtlib.cs.uiowa.edu/logics-all.shtml#QF_LRA *)
 
 (* TODO:
-redefine ReLU(x, y) instead of ReLU(x) or else we have
-to handle a recursive structure of ReLU and linexp 
+define relu with terms instead of LE.t
+might be possible to test the atomic LE.t AND
+retrieve the terms in mk_relu
 *)
 
 
@@ -218,6 +219,11 @@ let eval_relu (n:Q.t) : Q.t =
     then Q.zero
     else n
 
+let eval_relu_expr (x:LE.t) (vx:Q.t) : LE.t = 
+  (* vx < Q.zero works better *)
+  if vx <= Q.zero
+    then LE.zero
+    else x
   
 (* evaluate an arithmetic boolean expression *)
 let eval (t:term) = match Term.view t with
@@ -610,6 +616,7 @@ let build
           ()
         else
           let conflict =
+          (* TODO: maybe it is possible to retrieve the level with Term.level *)
           match Term.decide_state_exn x, Term.decide_state_exn y with
           | State{last_val=x_val; last_decision_lvl=x_lvl; up=x_up; low=x_low; eq=x_eq},
             State{last_val=y_val; last_decision_lvl=y_lvl; up=y_up; low=y_low; eq=y_eq} ->
@@ -707,13 +714,43 @@ let build
       | _ -> assert false
 
 
-    let propagate_relu acts (t:term) ~(u:term) : unit = match Term.view t with
-      | ReLU r -> Log.debugf 0
-        (fun k->k "propagate_relu %a %a" Term.debug t Term.debug u)
-        (* TODO: check if u is x or y then behave appropriately *)
-      
-      | _ -> assert false
+    let propagate_relu acts (t:term) ~(u:term) : unit =
+      (* TODO: verify t is true *)
+      let r = Term.view t in
+      Log.debugf 0 (fun k->k "t is %a " pp_term r);
+      begin match r with
+        | ReLU r ->
+          let x = List.hd (LE.terms_l r.x) and y = List.hd (LE.terms_l r.y) in
+          Log.debugf 0 (fun k->k "propagate_relu %a %a" LE.pp r.x LE.pp r.y);
+          Log.debugf 0 (fun k->k "propagate_relu %a %a %a %a" Term.debug t Term.debug u Term.debug x Term.debug y);
+          if (Term.equal x u) then
+            (* we want to predict x from y if y > 0 or else add a constraint on x *)
+            begin
+              Log.debugf 0 (fun k->k "u is x %a %a" LE.pp r.x Term.debug x);
+              Log.debugf 0 (fun k->k "y is %a " Term.debug y);
+              let vy = eval_le_num_exn r.y in 
+              (* TODO: write eval_invrelu *)
+              ()
+            end
+          else if (Term.equal y u) then
+            (* we want to predict y from x *)
+            begin 
+              let vx = eval_le_num_exn r.x in 
+              let vy = eval_relu vx in
+              let expry = eval_relu_expr r.x vx in
+              Log.debugf 0 (fun k->k "u is y %a %a" LE.pp r.y LE.pp expry);
+              add_eq acts y (eval_relu vx) ~expr:expry ~reason:(Term.Bool.pa t);
+              (* TODO: correct bug on
 
+              (assert (> y 2))
+              (assert (relu x y))
+              
+                  gi
+               *)
+            end
+        | _ -> assert false
+      end
+      
     let init acts t : unit = match Term.view t with
       | Const _ -> ()
       | Pred p ->
