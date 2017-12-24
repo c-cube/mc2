@@ -745,7 +745,8 @@ let build
               (assert (> y 2))
               (assert (relu x y))
               
-                  gi
+                modify add_eq to take list of reasons
+                and give the reason of relu evaluation
                *)
             end
         | _ -> assert false
