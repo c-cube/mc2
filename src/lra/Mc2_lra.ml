@@ -67,7 +67,7 @@ type term_view +=
       expr: LE.t;
       mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
-  | ReLU of {x: LE.t; y: LE.t; mutable watches: Term.Watch1.t;}
+  | ReLU of {x: LE.t; y: LE.t; mutable watches: Term.Watch2.t;}
   (* maybe use Watch2 to have an update function that can further propagate *)
 
 type lemma_view +=
@@ -324,7 +324,7 @@ let build
             | None ->
               let x = simplify x and y = simplify y
               in
-              let view = ReLU {x=x; y=y; watches=Term.Watch1.dummy} in
+              let view = ReLU {x=x; y=y; watches=Term.Watch2.dummy} in
               Log.debugf 0
                 (fun k->k "mk_relu %a" pp_term view);
               T.make view Type.bool
@@ -706,6 +706,14 @@ let build
           end *)
       | _ -> assert false
 
+
+    let propagate_relu acts (t:term) ~(u:term) : unit = match Term.view t with
+      | ReLU r -> Log.debugf 0
+        (fun k->k "propagate_relu %a %a" Term.debug t Term.debug u)
+        (* TODO: check if u is x or y then behave appropriately *)
+      
+      | _ -> assert false
+
     let init acts t : unit = match Term.view t with
       | Const _ -> ()
       | Pred p ->
@@ -725,10 +733,12 @@ let build
           (* x ≤ y *)
           let c = Clause.make [Term.Bool.pa (mk_pred Leq0 (LE.diff r.x r.y))] (Lemma lemma_lra)
           in Actions.push_clause acts c;          
-          
-          let watches = Term.Watch1.make (t :: LE.terms_l r.x @ LE.terms_l r.y) in
+
+          (* Normally watches = [t ; x ; y] *)
+          let watches = Term.Watch2.make (t :: LE.terms_l r.x @ LE.terms_l r.y) in
           r.watches <- watches;
-          Term.Watch1.init r.watches t
+          Term.Watch2.init r.watches t
+            ~on_unit:(fun u -> propagate_relu acts t ~u)
             ~on_all_set:(fun () -> check_consistent acts t)
       | _ -> assert false
 
@@ -738,7 +748,8 @@ let build
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
       | ReLU p ->
-        Term.Watch1.update p.watches t ~watch
+        Term.Watch2.update p.watches t ~watch
+          ~on_unit:(fun u -> propagate_relu acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
       | Const _ -> assert false
       | _ -> assert false
