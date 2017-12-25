@@ -329,16 +329,7 @@ let build
                 (fun k->k "mk_relu %a" pp_term view);
               T.make view Type.bool
           end
-      end
-      
-      
-      
-    let eval_relu_expr_reason (x:LE.t) (vx:Q.t) : LE.t * atom = 
-      (* vx < Q.zero works better *)
-      if vx <= Q.zero then
-        LE.zero, Term.Bool.pa (mk_pred Leq0 x)
-      else
-        x, Term.Bool.na (mk_pred Leq0 x)      
+      end           
         
           
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
@@ -751,7 +742,12 @@ let build
             begin 
               let vx = eval_le_num_exn r.x in 
               let vy = eval_relu vx in
-              let expr_y, reason_y = eval_relu_expr_reason r.x vx in
+              let expr_y, reason_y =
+                (* vx < Q.zero works better *)
+                (if vx <= Q.zero then
+                  LE.zero, Term.Bool.pa (mk_pred Leq0 r.x)
+                else
+                  r.x, Term.Bool.na (mk_pred Leq0 r.x)) in
               Log.debugf 1 (fun k->k "u is y %a %a" LE.pp r.y LE.pp expr_y);
               add_eq acts y vy ~expr:expr_y ~reasons:[reason_y; Term.Bool.pa t];              
             end
