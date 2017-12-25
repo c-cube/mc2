@@ -43,12 +43,12 @@ type constr =
   | C_neq
 
 type bound =
-  | B_some of {strict:bool; num: num; expr: LE.t; reason:atom}
+  | B_some of {strict:bool; num: num; expr: LE.t; reasons:atom list}
   | B_none (* no bound *)
 
 type eq_cstr =
-  | EC_eq of {num:num; reason:atom; expr: LE.t}
-  | EC_neq of {l: (num * LE.t * atom) list} (* forbidden values *)
+  | EC_eq of {num:num; reasons:atom list; expr: LE.t}
+  | EC_neq of {l: (num * LE.t * (atom list)) list} (* forbidden values *)
   | EC_none
 
 (* state for a single Q-sorted variable *)
@@ -162,20 +162,20 @@ let pp_constr out (e:constr) = match e with
 
 let pp_bound out = function
   | B_none -> Fmt.string out "ø"
-  | B_some {strict;num;reason;expr} ->
+  | B_some {strict;num;reasons;expr} ->
     let strict_str = if strict then "[strict]" else "" in
-    Fmt.fprintf out "(@[%a%s@ :expr %a@ :reason %a@])"
-      Q.pp_print num strict_str LE.pp expr Atom.debug reason
+    Fmt.fprintf out "(@[%a%s@ :expr %a@ :reasons %a@])"
+      Q.pp_print num strict_str LE.pp expr (Util.pp_list Atom.debug) reasons
 
 let pp_eq out = function
   | EC_none -> Fmt.string out "ø"
-  | EC_eq {num;reason;expr} ->
-    Fmt.fprintf out "(@[= %a@ :expr %a@ :reason %a@])"
-      Q.pp_print num LE.pp expr Atom.debug reason
+  | EC_eq {num;reasons;expr} ->
+    Fmt.fprintf out "(@[= %a@ :expr %a@ :reasons %a@])"
+      Q.pp_print num LE.pp expr (Util.pp_list Atom.debug) reasons
   | EC_neq {l} ->
     let pp_tuple out (n,e,a) =
-      Fmt.fprintf out "(@[%a@ :expr %a@ :reason %a@])"
-        Q.pp_print n LE.pp e Atom.debug a
+      Fmt.fprintf out "(@[%a@ :expr %a@ :reasons %a@])"
+        Q.pp_print n LE.pp e (Util.pp_list Atom.debug) a
     in
     Fmt.fprintf out "(@[<hv>!=@ %a@])"
       (Util.pp_list pp_tuple) l
@@ -218,12 +218,6 @@ let eval_relu (n:Q.t) : Q.t =
   if n<=Q.zero
     then Q.zero
     else n
-
-let eval_relu_expr (x:LE.t) (vx:Q.t) : LE.t = 
-  (* vx < Q.zero works better *)
-  if vx <= Q.zero
-    then LE.zero
-    else x
   
 (* evaluate an arithmetic boolean expression *)
 let eval (t:term) = match Term.view t with
@@ -336,11 +330,20 @@ let build
               T.make view Type.bool
           end
       end
-
+      
+      
+      
+    let eval_relu_expr_reason (x:LE.t) (vx:Q.t) : LE.t * atom = 
+      (* vx < Q.zero works better *)
+      if vx <= Q.zero
+        then LE.zero, Term.Bool.pa (mk_pred Leq0 x)
+        else x, Term.Bool.na (mk_pred Leq0 x)
+        
+          
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
        eval to [false]) from [reasons] *)
     let raise_conflict acts
-        ~sign ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons () : 'a =
+        ~sign ~op ~pivot ~expr_up_bound ~expr_low_bound ~(reasons:atom list) () : 'a =
       let expr = LE.diff expr_low_bound expr_up_bound in
       assert (not (LE.mem_term pivot expr));
       let concl = mk_pred op expr in
@@ -389,23 +392,24 @@ let build
             ->
             assert (not low.strict);
             assert (not up.strict);
-            let reason_neq =
+            let reasons_neq : atom list =
               CCList.find_map
                 (fun (n,_,r) -> if Q.equal low.num n then Some r else None)
                 l |> CCOpt.get_exn
             in
             (* conflict should be:
                [low <= t & t <= up & low=up => t = neq]. *)
+            let reasons : atom list = reasons_neq @ up.reasons@low.reasons in
             raise_conflict acts
               ~sign:false ~op:Eq0 ~pivot:t
               ~expr_up_bound:up.expr ~expr_low_bound:low.expr
-              ~reasons:[up.reason; low.reason; reason_neq] ()
+              ~reasons:reasons ()
           | _ -> ()
         end
       | _ -> assert false
 
     (* add upper bound *)
-    let add_up acts ~strict t num ~expr ~reason : unit = match Term.decide_state_exn t with
+    let add_up acts ~strict t num ~expr ~reasons : unit = match Term.decide_state_exn t with
       | State s ->
         (* check consistency *)
         begin match s.eq, s.low with
@@ -414,13 +418,13 @@ let build
               (not strict && Q.compare eq.num num > 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict then Lt0 else Leq0) ~pivot:t
-              ~expr_up_bound:expr ~expr_low_bound:eq.expr ~reasons:[reason; eq.reason] ()
+              ~expr_up_bound:expr ~expr_low_bound:eq.expr ~reasons:(eq.reasons @ reasons) ()
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num >= 0) ||
               (Q.compare b.num num > 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict || b.strict then Lt0 else Leq0) ~pivot:t
-              ~expr_up_bound:expr ~expr_low_bound:b.expr ~reasons:[reason; b.reason] ()
+              ~expr_up_bound:expr ~expr_low_bound:b.expr ~reasons:(b.reasons @ reasons) ()
           | _ -> ()
         end;
         (* update *)
@@ -428,20 +432,20 @@ let build
         Actions.on_backtrack acts (fun () -> s.up <- old_b);
         begin match s.up with
           | B_none ->
-            s.up <- B_some {strict;num;reason;expr};
+            s.up <- B_some {strict;num;reasons;expr};
             check_tight_bound acts t;
           | B_some b ->
             (* only replace if more tight *)
             if Q.compare b.num num > 0 ||
                (strict && not b.strict && Q.equal b.num num) then (
-              s.up <- B_some {strict;num;reason;expr};
+              s.up <- B_some {strict;num;reasons;expr};
               check_tight_bound acts t;
             )
         end;
       | _ -> assert false
 
     (* add lower bound *)
-    let add_low acts ~strict t num ~expr ~reason : unit = match Term.decide_state_exn t with
+    let add_low acts ~strict t num ~expr ~reasons : unit = match Term.decide_state_exn t with
       | State s ->
         (* check consistency *)
         begin match s.eq, s.up with
@@ -450,13 +454,13 @@ let build
               (not strict && Q.compare eq.num num < 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict then Lt0 else Leq0) ~pivot:t
-              ~expr_low_bound:expr ~expr_up_bound:eq.expr ~reasons:[reason; eq.reason] ()
+              ~expr_low_bound:expr ~expr_up_bound:eq.expr ~reasons:(eq.reasons @ reasons) ()
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num <= 0) ||
               (Q.compare b.num num < 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict || b.strict then Lt0 else Leq0) ~pivot:t
-              ~expr_low_bound:expr ~expr_up_bound:b.expr ~reasons:[reason; b.reason] ()
+              ~expr_low_bound:expr ~expr_up_bound:b.expr ~reasons:(b.reasons @ reasons) ()
           | _ -> ()
         end;
         (* update state *)
@@ -464,20 +468,20 @@ let build
         Actions.on_backtrack acts (fun () -> s.low <- old_b);
         begin match s.low with
           | B_none ->
-            s.low <- B_some {strict;num;reason;expr};
+            s.low <- B_some {strict;num;reasons;expr};
             check_tight_bound acts t;
           | B_some b ->
             (* only replace if more tight *)
             if Q.compare b.num num < 0 ||
                (strict && not b.strict && Q.equal b.num num) then (
-              s.low <- B_some {strict;num;reason;expr};
+              s.low <- B_some {strict;num;reasons;expr};
               check_tight_bound acts t;
             )
         end
       | _ -> assert false
 
     (* add exact bound *)
-    let add_eq acts t num ~expr ~reason : unit = match Term.decide_state_exn t with
+    let add_eq acts t num ~expr ~reasons : unit = match Term.decide_state_exn t with
       | State s ->
         (* check compatibility with bounds *)
         begin match s.low, s.up with
@@ -486,33 +490,33 @@ let build
               (not b.strict && Q.compare b.num num > 0) ->
             raise_conflict acts ~op:(if b.strict then Lt0 else Leq0)
               ~sign:true ~pivot:t ~expr_up_bound:expr ~expr_low_bound:b.expr
-              ~reasons:[reason; b.reason] ()
+              ~reasons:(b.reasons @ reasons) ()
           | _, B_some b when
               (b.strict && Q.compare b.num num <= 0) ||
               (not b.strict && Q.compare b.num num < 0) ->
             raise_conflict acts ~op:(if b.strict then Lt0 else Leq0)
               ~sign:true ~pivot:t ~expr_low_bound:expr ~expr_up_bound:b.expr
-              ~reasons:[reason; b.reason] ()
+              ~reasons:(b.reasons @ reasons) ()
           | _ -> ()
         end;
         (* check other equality constraints, and update *)
         let old_b = s.eq in
         Actions.on_backtrack acts (fun () -> s.eq <- old_b);
         begin match s.eq with
-          | EC_none -> s.eq <- EC_eq {num;reason;expr}
+          | EC_none -> s.eq <- EC_eq {num;reasons;expr}
           | EC_neq {l;_} ->
             (* check if compatible *)
             List.iter
-              (fun (n2, expr2, reason_neq) ->
+              (fun (n2, expr2, reasons_neq) ->
                  if Q.equal num n2 then (
                    (* conflict *)
-                   assert (Atom.is_true reason_neq);
+                   assert (not (List.mem false @@ List.map Atom.is_true reasons_neq));
                    raise_conflict acts ~pivot:t ~op:Eq0 ~sign:false
-                     ~expr_up_bound:expr ~expr_low_bound:expr2 ~reasons:[reason_neq; reason] ()
+                     ~expr_up_bound:expr ~expr_low_bound:expr2 ~reasons:(reasons_neq @ reasons) ()
                  ))
               l;
             (* erase *)
-            s.eq <- EC_eq {num;reason;expr}
+            s.eq <- EC_eq {num;reasons;expr}
           | EC_eq eq ->
             if Q.equal eq.num num then (
               () (* do nothing *)
@@ -520,24 +524,24 @@ let build
               (* conflict *)
               raise_conflict acts ~sign:true
                 ~pivot:t ~expr_up_bound:expr ~expr_low_bound:eq.expr ~op:Eq0
-                ~reasons:[reason;eq.reason] ()
+                ~reasons:(eq.reasons @ reasons) ()
             )
         end
       | _ -> assert false
 
     (* add forbidden value *)
-    let add_neq acts t num ~expr ~reason : unit = match Term.decide_state_exn t with
+    let add_neq acts t num ~expr ~reasons : unit = match Term.decide_state_exn t with
       | State s ->
         let old_b = s.eq in
         Actions.on_backtrack acts (fun () -> s.eq <- old_b);
         begin match s.eq with
           | EC_none ->
-            s.eq <- EC_neq {l=[num,expr,reason]};
+            s.eq <- EC_neq {l=[num,expr,reasons]};
             check_tight_bound acts t;
           | EC_neq neq ->
             (* just add constraint, if not redundant *)
             if not (List.exists (fun (n,_,_) -> Q.equal n num) neq.l) then (
-              s.eq <- EC_neq {l=(num,expr,reason) :: neq.l};
+              s.eq <- EC_neq {l=(num,expr,reasons) :: neq.l};
               check_tight_bound acts t;
             )
           | EC_eq eq ->
@@ -547,30 +551,30 @@ let build
               raise_conflict acts
                 ~pivot:t ~sign:false ~op:Eq0
                 ~expr_up_bound:expr ~expr_low_bound:eq.expr
-                ~reasons:[eq.reason;reason] ()
+                ~reasons:(eq.reasons @ reasons) ()
             )
         end
       | _ -> assert false
 
     (* add a unit constraint to [t]. The constraint is [reason],
        which is valued to [b] *)
-    let add_unit_constr acts op expr (t:term) ~(reason:atom) (b:bool) : unit =
-      assert (t != Atom.term reason);
+    let add_unit_constr acts op expr (t:term) ~(reasons:atom list) (b:bool) : unit =
+      (* assert (t != Atom.term reason); *)
       let constr, expr, num = constr_of_unit op expr t b in
       (* look into existing constraints *)
       Log.debugf 10
         (fun k->k"(@[<hv>lra.add_unit_constr@ :term %a@ :constr @[%a %a@] \
-                  @ :reason %a@ :expr %a@ :cur-state %a@])"
-            Term.debug t pp_constr constr Q.pp_print num Atom.debug reason
+                  @ :reasons %a@ :expr %a@ :cur-state %a@])"
+            Term.debug t pp_constr constr Q.pp_print num (Util.pp_list Atom.debug) reasons
             LE.pp expr pp_state (Term.decide_state_exn t));
       (* update, depending on the kind of constraint [reason] is *)
       begin match constr with
-        | C_leq -> add_up acts ~strict:false t num ~expr ~reason
-        | C_lt -> add_up acts ~strict:true t num ~expr ~reason
-        | C_geq -> add_low acts ~strict:false t num ~expr ~reason
-        | C_gt -> add_low acts ~strict:true t num ~expr ~reason
-        | C_eq -> add_eq acts t num ~expr ~reason
-        | C_neq -> add_neq acts t num ~expr ~reason
+        | C_leq -> add_up acts ~strict:false t num ~expr ~reasons
+        | C_lt -> add_up acts ~strict:true t num ~expr ~reasons
+        | C_geq -> add_low acts ~strict:false t num ~expr ~reasons
+        | C_gt -> add_low acts ~strict:true t num ~expr ~reasons
+        | C_eq -> add_eq acts t num ~expr ~reasons
+        | C_neq -> add_neq acts t num ~expr ~reasons
       end
 
     (* [t] should evaluate or propagate. Add constraint to its state or
@@ -628,7 +632,7 @@ let build
                 pp_bound x_up);
             if y_lvl > x_lvl then
               match y_low with
-              | B_some{strict; num; expr=y_l; reason} ->
+              | B_some{strict; num; expr=y_l; reasons} ->
                 let op = 
                   if strict then
                     Lt0
@@ -643,7 +647,7 @@ let build
               | B_none -> []
             else if x_lvl > y_lvl then
               match x_up with
-              | B_some{strict; num; expr=x_u; reason} -> 
+              | B_some{strict; num; expr=x_u; reasons} -> 
                 let op = 
                   if strict then
                     Lt0
@@ -686,10 +690,10 @@ let build
             end
           | Some V_true ->
             assert (t != u);
-            add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.pa t) true
+            add_unit_constr acts p.op p.expr u ~reasons:[Term.Bool.pa t] true
           | Some V_false ->
             assert (t != u);
-            add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
+            add_unit_constr acts p.op p.expr u ~reasons:[Term.Bool.na t] false
           | Some _ -> assert false
         end
       (* | ReLU r -> Log.debugf 0
@@ -737,9 +741,9 @@ let build
             begin 
               let vx = eval_le_num_exn r.x in 
               let vy = eval_relu vx in
-              let expry = eval_relu_expr r.x vx in
-              Log.debugf 0 (fun k->k "u is y %a %a" LE.pp r.y LE.pp expry);
-              add_eq acts y (eval_relu vx) ~expr:expry ~reason:(Term.Bool.pa t);
+              let expr_y, reason_y = eval_relu_expr_reason r.x vx in
+              Log.debugf 0 (fun k->k "u is y %a %a" LE.pp r.y LE.pp expr_y);
+              add_eq acts y (eval_relu vx) ~expr:expr_y ~reasons:[Term.Bool.pa t];
               (* TODO: correct bug on
 
               (assert (> y 2))
