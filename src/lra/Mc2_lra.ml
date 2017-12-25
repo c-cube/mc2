@@ -722,6 +722,13 @@ let build
           let x = List.hd (LE.terms_l r.x) and y = List.hd (LE.terms_l r.y) in
           Log.debugf 1 (fun k->k "propagate_relu %a %a" LE.pp r.x LE.pp r.y);
           Log.debugf 1 (fun k->k "propagate_relu %a %a %a %a" Term.debug t Term.debug u Term.debug x Term.debug y);
+          
+          (* HERE IS THE SOLUTION *)
+          (* When adding the constraint we deduce from relu,
+          if it clashes with previously known contraints, then we can deduce something
+          We have to rewrite the add_eq / add_up functions that are only suitable for
+          constraints derived from inequalities!!!
+          *)
           if (Term.equal x u) then
             (* we want to predict x from y if y > 0 or else add a constraint on x *)
             begin
