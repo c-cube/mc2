@@ -325,7 +325,7 @@ let build
               let x = simplify x and y = simplify y
               in
               let view = ReLU {x=x; y=y; watches=Term.Watch2.dummy} in
-              Log.debugf 0
+              Log.debugf 1
                 (fun k->k "mk_relu %a" pp_term view);
               T.make view Type.bool
           end
@@ -335,9 +335,10 @@ let build
       
     let eval_relu_expr_reason (x:LE.t) (vx:Q.t) : LE.t * atom = 
       (* vx < Q.zero works better *)
-      if vx <= Q.zero
-        then LE.zero, Term.Bool.pa (mk_pred Leq0 x)
-        else x, Term.Bool.na (mk_pred Leq0 x)
+      if vx <= Q.zero then
+        LE.zero, Term.Bool.pa (mk_pred Leq0 x)
+      else
+        x, Term.Bool.na (mk_pred Leq0 x)      
         
           
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
@@ -596,7 +597,7 @@ let build
           | Eval_into _, _ -> assert false (* non boolean! *)
         end
       | ReLU r ->
-        Log.debugf 0
+        Log.debugf 1
           (fun k->k "relu-check_consistent %a" pp_term (Term.view t));
         (* here we suppose
           - the relu is always true (could be checked or ensured in the input files)
@@ -606,19 +607,22 @@ let build
         
         let vx = eval_le_num_exn r.x and vy = eval_le_num_exn r.y in
         
-        Log.debugf 0
+        Log.debugf 1
           (fun k->k "x evals to %a, y evals to %a, lvl_x=%d, lvl_y=%d"
           Q.pp_print vx Q.pp_print vy (last_decision_lvl r.x) (last_decision_lvl r.y));
-        Log.debugf 0
+        Log.debugf 1
           (fun k->k "x is %a"
           (Util.pp_list Term.debug) (LE.terms_l r.x));
-          Log.debugf 0
+          Log.debugf 1
             (fun k->k "y is %a"
             (Util.pp_list Term.debug) (LE.terms_l r.y));
           
         if Q.equal vy (eval_relu vx) then
           ()
         else
+        begin
+          Log.debugf 0
+            (fun k->k "ABEHZBEHBZHEBHZBEHBHZE");
           let conflict =
           (* TODO: maybe it is possible to retrieve the level with Term.level *)
           match Term.decide_state_exn x, Term.decide_state_exn y with
@@ -669,7 +673,7 @@ let build
                 "(@[<hv>lra.raise_conflict.ReLU@ :clause %a@])"
                 Clause.debug_atoms conflict);
           Actions.raise_conflict acts conflict lemma_relu;
-          
+        end  
       | _ -> assert false
 
     (* [u] is [t] or one of its subterms. All the other watches are up-to-date,
@@ -696,7 +700,7 @@ let build
             add_unit_constr acts p.op p.expr u ~reasons:[Term.Bool.na t] false
           | Some _ -> assert false
         end
-      (* | ReLU r -> Log.debugf 0
+      (* | ReLU r -> Log.debugf 1
           (fun k->k "test-check_or_propagate %a %a" pp_term (Term.view t) Term.debug u);
           begin match Term.value t with
             | None ->
@@ -706,12 +710,12 @@ let build
               begin match eval_le r.expr with
                 | None -> assert false
                 | Some (n,subs) ->
-                  Log.debugf 0
+                  Log.debugf 1
                             (fun k->k "test-check_or_propagate1" );
               end
             | Some V_value {view=V_rat num;_} ->
               assert (t != u);
-              Log.debugf 0
+              Log.debugf 1
                         (fun k->k "test-check_or_propagate2 %a evals to %a" pp_term t.t_view Q.pp_print num);
             | Some _ -> assert false
           end *)
@@ -721,20 +725,26 @@ let build
     let propagate_relu acts (t:term) ~(u:term) : unit =
       (* TODO: verify t is true *)
       let r = Term.view t in
-      Log.debugf 0 (fun k->k "t is %a " pp_term r);
+      Log.debugf 1 (fun k->k "t is %a " pp_term r);
       begin match r with
         | ReLU r ->
           let x = List.hd (LE.terms_l r.x) and y = List.hd (LE.terms_l r.y) in
-          Log.debugf 0 (fun k->k "propagate_relu %a %a" LE.pp r.x LE.pp r.y);
-          Log.debugf 0 (fun k->k "propagate_relu %a %a %a %a" Term.debug t Term.debug u Term.debug x Term.debug y);
+          Log.debugf 1 (fun k->k "propagate_relu %a %a" LE.pp r.x LE.pp r.y);
+          Log.debugf 1 (fun k->k "propagate_relu %a %a %a %a" Term.debug t Term.debug u Term.debug x Term.debug y);
           if (Term.equal x u) then
             (* we want to predict x from y if y > 0 or else add a constraint on x *)
             begin
-              Log.debugf 0 (fun k->k "u is x %a %a" LE.pp r.x Term.debug x);
-              Log.debugf 0 (fun k->k "y is %a " Term.debug y);
+              Log.debugf 1 (fun k->k "u is x %a %a" LE.pp r.x Term.debug x);
+              Log.debugf 1 (fun k->k "y is %a " Term.debug y);
               let vy = eval_le_num_exn r.y in 
-              (* TODO: write eval_invrelu *)
-              ()
+              if vy > Q.zero then
+                let reason = Term.Bool.pa (mk_pred Lt0 (LE.neg r.y))
+                in
+                add_eq acts x vy ~expr:r.y ~reasons:[reason; Term.Bool.pa t];              
+              else
+                let reason = Term.Bool.na (mk_pred Lt0 (LE.neg r.y))
+                in
+                add_up acts ~strict:false x Q.zero ~expr:LE.zero ~reasons:[reason; Term.Bool.pa t];
             end
           else if (Term.equal y u) then
             (* we want to predict y from x *)
@@ -742,8 +752,8 @@ let build
               let vx = eval_le_num_exn r.x in 
               let vy = eval_relu vx in
               let expr_y, reason_y = eval_relu_expr_reason r.x vx in
-              Log.debugf 0 (fun k->k "u is y %a %a" LE.pp r.y LE.pp expr_y);
-              add_eq acts y (eval_relu vx) ~expr:expr_y ~reasons:[reason_y; Term.Bool.pa t];              
+              Log.debugf 1 (fun k->k "u is y %a %a" LE.pp r.y LE.pp expr_y);
+              add_eq acts y vy ~expr:expr_y ~reasons:[reason_y; Term.Bool.pa t];              
             end
         | _ -> assert false
       end
@@ -757,7 +767,7 @@ let build
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
       | ReLU r ->          
-          Log.debugf 0
+          Log.debugf 1
           (fun k->k "test-init-relu %a" pp_term (Term.view t));
 
           (* 0 ≤ y *)
