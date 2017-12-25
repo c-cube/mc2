@@ -743,15 +743,7 @@ let build
               let vy = eval_relu vx in
               let expr_y, reason_y = eval_relu_expr_reason r.x vx in
               Log.debugf 0 (fun k->k "u is y %a %a" LE.pp r.y LE.pp expr_y);
-              add_eq acts y (eval_relu vx) ~expr:expr_y ~reasons:[Term.Bool.pa t];
-              (* TODO: correct bug on
-
-              (assert (> y 2))
-              (assert (relu x y))
-              
-                modify add_eq to take list of reasons
-                and give the reason of relu evaluation
-               *)
+              add_eq acts y (eval_relu vx) ~expr:expr_y ~reasons:[reason_y; Term.Bool.pa t];              
             end
         | _ -> assert false
       end
