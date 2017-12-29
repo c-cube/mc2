@@ -89,6 +89,7 @@ type decide_state +=
 type lemma_view +=
   | Lemma_lra
   | Lemma_relu
+  | Lemma_lra_prop
 
 let k_rat = Service.Key.makef "%s.rat" name
 let k_make_const = Service.Key.makef "%s.make_const" name
@@ -214,12 +215,16 @@ let eval_relu (n:Q.t) : Q.t =
   else n
 
 (* evaluate an arithmetic boolean expression *)
-let eval (t:term) = match Term.view t with
-  | Const n -> Eval_into (mk_val n, [])
+let eval (t:term) =
+  match Term.view t with
+  | Const n ->    Log.debugf 20 (fun k->k "lra.eval Const %a" Term.debug t);
+    Eval_into (mk_val n, [])
   | Pred {op;expr=e;_} ->
     begin match eval_le e with
-      | None -> Eval_unknown
-      | Some (n,l) -> Eval_into (Value.of_bool @@ eval_bool_const op n, l)
+      | None ->    Log.debugf 20 (fun k->k "lra.eval None %a" Term.debug t);
+        Eval_unknown
+      | Some (n,l) ->    Log.debugf 20 (fun k->k "lra.eval Some %a" Q.pp_print n);
+        Eval_into (Value.of_bool @@ eval_bool_const op n, l)
     end
   | ReLU {x;y;_} ->
     begin match eval_le x, eval_le y with
@@ -236,12 +241,14 @@ let tc_lemma : tc_lemma = {
   tcl_pp=(fun out l -> match l with
       | Lemma_lra -> Fmt.string out "lra"
       | Lemma_relu -> Fmt.string out "relu"
+      | Lemma_lra_prop -> Fmt.string out "lra_prop"
       | _ -> assert false
     );
 }
 
 let lemma_lra = Lemma.make Lemma_lra tc_lemma
 let lemma_relu = Lemma.make Lemma_relu tc_lemma
+let lemma_lra_prop = Lemma.make Lemma_lra_prop tc_lemma
 
 (* build plugin *)
 let build
@@ -342,14 +349,20 @@ let build
       | ReLU_prop_apply_3 r, Atom y_l_reason ->
         let c = [
           Term.Bool.na r;
-          Atom.neg y_l_reason; (* small optimization; we don't need to recreate this one *)
-          (* Term.Bool.na (mk_pred op (expr_low_bound -.. (relu_y r))); *)
+          (* Atom.neg y_l_reason; (* small optimization; we don't need to recreate this one *) *)
+          Term.Bool.na (mk_pred op (expr_low_bound -.. (relu_y r)));
           Term.Bool.pa (mk_pred op expr_low_bound);
           Term.Bool.pa (mk_pred op (expr_low_bound -.. (relu_x r)))
         ]
-        in Actions.raise_conflict acts c lemma_relu
+        in Log.debugf 30
+          (fun k->k
+              "(@[<hv>lra.analyse_relu_3@ \
+               :relu %a@ :clause %a@])"
+              pp_term (Term.view r) Clause.debug_atoms c);
+        Actions.raise_conflict acts c lemma_relu
       | Atom x_u_reason, ReLU_prop_apply_4_or_5 r ->
         let cond = eval_bool_const op (Q.neg (eval_le_num_exn expr_up_bound)) in
+
         let c = if cond then
             (* lemma 5 *)
             [
@@ -368,7 +381,17 @@ let build
               Term.Bool.pa (mk_pred op (LE.neg expr_up_bound));
               Term.Bool.pa (mk_pred Leq0 (relu_y r))
             ]
-        in Actions.raise_conflict acts c lemma_relu
+        in
+        Log.debugf 30
+          (fun k->k
+              (if cond then
+                 "(@[<hv>lra.analyse_relu_5@ \
+                  :relu %a@ :clause %a@ :pivot %a@])"
+               else
+                 "(@[<hv>lra.analyse_relu_4@ \
+                  :relu %a@ :clause %a@ :pivot %a@])")
+              pp_term (Term.view r) Clause.debug_atoms c Term.debug pivot);
+        Actions.raise_conflict acts c lemma_relu
       | _, _ -> assert false
 
     (* [make op e t ~reason b] turns this unit constraint over [t]
@@ -651,16 +674,19 @@ let build
               (* propagate y from x *)
               let vx = eval_le_num_exn r.x in
               if vx <= Q.zero then
-                add_up acts ~strict:false y Q.zero ~expr:LE.zero ~reason:(ReLU_prop_apply_3 t)
-              else
-                add_up acts ~strict:false y vx ~expr:r.x ~reason:(ReLU_prop_apply_3 t)
-            else
+                (                Log.debugf 20 (fun k->k "Propagate Relu 1 %a" Term.debug t);
+                                 add_up acts ~strict:false y Q.zero ~expr:LE.zero ~reason:(ReLU_prop_apply_3 t)
+                )              else
+                (                Log.debugf 20 (fun k->k "Propagate Relu 2 %a" Term.debug t);
+                                 add_up acts ~strict:false y vx ~expr:r.x ~reason:(ReLU_prop_apply_3 t)
+                )            else
               (* propagate x from y *)
               let vy = eval_le_num_exn r.y in
               assert (vy >= Q.zero);
               if vy > Q.zero then
-                add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5 t)
-          (* let add_up acts ~strict t num ~expr ~reason *)
+                (                Log.debugf 20 (fun k->k "Propagate Relu 3 %a" Term.debug t);
+                                 add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5 t)
+                )          (* let add_up acts ~strict t num ~expr ~reason *)
           | Some V_false -> Util.errorf "All the ReLU are supposed true"
           | _ -> assert false
         end
@@ -697,8 +723,17 @@ let build
       (* ~on_all_set:(fun () -> check_consistent acts t) *)
       | _ -> assert false
 
-    let update_watches acts t ~watch : watch_res = match Term.view t with
+    let update_watches acts t ~watch : watch_res =
+      match Term.view t with
       | Pred p ->
+        if (p.op == Eq0) && (t == watch) && (Term.has_value t Value.true_) then
+          begin
+            (* propagation *)
+            let ineq_term = mk_pred Leq0 p.expr in
+            Actions.propagate_bool_lemma acts ineq_term true [Term.Bool.na t; Term.Bool.pa ineq_term] lemma_lra_prop;
+            let ineq_term = mk_pred Leq0 (LE.neg p.expr) in
+            Actions.propagate_bool_lemma acts ineq_term true [Term.Bool.na t; Term.Bool.pa ineq_term] lemma_lra_prop;
+          end;
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
