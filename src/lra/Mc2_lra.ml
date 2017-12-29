@@ -4,12 +4,6 @@
 (* Reference:
    http://smtlib.cs.uiowa.edu/logics-all.shtml#QF_LRA *)
 
-(* TODO:
-   define relu with terms instead of LE.t
-   might be possible to test the atomic LE.t AND
-   retrieve the terms in mk_relu with LE.as_singleton
-*)
-
 open Mc2_core
 open Solver_types
 
@@ -46,11 +40,12 @@ type reason =
   | ReLU_prop_apply_3
   | ReLU_prop_apply_4_or_5
 
-let debug_reason out (a:reason) = match a with
+let debug_reason out = function
   | Atom a -> Atom.debug out a
-  | _ -> Format.fprintf out "relu_propagation"
+  | ReLU_prop_apply_3 -> Format.fprintf out "ReLU_prop_apply_3"
+  | ReLU_prop_apply_4_or_5 -> Format.fprintf out "ReLU_prop_apply_4_or_5"
 
-let atomic_reason (r:reason) : atom = match r with
+let atomic_reason : (reason -> atom) = function
   | Atom a -> a
   | _ -> Util.errorf "This ReLU analysis case is not handled yet."
 
@@ -390,6 +385,7 @@ let build
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num >= 0) ||
               (Q.compare b.num num > 0) ->
+            (* TODO: match reason and b.reason *)
             raise_conflict acts
               ~sign:true ~op:(if strict || b.strict then Lt0 else Leq0) ~pivot:t
               ~expr_up_bound:expr ~expr_low_bound:b.expr ~reasons:[atomic_reason reason; atomic_reason b.reason] ()
@@ -426,6 +422,7 @@ let build
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num <= 0) ||
               (Q.compare b.num num < 0) ->
+            (* TODO: match reason and b.reason *)
             raise_conflict acts
               ~sign:true ~op:(if strict || b.strict then Lt0 else Leq0) ~pivot:t
               ~expr_low_bound:expr ~expr_up_bound:b.expr ~reasons:[atomic_reason reason; atomic_reason b.reason] ()
