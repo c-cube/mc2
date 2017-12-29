@@ -44,10 +44,12 @@ type term_view +=
     } (** Arithmetic constraint *)
   | ReLU of {x: LE.t; y: LE.t; mutable watches: Term.Watch2.t;}
 
+(* retrieve the LE expression representing x from ReLU(x, y) *)
 let relu_x t = match Term.view t with
   | ReLU r -> r.x
   | _ -> assert false
 
+(* retrieve the LE expression representing y from ReLU(x, y) *)
 let relu_y t = match Term.view t with
   | ReLU r -> r.y
   | _ -> assert false
@@ -341,6 +343,7 @@ let build
         let c = [
           Term.Bool.na r;
           Atom.neg y_l_reason; (* small optimization; we don't need to recreate this one *)
+          (* Term.Bool.na (mk_pred op (expr_low_bound -.. (relu_y r))); *)
           Term.Bool.pa (mk_pred op expr_low_bound);
           Term.Bool.pa (mk_pred op (expr_low_bound -.. (relu_x r)))
         ]
@@ -351,7 +354,8 @@ let build
             (* lemma 5 *)
             [
               Term.Bool.na r;
-              Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
+              (* Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *) *)
+              Term.Bool.na (mk_pred op ((relu_x r) -.. expr_up_bound));
               Term.Bool.na (mk_pred op (LE.neg expr_up_bound));
               Term.Bool.pa (mk_pred op ((relu_y r) -.. expr_up_bound))
             ]
@@ -359,7 +363,8 @@ let build
             (* lemma 4 *)
             [
               Term.Bool.na r;
-              Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
+              (* Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *) *)
+              Term.Bool.na (mk_pred op ((relu_x r) -.. expr_up_bound));
               Term.Bool.pa (mk_pred op (LE.neg expr_up_bound));
               Term.Bool.pa (mk_pred Leq0 (relu_y r))
             ]
@@ -674,12 +679,12 @@ let build
 
         (* 0 ≤ y *)
         let ineq = mk_pred Leq0 (LE.neg r.y) in
-        let c = Clause.make [Term.Bool.na t; Term.Bool.pa ineq] (Lemma lemma_lra)
+        let c = Clause.make [Term.Bool.na t; Term.Bool.pa ineq] (Lemma lemma_relu)
         in Actions.push_clause acts c;
 
         (* x ≤ y *)
         let ineq = mk_pred Leq0 (LE.diff r.x r.y) in
-        let c = Clause.make [Term.Bool.na t; Term.Bool.pa ineq] (Lemma lemma_lra)
+        let c = Clause.make [Term.Bool.na t; Term.Bool.pa ineq] (Lemma lemma_relu)
         in Actions.push_clause acts c;
 
         (* watches = [t ; x ; y] *)
