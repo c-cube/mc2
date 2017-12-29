@@ -641,7 +641,7 @@ let build
         let watches = Term.Watch2.make (t :: LE.terms_l r.x @ LE.terms_l r.y) in
         r.watches <- watches;
         Term.Watch2.init r.watches t
-          ~on_unit:(fun u -> ())
+          ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> ())
       (* ~on_unit:(fun u -> propagate_relu acts t ~u) *)
       (* ~on_all_set:(fun () -> check_consistent acts t) *)
@@ -654,7 +654,7 @@ let build
           ~on_all_set:(fun () -> check_consistent acts t)
       | ReLU p ->
         Term.Watch2.update p.watches t ~watch
-          ~on_unit:(fun u -> ())
+          ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> ())
       (* ~on_unit:(fun u -> propagate_relu acts t ~u) *)
       (* ~on_all_set:(fun () -> check_consistent acts t) *)
