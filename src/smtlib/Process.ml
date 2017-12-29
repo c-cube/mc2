@@ -178,7 +178,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         begin match op, l with
           | A.Minus, [a] -> RLE.neg a |> ret_rat
           | A.ReLU,  [x;y] -> mk_lra_relu x y |> ret_any (* plutôt comme mk_lra_pred Mc2_lra.Leq0 e |> ret_any *)
-            (* ReLU symbol *)
+          (* ReLU symbol *)
           | A.ReLU, _ ->
             Util.errorf "ill-formed arith expr:@ %a@ (need ≥ 2 args)" A.pp_term t
           | _, [] | _, [_] ->
@@ -233,7 +233,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
                    | Some c -> Q.inv c)
                 l
             in
-            List.fold_right RLE.mult coeffs first |> ret_rat        
+            List.fold_right RLE.mult coeffs first |> ret_rat
         end
       | A.Select _ -> assert false (* TODO *)
       | A.Match _ -> assert false (* TODO *)

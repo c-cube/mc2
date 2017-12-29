@@ -204,13 +204,13 @@ let eval (t:term) = match Term.view t with
       | None -> Eval_unknown
       | Some (n,l) -> Eval_into (Value.of_bool @@ eval_bool_const op n, l)
     end
-  | ReLU {x;y;_} -> 
+  | ReLU {x;y;_} ->
     begin match eval_le x, eval_le y with
       | Some (nx,lx), Some (ny,ly) ->
         Eval_into (Value.of_bool (Q.equal ny @@ eval_relu nx), lx @ ly)
       | None, Some _ -> Eval_unknown
       | Some _, None -> Eval_unknown
-      | None, None -> Eval_unknown      
+      | None, None -> Eval_unknown
     end
 
   | _ -> assert false
@@ -305,7 +305,7 @@ let build
                 (fun k->k "mk_relu %a" pp_term view);
               T.make view Type.bool
           end
-      end           
+      end
 
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
        eval to [false]) from [reasons] *)
@@ -597,7 +597,7 @@ let build
         Term.Watch2.init p.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
-      | ReLU r ->          
+      | ReLU r ->
 
         (* 0 ≤ y *)
         let ineq = mk_pred Leq0 (LE.neg r.y) in
@@ -607,7 +607,7 @@ let build
         (* x ≤ y *)
         let ineq = mk_pred Leq0 (LE.diff r.x r.y) in
         let c = Clause.make [Term.Bool.na t; Term.Bool.pa ineq] (Lemma lemma_lra)
-        in Actions.push_clause acts c;          
+        in Actions.push_clause acts c;
 
         (* watches = [t ; x ; y] *)
         let watches = Term.Watch2.make (t :: LE.terms_l r.x @ LE.terms_l r.y) in
