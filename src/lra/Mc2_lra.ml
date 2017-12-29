@@ -41,8 +41,21 @@ type constr =
   | C_eq
   | C_neq
 
+type reason =
+  | Atom of atom
+  | ReLU_prop_apply_3
+  | ReLU_prop_apply_4_or_5
+
+let debug_reason out (a:reason) = match a with
+  | Atom a -> Atom.debug out a
+  | _ -> Format.fprintf out "relu_propagation"
+
+let atomic_reason (r:reason) : atom = match r with
+  | Atom a -> a
+  | _ -> Util.errorf "This ReLU analysis case is not handled yet."
+
 type bound =
-  | B_some of {strict:bool; num: num; expr: LE.t; reason:atom}
+  | B_some of {strict:bool; num: num; expr: LE.t; reason:reason}
   | B_none (* no bound *)
 
 type eq_cstr =
@@ -142,7 +155,7 @@ let pp_bound out = function
   | B_some {strict;num;reason;expr} ->
     let strict_str = if strict then "[strict]" else "" in
     Fmt.fprintf out "(@[%a%s@ :expr %a@ :reason %a@])"
-      Q.pp_print num strict_str LE.pp expr Atom.debug reason
+      Q.pp_print num strict_str LE.pp expr debug_reason reason
 
 let pp_eq out = function
   | EC_none -> Fmt.string out "ø"
@@ -262,14 +275,6 @@ let build
       Type.make_static Ty_rat tc
     )
 
-    let simplify (e:LE.t) : LE.t =
-      (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
-      match LE.as_singleton e with
-      | None -> e
-      | Some (n,t) ->
-        let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
-        LE.singleton n t
-
     (* build a predicate on a linear expression *)
     let mk_pred (op:op) (e:LE.t) : term =
       begin match LE.as_const e with
@@ -277,7 +282,7 @@ let build
           (* directly evaluate *)
           if eval_bool_const op n then true_ else false_
         | None ->
-          let e = simplify e
+          let e = LE.simplify e
           in
           let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
           T.make view Type.bool
@@ -298,10 +303,10 @@ let build
               then mk_pred Eq0 (LE.diff x @@ LE.const ny)
               else mk_pred Lt0 x
             | None ->
-              let x = simplify x and y = simplify y
+              let x = LE.simplify x and y = LE.simplify y
               in
               let view = ReLU {x=x; y=y; watches=Term.Watch2.dummy} in
-              Log.debugf 1
+              Log.debugf 20
                 (fun k->k "mk_relu %a" pp_term view);
               T.make view Type.bool
           end
@@ -369,13 +374,13 @@ let build
             raise_conflict acts
               ~sign:false ~op:Eq0 ~pivot:t
               ~expr_up_bound:up.expr ~expr_low_bound:low.expr
-              ~reasons:[up.reason; low.reason; reason_neq] ()
+              ~reasons:[atomic_reason up.reason; atomic_reason low.reason; reason_neq] ()
           | _ -> ()
         end
       | _ -> assert false
 
     (* add upper bound *)
-    let add_up acts ~strict t num ~expr ~reason : unit = match Term.decide_state_exn t with
+    let add_up acts ~strict t num ~expr ~(reason:reason) : unit = match Term.decide_state_exn t with
       | State s ->
         (* check consistency *)
         begin match s.eq, s.low with
@@ -384,13 +389,13 @@ let build
               (not strict && Q.compare eq.num num > 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict then Lt0 else Leq0) ~pivot:t
-              ~expr_up_bound:expr ~expr_low_bound:eq.expr ~reasons:[reason; eq.reason] ()
+              ~expr_up_bound:expr ~expr_low_bound:eq.expr ~reasons:[atomic_reason reason; eq.reason] ()
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num >= 0) ||
               (Q.compare b.num num > 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict || b.strict then Lt0 else Leq0) ~pivot:t
-              ~expr_up_bound:expr ~expr_low_bound:b.expr ~reasons:[reason; b.reason] ()
+              ~expr_up_bound:expr ~expr_low_bound:b.expr ~reasons:[atomic_reason reason; atomic_reason b.reason] ()
           | _ -> ()
         end;
         (* update *)
@@ -411,7 +416,7 @@ let build
       | _ -> assert false
 
     (* add lower bound *)
-    let add_low acts ~strict t num ~expr ~reason : unit = match Term.decide_state_exn t with
+    let add_low acts ~strict t num ~expr ~(reason:reason) : unit = match Term.decide_state_exn t with
       | State s ->
         (* check consistency *)
         begin match s.eq, s.up with
@@ -420,13 +425,13 @@ let build
               (not strict && Q.compare eq.num num < 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict then Lt0 else Leq0) ~pivot:t
-              ~expr_low_bound:expr ~expr_up_bound:eq.expr ~reasons:[reason; eq.reason] ()
+              ~expr_low_bound:expr ~expr_up_bound:eq.expr ~reasons:[atomic_reason  reason; eq.reason] ()
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num <= 0) ||
               (Q.compare b.num num < 0) ->
             raise_conflict acts
               ~sign:true ~op:(if strict || b.strict then Lt0 else Leq0) ~pivot:t
-              ~expr_low_bound:expr ~expr_up_bound:b.expr ~reasons:[reason; b.reason] ()
+              ~expr_low_bound:expr ~expr_up_bound:b.expr ~reasons:[atomic_reason reason; atomic_reason b.reason] ()
           | _ -> ()
         end;
         (* update state *)
@@ -456,13 +461,13 @@ let build
               (not b.strict && Q.compare b.num num > 0) ->
             raise_conflict acts ~op:(if b.strict then Lt0 else Leq0)
               ~sign:true ~pivot:t ~expr_up_bound:expr ~expr_low_bound:b.expr
-              ~reasons:[reason; b.reason] ()
+              ~reasons:[reason; atomic_reason b.reason] ()
           | _, B_some b when
               (b.strict && Q.compare b.num num <= 0) ||
               (not b.strict && Q.compare b.num num < 0) ->
             raise_conflict acts ~op:(if b.strict then Lt0 else Leq0)
               ~sign:true ~pivot:t ~expr_low_bound:expr ~expr_up_bound:b.expr
-              ~reasons:[reason; b.reason] ()
+              ~reasons:[reason; atomic_reason b.reason] ()
           | _ -> ()
         end;
         (* check other equality constraints, and update *)
@@ -490,7 +495,7 @@ let build
               (* conflict *)
               raise_conflict acts ~sign:true
                 ~pivot:t ~expr_up_bound:expr ~expr_low_bound:eq.expr ~op:Eq0
-                ~reasons:[reason;eq.reason] ()
+                ~reasons:[reason; eq.reason] ()
             )
         end
       | _ -> assert false
@@ -535,10 +540,10 @@ let build
             LE.pp expr pp_state (Term.decide_state_exn t));
       (* update, depending on the kind of constraint [reason] is *)
       begin match constr with
-        | C_leq -> add_up acts ~strict:false t num ~expr ~reason
-        | C_lt -> add_up acts ~strict:true t num ~expr ~reason
-        | C_geq -> add_low acts ~strict:false t num ~expr ~reason
-        | C_gt -> add_low acts ~strict:true t num ~expr ~reason
+        | C_leq -> add_up acts ~strict:false t num ~expr ~reason:(Atom reason)
+        | C_lt -> add_up acts ~strict:true t num ~expr ~reason:(Atom reason)
+        | C_geq -> add_low acts ~strict:false t num ~expr ~reason:(Atom reason)
+        | C_gt -> add_low acts ~strict:true t num ~expr ~reason:(Atom reason)
         | C_eq -> add_eq acts t num ~expr ~reason
         | C_neq -> add_neq acts t num ~expr ~reason
       end
@@ -587,6 +592,29 @@ let build
             add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
           | Some _ -> assert false
         end
+      | ReLU r ->
+        begin match Term.value t with
+          | None -> Util.errorf "All the ReLU are supposed true"
+          | Some V_true ->
+            assert (t != u);
+            let x = LE.singleton_term r.x and y = LE.singleton_term r.y in
+            if (y == u) then
+              (* propagate y from x *)
+              let vx = eval_le_num_exn r.x in
+              if vx <= Q.zero then
+                add_up acts ~strict:false y Q.zero ~expr:LE.zero ~reason:(ReLU_prop_apply_3)
+              else
+                add_up acts ~strict:false y vx ~expr:r.x ~reason:(ReLU_prop_apply_3)
+            else
+              (* propagate x from y *)
+              let vy = eval_le_num_exn r.y in
+              assert (vy >= Q.zero);
+              if vy > Q.zero then add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5)
+          (* let add_up acts ~strict t num ~expr ~reason *)
+          | Some V_false -> Util.errorf "All the ReLU are supposed true"
+          | _ -> assert false
+        end
+
       | _ -> assert false
 
     let init acts t : unit = match Term.view t with
