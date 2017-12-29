@@ -612,6 +612,7 @@ let build
           ()
         else
           begin
+            assert false;
             Log.debugf 0
               (fun k->k "ABEHZBEHBZHEBHZBEHBHZE");
             let conflict =
@@ -813,6 +814,7 @@ let build
               Actions.on_backtrack acts (fun () -> s.up <- old_b);
               begin match s.up with
                 | B_none ->
+                  (* TODO give the relu as reason *)
                   s.up <- B_some {strict=false;num=vy;reasons=[reason_y];expr=expr_y};
                   check_tight_bound acts y;
                 | B_some b ->

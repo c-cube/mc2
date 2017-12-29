@@ -10,7 +10,14 @@ OPTS= -j $(J)
 
 testrelu: build
 	./mc2 src/tests/reluplex/test_relu.smt2 -v 100
-	
+
+debug:
+	jbuilder build src/main.bc $(OPTS)
+	rlwrap ocamldebug ./_build/default/src/main.bc src/tests/reluplex/test_relu.smt2 -v 100	
+
+testrelu0: build
+	./mc2 src/tests/reluplex/test_relu.smt2 -v 0
+
 build:
 	jbuilder build $(TARGETS) $(OPTS)
 

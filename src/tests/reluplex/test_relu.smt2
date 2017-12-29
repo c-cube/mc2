@@ -2,7 +2,9 @@
 (set-logic QF_UFLRA)
 (declare-fun x () Real)
 (declare-fun y () Real)
-(assert (> x 0))
 (assert (relu x y))
+
+
+
 (check-sat)
 (exit)
