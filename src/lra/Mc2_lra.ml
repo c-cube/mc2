@@ -4,6 +4,12 @@
 (* Reference:
    http://smtlib.cs.uiowa.edu/logics-all.shtml#QF_LRA *)
 
+(* TODO:
+   define relu with terms instead of LE.t
+   might be possible to test the atomic LE.t AND
+   retrieve the terms in mk_relu with LE.as_singleton
+*)
+
 open Mc2_core
 open Solver_types
 
@@ -60,13 +66,17 @@ type term_view +=
       expr: LE.t;
       mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
+  | ReLU of {x: LE.t; y: LE.t; mutable watches: Term.Watch2.t;}
+
 
 type lemma_view +=
   | Lemma_lra
+  | Lemma_relu
 
 let k_rat = Service.Key.makef "%s.rat" name
 let k_make_const = Service.Key.makef "%s.make_const" name
 let k_make_pred = Service.Key.makef "%s.make_pred" name
+let k_make_relu = Service.Key.makef "%s.make_relu" name
 
 let[@inline] equal_op a b =
   begin match a, b with
@@ -156,6 +166,7 @@ let pp_state out = function
 let[@inline] subterms (t:term_view) : term Sequence.t = match t with
   | Const _ -> Sequence.empty
   | Pred {expr=e;_} -> LE.terms e
+  | ReLU {x=e1;y=e2;_} -> Sequence.append (LE.terms e1) (LE.terms e2)
   | _ -> assert false
 
 let pp_op out = function
@@ -167,6 +178,8 @@ let pp_term out = function
   | Const n -> Q.pp_print out n
   | Pred {op;expr;_} ->
     Fmt.fprintf out "(@[%a@ %a@])" LE.pp_no_paren expr pp_op op
+  | ReLU {x;y;_} ->
+    Fmt.fprintf out "(ReLU %a %a)" LE.pp_no_paren x LE.pp_no_paren y
   | _ -> assert false
 
 (* evaluate [op n] where [n] is a constant *)
@@ -178,6 +191,11 @@ let[@inline] eval_bool_const op n : bool =
     | _ -> false
   end
 
+let eval_relu (n:Q.t) : Q.t =
+  if Q.compare n Q.zero < 0
+  then Q.zero
+  else n
+
 (* evaluate an arithmetic boolean expression *)
 let eval (t:term) = match Term.view t with
   | Const n -> Eval_into (mk_val n, [])
@@ -186,16 +204,27 @@ let eval (t:term) = match Term.view t with
       | None -> Eval_unknown
       | Some (n,l) -> Eval_into (Value.of_bool @@ eval_bool_const op n, l)
     end
+  | ReLU {x;y;_} -> 
+    begin match eval_le x, eval_le y with
+      | Some (nx,lx), Some (ny,ly) ->
+        Eval_into (Value.of_bool (Q.equal ny @@ eval_relu nx), lx @ ly)
+      | None, Some _ -> Eval_unknown
+      | Some _, None -> Eval_unknown
+      | None, None -> Eval_unknown      
+    end
+
   | _ -> assert false
 
 let tc_lemma : tc_lemma = {
   tcl_pp=(fun out l -> match l with
       | Lemma_lra -> Fmt.string out "lra"
+      | Lemma_relu -> Fmt.string out "relu"
       | _ -> assert false
     );
 }
 
 let lemma_lra = Lemma.make Lemma_lra tc_lemma
+let lemma_relu = Lemma.make Lemma_relu tc_lemma
 
 (* build plugin *)
 let build
@@ -211,10 +240,12 @@ let build
       let equal a b = match a, b with
         | Const n1, Const n2 -> Q.equal n1 n2
         | Pred p1, Pred p2 -> p1.op = p2.op && LE.equal p1.expr p2.expr
+        | ReLU r1, ReLU r2 -> (LE.equal r1.x r2.x) && LE.equal r1.y r2.y
         | _ -> false
       let hash = function
         | Const n -> LE.hash_q n
         | Pred {op;expr;_} -> CCHash.combine3 10 (hash_op op) (LE.hash expr)
+        | ReLU {x;y;_} -> CCHash.combine3 11 (LE.hash x) (LE.hash y)
         | _ -> assert false
     end)
   in
@@ -231,6 +262,14 @@ let build
       Type.make_static Ty_rat tc
     )
 
+    let simplify (e:LE.t) : LE.t =
+      (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
+      match LE.as_singleton e with
+      | None -> e
+      | Some (n,t) ->
+        let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
+        LE.singleton n t
+
     (* build a predicate on a linear expression *)
     let mk_pred (op:op) (e:LE.t) : term =
       begin match LE.as_const e with
@@ -238,18 +277,35 @@ let build
           (* directly evaluate *)
           if eval_bool_const op n then true_ else false_
         | None ->
-          (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
-          let e = match LE.as_singleton e with
-            | None -> e
-            | Some (n,t) ->
-              let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
-              LE.singleton n t
+          let e = simplify e
           in
           let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
           T.make view Type.bool
       end
 
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
+
+    let mk_relu (x:LE.t) (y:LE.t): term =
+      (* TODO: ensure they are equal to singletons *)
+      begin match LE.as_const x with
+        | Some nx ->
+          let ans = eval_relu nx
+          in mk_pred Eq0 (LE.diff y @@ LE.const ans)
+        | None ->
+          begin match LE.as_const y with
+            | Some ny ->
+              if ny > Q.zero
+              then mk_pred Eq0 (LE.diff x @@ LE.const ny)
+              else mk_pred Lt0 x
+            | None ->
+              let x = simplify x and y = simplify y
+              in
+              let view = ReLU {x=x; y=y; watches=Term.Watch2.dummy} in
+              Log.debugf 1
+                (fun k->k "mk_relu %a" pp_term view);
+              T.make view Type.bool
+          end
+      end           
 
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
        eval to [false]) from [reasons] *)
@@ -541,6 +597,26 @@ let build
         Term.Watch2.init p.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
+      | ReLU r ->          
+
+        (* 0 ≤ y *)
+        let ineq = mk_pred Leq0 (LE.neg r.y) in
+        let c = Clause.make [Term.Bool.na t; Term.Bool.pa ineq] (Lemma lemma_lra)
+        in Actions.push_clause acts c;
+
+        (* x ≤ y *)
+        let ineq = mk_pred Leq0 (LE.diff r.x r.y) in
+        let c = Clause.make [Term.Bool.na t; Term.Bool.pa ineq] (Lemma lemma_lra)
+        in Actions.push_clause acts c;          
+
+        (* watches = [t ; x ; y] *)
+        let watches = Term.Watch2.make (t :: LE.terms_l r.x @ LE.terms_l r.y) in
+        r.watches <- watches;
+        Term.Watch2.init r.watches t
+          ~on_unit:(fun u -> ())
+          ~on_all_set:(fun () -> ())
+      (* ~on_unit:(fun u -> propagate_relu acts t ~u) *)
+      (* ~on_all_set:(fun () -> check_consistent acts t) *)
       | _ -> assert false
 
     let update_watches acts t ~watch : watch_res = match Term.view t with
@@ -548,6 +624,12 @@ let build
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
+      | ReLU p ->
+        Term.Watch2.update p.watches t ~watch
+          ~on_unit:(fun u -> ())
+          ~on_all_set:(fun () -> ())
+      (* ~on_unit:(fun u -> propagate_relu acts t ~u) *)
+      (* ~on_all_set:(fun () -> check_consistent acts t) *)
       | Const _ -> assert false
       | _ -> assert false
 
@@ -646,6 +728,7 @@ let build
       Service.Any (k_rat, Lazy.force ty_rat);
       Service.Any (k_make_const, mk_const);
       Service.Any (k_make_pred, mk_pred);
+      Service.Any (k_make_relu, mk_relu);
     ]
   end in
   (module P)
