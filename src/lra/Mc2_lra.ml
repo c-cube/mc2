@@ -37,13 +37,13 @@ type constr =
 
 type reason =
   | Atom of atom
-  | ReLU_prop_apply_3
-  | ReLU_prop_apply_4_or_5
+  | ReLU_prop_apply_3 of {x: LE.t}
+  | ReLU_prop_apply_4_or_5 of {y: LE.t}
 
 let debug_reason out = function
   | Atom a -> Atom.debug out a
-  | ReLU_prop_apply_3 -> Format.fprintf out "ReLU_prop_apply_3"
-  | ReLU_prop_apply_4_or_5 -> Format.fprintf out "ReLU_prop_apply_4_or_5"
+  | ReLU_prop_apply_3 r -> Format.fprintf out "ReLU_prop_apply_3 :x %a" LE.pp r.x
+  | ReLU_prop_apply_4_or_5 r -> Format.fprintf out "ReLU_prop_apply_4_or_5 :y %a" LE.pp r.y
 
 let atomic_reason : (reason -> atom) = function
   | Atom a -> a
@@ -596,14 +596,15 @@ let build
               (* propagate y from x *)
               let vx = eval_le_num_exn r.x in
               if vx <= Q.zero then
-                add_up acts ~strict:false y Q.zero ~expr:LE.zero ~reason:(ReLU_prop_apply_3)
+                add_up acts ~strict:false y Q.zero ~expr:LE.zero ~reason:(ReLU_prop_apply_3 {x=r.x})
               else
-                add_up acts ~strict:false y vx ~expr:r.x ~reason:(ReLU_prop_apply_3)
+                add_up acts ~strict:false y vx ~expr:r.x ~reason:(ReLU_prop_apply_3 {x=r.x})
             else
               (* propagate x from y *)
               let vy = eval_le_num_exn r.y in
               assert (vy >= Q.zero);
-              if vy > Q.zero then add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5)
+              if vy > Q.zero then
+                add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5 {y=r.y})
           (* let add_up acts ~strict t num ~expr ~reason *)
           | Some V_false -> Util.errorf "All the ReLU are supposed true"
           | _ -> assert false
