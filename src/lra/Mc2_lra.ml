@@ -35,15 +35,32 @@ type constr =
   | C_eq
   | C_neq
 
+type term_view +=
+  | Const of num
+  | Pred of {
+      op: op;
+      expr: LE.t;
+      mutable watches: Term.Watch2.t; (* can sometimes propagate *)
+    } (** Arithmetic constraint *)
+  | ReLU of {x: LE.t; y: LE.t; mutable watches: Term.Watch2.t;}
+
+let relu_x t = match Term.view t with
+  | ReLU r -> r.x
+  | _ -> assert false
+
+let relu_y t = match Term.view t with
+  | ReLU r -> r.y
+  | _ -> assert false
+
 type reason =
   | Atom of atom
-  | ReLU_prop_apply_3 of {x: LE.t}
-  | ReLU_prop_apply_4_or_5 of {y: LE.t}
+  | ReLU_prop_apply_3 of term
+  | ReLU_prop_apply_4_or_5 of term
 
 let debug_reason out = function
   | Atom a -> Atom.debug out a
-  | ReLU_prop_apply_3 r -> Format.fprintf out "ReLU_prop_apply_3 :x %a" LE.pp r.x
-  | ReLU_prop_apply_4_or_5 r -> Format.fprintf out "ReLU_prop_apply_4_or_5 :y %a" LE.pp r.y
+  | ReLU_prop_apply_3 r -> Format.fprintf out "ReLU_prop_apply_3 :x %a" Term.debug r
+  | ReLU_prop_apply_4_or_5 r -> Format.fprintf out "ReLU_prop_apply_4_or_5 :y %a" Term.debug r
 
 let atomic_reason : (reason -> atom) = function
   | Atom a -> a
@@ -66,16 +83,6 @@ type decide_state +=
       mutable up: bound;
       mutable eq: eq_cstr;
     }
-
-type term_view +=
-  | Const of num
-  | Pred of {
-      op: op;
-      expr: LE.t;
-      mutable watches: Term.Watch2.t; (* can sometimes propagate *)
-    } (** Arithmetic constraint *)
-  | ReLU of {x: LE.t; y: LE.t; mutable watches: Term.Watch2.t;}
-
 
 type lemma_view +=
   | Lemma_lra
@@ -322,14 +329,41 @@ let build
             (Util.pp_list Atom.debug) reasons Clause.debug_atoms c);
       Actions.raise_conflict acts c lemma_lra
 
+    (* Overwrites raise_conflict to handle the ReLU analysis *)
     let analyse_relu_or_raise_conflict acts
         ~strict ~pivot ~expr_up_bound ~expr_low_bound ~reason_up_bound ~reason_low_bound () =
+      let op = if strict then Lt0 else Leq0 in
       match reason_up_bound, reason_low_bound with
       | Atom ru, Atom rl ->
-        let op = if strict then Lt0 else Leq0 and reasons = [ru; rl] in
+        let reasons = [ru; rl] in
         raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons ()
-      | ReLU_prop_apply_3 r, Atom y_l -> Util.errorf "This ReLU analysis case is not handled yet." (* TODO *)
-      | Atom x_u, ReLU_prop_apply_4_or_5 r -> Util.errorf "This ReLU analysis case is not handled yet." (* TODO *)
+      | ReLU_prop_apply_3 r, Atom y_l_reason ->
+        let c = [
+          Term.Bool.na r;
+          Atom.neg y_l_reason; (* small optimization; we don't need to recreate this one *)
+          Term.Bool.pa (mk_pred op expr_low_bound);
+          Term.Bool.pa (mk_pred op (expr_low_bound -.. (relu_x r)))
+        ]
+        in Actions.raise_conflict acts c lemma_relu
+      | Atom x_u_reason, ReLU_prop_apply_4_or_5 r ->
+        let cond = eval_bool_const op (Q.neg (eval_le_num_exn expr_up_bound)) in
+        let c = if cond then
+            (* lemma 5 *)
+            [
+              Term.Bool.na r;
+              Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
+              Term.Bool.na (mk_pred op (LE.neg expr_up_bound));
+              Term.Bool.pa (mk_pred op ((relu_y r) -.. expr_up_bound))
+            ]
+          else
+            (* lemma 4 *)
+            [
+              Term.Bool.na r;
+              Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
+              Term.Bool.pa (mk_pred op (LE.neg expr_up_bound));
+              Term.Bool.pa (mk_pred Leq0 (relu_y r))
+            ]
+        in Actions.raise_conflict acts c lemma_relu
       | _, _ -> assert false
 
     (* [make op e t ~reason b] turns this unit constraint over [t]
@@ -612,15 +646,15 @@ let build
               (* propagate y from x *)
               let vx = eval_le_num_exn r.x in
               if vx <= Q.zero then
-                add_up acts ~strict:false y Q.zero ~expr:LE.zero ~reason:(ReLU_prop_apply_3 {x=r.x})
+                add_up acts ~strict:false y Q.zero ~expr:LE.zero ~reason:(ReLU_prop_apply_3 t)
               else
-                add_up acts ~strict:false y vx ~expr:r.x ~reason:(ReLU_prop_apply_3 {x=r.x})
+                add_up acts ~strict:false y vx ~expr:r.x ~reason:(ReLU_prop_apply_3 t)
             else
               (* propagate x from y *)
               let vy = eval_le_num_exn r.y in
               assert (vy >= Q.zero);
               if vy > Q.zero then
-                add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5 {y=r.y})
+                add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5 t)
           (* let add_up acts ~strict t num ~expr ~reason *)
           | Some V_false -> Util.errorf "All the ReLU are supposed true"
           | _ -> assert false

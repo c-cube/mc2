@@ -120,7 +120,7 @@ let[@inline] pp out e = Fmt.fprintf out "(@[%a@])" pp_no_paren e
 
 let singleton_term (e:t) : term =
   if not (TM.is_empty e.terms) then
-    let t, n = TM.choose e.terms in
+    let t, _ = TM.choose e.terms in
     if equal e @@ singleton1 t then
       t
     else
