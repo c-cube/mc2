@@ -45,6 +45,9 @@ val singleton : num -> term -> t
 
 val singleton1 : term -> t
 
+val singleton_term : t -> term
+(** asserts the given LE is exatly of the form (1 * x) and returns x **)
+
 val neg : t -> t
 (** Invert sign *)
 
@@ -54,6 +57,9 @@ val mult : num -> t -> t
 val div : t -> num -> t
 (** [div e n] is [e/n].
     @raise Division_by_zero if [n=0] *)
+
+val simplify : t -> t
+(** if e is [n·x op 0], then rewrite into [sign(n)·x op 0] **)
 
 val flatten : f:(term -> t option) -> t -> t
 (** [flatten f e] traverses all terms, and if they are themselves mapped

@@ -94,6 +94,13 @@ let[@inline] remove_term (t:term) (e:t) : t =
 let[@inline] singleton n t = add_term n t empty
 let[@inline] singleton1 t = singleton Q.one t
 
+let simplify (e:t) : t =
+  match as_singleton e with
+  | None -> e
+  | Some (n,t) ->
+    let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
+    singleton n t
+
 let pp_no_paren out (e:t) : unit =
   if is_const e then Q.pp_print out e.const
   else (
@@ -110,6 +117,16 @@ let pp_no_paren out (e:t) : unit =
   )
 
 let[@inline] pp out e = Fmt.fprintf out "(@[%a@])" pp_no_paren e
+
+let singleton_term (e:t) : term =
+  if not (TM.is_empty e.terms) then
+    let t, n = TM.choose e.terms in
+    if equal e @@ singleton1 t then
+      t
+    else
+      Util.errorf "LE is supposed to be only one term but is %a" pp e
+  else
+    Util.errorf "LE is supposed to be only one term but is %a" pp e
 
 let flatten ~(f:term -> t option) (e:t) : t =
   TM.fold
