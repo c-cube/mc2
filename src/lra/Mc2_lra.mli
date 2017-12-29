@@ -23,7 +23,4 @@ val k_make_const : (num -> term) Service.Key.t
 val k_make_pred : (op -> Linexp.t -> term) Service.Key.t
 (** Build constraint *)
 
-val k_make_relu : (Linexp.t -> Linexp.t -> term) Service.Key.t
-(** Build relu *)
-
 val plugin : Plugin.Factory.t
