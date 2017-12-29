@@ -291,7 +291,6 @@ let build
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
 
     let mk_relu (x:LE.t) (y:LE.t): term =
-      (* TODO: ensure they are equal to singletons *)
       begin match LE.as_const x with
         | Some nx ->
           let ans = eval_relu nx
@@ -303,7 +302,11 @@ let build
               then mk_pred Eq0 (LE.diff x @@ LE.const ny)
               else mk_pred Lt0 x
             | None ->
-              let x = LE.simplify x and y = LE.simplify y
+              (* ensure x and y are singletons *)
+              (* STRANGE: it seems new terms are automatically created *)
+              (* so the condition is ALWAYS verified, even in *)
+              (* (assert (relu x (+ 1 y))) for example *)
+              let x = LE.singleton1 (LE.singleton_term x) and y = LE.singleton1 (LE.singleton_term y)
               in
               let view = ReLU {x=x; y=y; watches=Term.Watch2.dummy} in
               Log.debugf 20
