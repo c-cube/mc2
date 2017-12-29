@@ -8,6 +8,13 @@ TIMEOUT?=30
 TARGETS=src/main.exe
 OPTS= -j $(J)
 
+testperf: build
+	./src/tests/reluplex/make_relu_example.py > /tmp/test.smt2
+	./src/tests/reluplex/match_relu.py /tmp/test.smt2 > /tmp/test_with_relu.smt2
+	yices-smt2 /tmp/test.smt2
+	./mc2 /tmp/test.smt2
+	./mc2 /tmp/test_with_relu.smt2
+
 testrelu: build
 	./mc2 src/tests/reluplex/test_relu.smt2 -v 100
 
