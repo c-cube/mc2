@@ -85,8 +85,8 @@ let[@inline] hash_op a = match a with
 let[@inline] eval_le (e:LE.t) : (num * term list) option =
   LE.eval e
     ~f:(fun t -> match Term.value t with
-      | Some (V_value {view=V_rat n;_}) -> Some n
-      | _ -> None)
+        | Some (V_value {view=V_rat n;_}) -> Some n
+        | _ -> None)
 
 let tc_value =
   let tcv_pp out = function
@@ -190,9 +190,9 @@ let eval (t:term) = match Term.view t with
 
 let tc_lemma : tc_lemma = {
   tcl_pp=(fun out l -> match l with
-    | Lemma_lra -> Fmt.string out "lra"
-    | _ -> assert false
-  );
+      | Lemma_lra -> Fmt.string out "lra"
+      | _ -> assert false
+    );
 }
 
 let lemma_lra = Lemma.make Lemma_lra tc_lemma

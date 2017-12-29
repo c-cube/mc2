@@ -20,11 +20,11 @@ let[@inline] merge_ ~f1 ~f2 ~fboth a b : t = {
   const=fboth a.const b.const;
   terms=TM.merge_safe a.terms b.terms
       ~f:(fun _ -> function
-        | `Left n -> Some (f1 n)
-        | `Right n -> Some (f2 n)
-        | `Both (n1,n2) ->
-          let n = fboth n1 n2 in
-          if Q.sign n=0 then None else Some n);
+          | `Left n -> Some (f1 n)
+          | `Right n -> Some (f2 n)
+          | `Both (n1,n2) ->
+            let n = fboth n1 n2 in
+            if Q.sign n=0 then None else Some n);
 }
 
 let[@inline] add a b : t =
