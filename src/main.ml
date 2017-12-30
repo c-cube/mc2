@@ -10,7 +10,6 @@ open CCResult.Infix
 module E = CCResult
 module Fmt = CCFormat
 module Ast = Mc2_smtlib.Ast
-module Process_smtlib = Mc2_smtlib.Process
 
 type 'a or_error = ('a, string) E.t
 
@@ -115,7 +114,7 @@ let main () =
   let solver =
     let plugins = match syn with
       | Dimacs ->
-        [ Mc2_dimacs.Plugin_sat.plugin;
+        [ Mc2_dimacs.plugin;
         ]
       | Smtlib ->
         [ Mc2_propositional.plugin;
@@ -137,7 +136,7 @@ let main () =
         try
           E.fold_l
             (fun () ->
-               Process_smtlib.process_stmt
+               Mc2_smtlib.process_stmt
                  ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
                  ~time:!time_limit ~memory:!size_limit
                  ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
@@ -147,8 +146,8 @@ let main () =
           E.return()
       end
     | Dimacs ->
-      Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
-      Mc2_dimacs.Process.process
+      Mc2_dimacs.parse (Solver.services solver) !file >>= fun pb ->
+      Mc2_dimacs.process
         ~pp_model:!p_model ~gc:!gc ?dot_proof ~restarts:!restarts ~check:!check
         ~time:!time_limit ~memory:!size_limit ~progress:!p_progress
         solver pb

@@ -1,5 +1,10 @@
 
-(** {1 Main Entry Point to mc2} *)
+(** {1 Core Library} *)
+
+(** This library contains the core structures and  algorithms of mc2.
+    It defines terms, types, values, the main solver, plugins, etc.
+
+*)
 
 module Atom = Atom
 module Term = Term
@@ -25,6 +30,7 @@ module Fmt = CCFormat
 module Int_map = Util.Int_map
 
 type level = Solver_types.level
+(** Backtracking level *)
 
 type ty_view = Solver_types.ty_view = ..
 type term_view = Solver_types.term_view = ..
@@ -43,6 +49,7 @@ type clause = Solver_types.clause
 type lemma = Solver_types.lemma
 type actions = Solver_types.actions
 
+(** Types *)
 type ty = Solver_types.ty =
   | Bool
   | Ty of {
@@ -51,6 +58,7 @@ type ty = Solver_types.ty =
       tc: tc_ty;
     }
 
+(** Semantic values in the model *)
 type value = Solver_types.value =
   | V_true
   | V_false
@@ -59,6 +67,7 @@ type value = Solver_types.value =
       tc : tc_value;
     }
 
+(** Result of evaluating a term in the current (partial) model *)
 type eval_res = Solver_types.eval_res =
   | Eval_unknown
   | Eval_into of value * term list
@@ -74,6 +83,7 @@ type watch_res = Solver_types.watch_res =
 type premise_step = Solver_types.premise_step =
   | Step_resolve of { c : clause; pivot : term; }
 
+(** Result of checking satisfiability of a problem *)
 type check_res = Solver_types.check_res =
   | Sat
   (** The current set of assumptions is satisfiable. *)

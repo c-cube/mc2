@@ -4,6 +4,7 @@
 open Mc2_core
 
 module Fmt = CCFormat
+module Ast = Ast
 module A = Ast
 module E = CCResult
 module Reg = Service.Registry
@@ -11,6 +12,9 @@ module F = Mc2_propositional.F
 module RLE = Mc2_lra.LE
 
 type 'a or_error = ('a, string) CCResult.t
+
+let parse = Ast.parse
+let parse_stdin = Ast.parse_stdin
 
 (** {2 Conversion into {!Term.t}} *)
 

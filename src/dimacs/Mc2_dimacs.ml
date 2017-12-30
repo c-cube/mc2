@@ -5,7 +5,11 @@ open Mc2_core
 
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
+module Plugin_sat = Plugin_sat
+
 type 'a or_error = ('a, string) CCResult.t
+
+include Plugin_sat
 
 let parse reg file : atom list list or_error =
   try
