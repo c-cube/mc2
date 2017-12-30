@@ -1,0 +1,36 @@
+opam-version: "1.2"
+name: "mc2"
+license: "Apache"
+version: "dev"
+author: ["Sylvain Conchon" "Alain Mebsout" "Stephane Lecuyer" "Simon Cruanes" "Guillaume Bury"]
+maintainer: ["simon.cruanes@inria.fr"]
+build: [
+    [make "build-install"]
+]
+build-doc: [
+    [make "doc"]
+]
+build-test: [
+  [make "test"]
+]
+install: [
+    [make "install"]
+]
+remove: [
+    [make "uninstall"]
+]
+depends: [
+  "zarith"
+  "menhir"
+  "containers"
+  "sequence"
+  "jbuilder" {build}
+]
+available: [
+  ocaml-version >= "4.03.0"
+]
+tags: [ "sat" "smt" ]
+homepage: "https://github.com/c-cube/mc2"
+dev-repo: "https://github.com/c-cube/mc2.git"
+bug-reports: "https://github.com/c-cube/mc2/issues/"
+
