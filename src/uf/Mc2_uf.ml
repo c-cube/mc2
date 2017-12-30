@@ -159,16 +159,6 @@ let build p_id Plugin.S_nil : Plugin.t =
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512
 
-    (* remove from [l] terms of level >= [lvl] *)
-    let remove_higher_lvl lvl (l:e_reason list) : e_reason list =
-      let rec aux acc l = match l with
-        | [] -> acc
-        | r :: tail ->
-          let acc = if r.e_level >= lvl then acc else r :: acc in
-          aux acc tail
-      in
-      aux [] l
-
     (* check that [t], which should have fully assigned arguments,
        is consistent with the signature table *)
     let check_sig (acts:Actions.t) (t:term): unit =
