@@ -2,7 +2,6 @@
 (** {1 Main for dimacs} *)
 
 open Mc2_core
-open Solver_types
 
 module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 

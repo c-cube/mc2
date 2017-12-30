@@ -2,7 +2,6 @@
 (** {1 Process Statements} *)
 
 open Mc2_core
-open Solver_types
 
 module Fmt = CCFormat
 module A = Ast
@@ -55,7 +54,7 @@ let conv_ty (reg:Reg.t) (ty:A.Ty.t) : Type.t =
   let mk_ty = Reg.find_exn reg Mc2_unin_sort.k_make in
   (* convert a type *)
   let rec aux_ty (ty:A.Ty.t) : Type.t = match ty with
-    | A.Ty.Bool -> Type.bool
+    | A.Ty.Ty_bool -> Type.bool
     | A.Ty.Rat -> Reg.find_exn reg Mc2_lra.k_rat
     | A.Ty.Atomic (id, args) -> mk_ty id (List.map aux_ty args)
     | A.Ty.Arrow _ ->
@@ -168,8 +167,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         |> List.map (fun (t,u) -> mk_neq t u |> F.atom)
         |> F.and_ |> ret_f
       | A.Not f -> F.not_ (aux_form subst f) |> ret_f
-      | A.Bool true -> ret_f F.true_
-      | A.Bool false -> ret_f F.false_
+      | A.Bool_term true -> ret_f F.true_
+      | A.Bool_term false -> ret_f F.false_
       | A.Num_q n -> Mc2_lra.LE.const n |> ret_rat
       | A.Num_z n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
       | A.Arith (op, l) ->
@@ -239,7 +238,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   and aux_t subst (t:A.term) : term = match aux subst t with
     | T t -> t
     | Rat e -> mk_lra_expr e
-    | F (F.Lit a) when Atom.is_pos a -> a.a_term
+    | F (F.Lit a) when Atom.is_pos a -> Atom.term a
     | F f ->
       (* name the sub-formula and add CNF *)
       let placeholder_id = mk_sub_form() in

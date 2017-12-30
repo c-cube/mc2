@@ -30,7 +30,7 @@ end
 
 module Ty : sig
   type t =
-    | Bool
+    | Ty_bool
     | Rat
     | Atomic of ID.t * t list
     | Arrow of t * t
@@ -108,7 +108,7 @@ and term_cell =
   | Let of var * term * term
   | Not of term
   | Op of op * term list
-  | Bool of bool
+  | Bool_term of bool
 
 and select = {
   select_name: ID.t lazy_t;

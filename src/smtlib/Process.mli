@@ -2,7 +2,6 @@
 (** {1 Process Statements} *)
 
 open Mc2_core
-open Solver_types
 
 type 'a or_error = ('a, string) CCResult.t
 

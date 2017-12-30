@@ -2,7 +2,6 @@
 (** {1 Uninterpreted Functions and Types} *)
 
 open Mc2_core
-open Solver_types
 
 val k_decl_sort : (ID.t -> int -> unit) Service.Key.t
 (** Declare a uninterpreted sort *)

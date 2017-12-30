@@ -2,7 +2,6 @@
 (** {1 Uninterpreted Functions and Constants} *)
 
 open Mc2_core
-open Solver_types
 
 module Fmt = CCFormat
 
@@ -68,8 +67,9 @@ let build p_id Plugin.S_nil : Plugin.t =
       | Congruence_bool -> Fmt.string out "congruence_bool"
       | _ -> assert false
 
-    let lemma_congruence_semantic = Lemma.make Congruence_semantic {tcl_pp}
-    let lemma_congruence_bool = Lemma.make Congruence_bool {tcl_pp}
+    let tc_l = Lemma.TC.make ~pp:tcl_pp ()
+    let lemma_congruence_semantic = Lemma.make Congruence_semantic tc_l
+    let lemma_congruence_bool = Lemma.make Congruence_bool tc_l
 
     (* build [{ a1.(i)≠a2.(i) | i}], removing trivial ones *)
     let mk_neq_ a1 a2 : atom list =

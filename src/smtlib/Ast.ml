@@ -44,12 +44,12 @@ end
 
 module Ty = struct
   type t =
-    | Bool
+    | Ty_bool
     | Rat
     | Atomic of ID.t * t list
     | Arrow of t * t
 
-  let bool = Bool
+  let bool = Ty_bool
   let rat = Rat
   let app id l = Atomic (id,l)
   let const id = app id []
@@ -57,7 +57,7 @@ module Ty = struct
   let arrow_l = List.fold_right arrow
 
   let to_int_ = function
-    | Bool -> 0
+    | Ty_bool -> 0
     | Atomic _ -> 1
     | Arrow _ -> 2
     | Rat -> 3
@@ -65,13 +65,13 @@ module Ty = struct
   let (<?>) = CCOrd.(<?>)
 
   let rec compare a b = match a, b with
-    | Bool, Bool
+    | Ty_bool, Ty_bool
     | Rat, Rat -> 0
     | Atomic (f1,l1), Atomic (f2,l2) ->
       CCOrd.Infix.( ID.compare f1 f2 <?> (CCOrd.list compare, l1, l2))
     | Arrow (a1,a2), Arrow (b1,b2) ->
       compare a1 b1 <?> (compare, a2,b2)
-    | Bool, _
+    | Ty_bool, _
     | Atomic _, _
     | Arrow _, _
     | Rat, _
@@ -89,7 +89,7 @@ module Ty = struct
     aux [] ty
 
   let rec pp out t = match t with
-    | Bool -> Fmt.string out "Bool"
+    | Ty_bool -> Fmt.string out "Bool"
     | Rat -> Fmt.string out "Real"
     | Atomic (id,[]) -> ID.pp out id
     | Atomic (id,l) -> Fmt.fprintf out "(@[%a@ %a@])" ID.pp id (Util.pp_list pp) l
@@ -159,7 +159,7 @@ and term_cell =
   | Let of var * term * term
   | Not of term
   | Op of op * term list
-  | Bool of bool
+  | Bool_term of bool
 
 and select = {
   select_name: ID.t lazy_t;
@@ -235,7 +235,7 @@ let pp_term =
       in
       Fmt.fprintf out "(@[<hv2>match %a@ %a@])"
         pp u (Util.pp_list pp_case) (ID.Map.to_list m)
-    | Bool b -> Fmt.fprintf out "%B" b
+    | Bool_term b -> Fmt.fprintf out "%B" b
     | Not t -> Fmt.fprintf out "(@[<1>not@ %a@])" pp t
     | Op (o,l) -> Fmt.fprintf out "(@[<hv1>%a@ %a@])" pp_op o (Util.pp_list pp) l
     | Bind (b,v,u) ->
@@ -278,14 +278,14 @@ let rec app_ty_ ty l : Ty.t = match ty, l with
       Ty.ill_typed "expected `@[%a@]`,@ got `@[%a : %a@]`"
         Ty.pp ty_a pp_term a Ty.pp a.ty
     )
-  | (Ty.Bool | Ty.Rat | Ty.Atomic _), a::_ ->
+  | (Ty.Ty_bool | Ty.Rat | Ty.Atomic _), a::_ ->
     Ty.ill_typed "cannot apply ty `@[%a@]`@ to `@[%a@]`" Ty.pp ty pp_term a
 
 let[@inline] mk_ term ty = {term; ty}
 let[@inline] ty t = t.ty
 
-let true_ = mk_ (Bool true) Ty.bool
-let false_ = mk_ (Bool false) Ty.bool
+let true_ = mk_ (Bool_term true) Ty.bool
+let false_ = mk_ (Bool_term false) Ty.bool
 
 let var v = mk_ (Var v) (Var.ty v)
 
@@ -305,7 +305,7 @@ let app f l = match f.term, l with
 let app_a f a = app f (Array.to_list a)
 
 let if_ a b c =
-  if a.ty <> Ty.Bool
+  if a.ty <> Ty.Ty_bool
   then Ty.ill_typed "if: test  must have type bool, not `@[%a@]`" Ty.pp a.ty;
   if not (Ty.equal b.ty c.ty)
   then Ty.ill_typed

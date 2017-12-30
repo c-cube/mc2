@@ -5,6 +5,7 @@ open Solver_types
 module Fmt = CCFormat
 
 type t = value
+type view = value_view
 
 let[@inline] is_bool = function V_true | V_false -> true | V_value _ -> false
 let[@inline] is_true = function V_true -> true | _ -> false
@@ -51,3 +52,10 @@ module As_key = struct
 end
 
 module Tbl = CCHashtbl.Make(As_key)
+
+module TC = struct
+  type t = tc_value
+
+  let make ~pp ~equal ~hash () : t =
+    {tcv_pp=pp; tcv_equal=equal; tcv_hash=hash}
+end

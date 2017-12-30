@@ -2,7 +2,6 @@
 (** {1 Linear Expressions} *)
 
 open Mc2_core
-open Solver_types
 
 module TM = Term.Map
 

@@ -7,6 +7,7 @@
 open Solver_types
 
 type t = value
+type view = value_view
 
 val equal : t -> t -> bool
 val hash : t -> int
@@ -27,7 +28,18 @@ val true_ : t
 val false_ : t
 val of_bool : bool -> t
 
-val make : tc_value -> value_view -> t
+val make : tc_value -> view -> t
 (** Main construction for values *)
 
 module Tbl : CCHashtbl.S with type key = t
+
+module TC : sig
+  type t = tc_value
+
+  val make :
+    pp:view Fmt.printer -> (** printer *)
+    equal:(view -> view -> bool) -> (** equality *)
+    hash:(view -> int) -> (** hash function *)
+    unit ->
+    t
+end

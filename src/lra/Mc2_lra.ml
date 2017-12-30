@@ -5,7 +5,6 @@
    http://smtlib.cs.uiowa.edu/logics-all.shtml#QF_LRA *)
 
 open Mc2_core
-open Solver_types
 
 module LE = Linexp
 open LE.Infix
@@ -89,17 +88,17 @@ let[@inline] eval_le (e:LE.t) : (num * term list) option =
       | _ -> None)
 
 let tc_value =
-  let tcv_pp out = function
+  let pp out = function
     | V_rat q -> Q.pp_print out q
     | _ -> assert false
-  and tcv_equal a b = match a, b with
+  and equal a b = match a, b with
     | V_rat a, V_rat b -> Q.equal a b
     | _ -> false
-  and tcv_hash = function
+  and hash = function
     | V_rat r -> LE.hash_q r
     | _ -> assert false
   in
-  {tcv_pp; tcv_hash; tcv_equal}
+  Value.TC.make ~pp ~equal ~hash ()
 
 let[@inline] mk_val (n:num) : value = Value.make tc_value (V_rat n)
 
@@ -188,12 +187,12 @@ let eval (t:term) = match Term.view t with
     end
   | _ -> assert false
 
-let tc_lemma : tc_lemma = {
-  tcl_pp=(fun out l -> match l with
-    | Lemma_lra -> Fmt.string out "lra"
-    | _ -> assert false
-  );
-}
+let tc_lemma : tc_lemma =
+  Lemma.TC.make
+    ~pp:(fun out l -> match l with
+      | Lemma_lra -> Fmt.string out "lra"
+      | _ -> assert false)
+    ()
 
 let lemma_lra = Lemma.make Lemma_lra tc_lemma
 
@@ -621,8 +620,8 @@ let build
       end
 
     (* decision, according to current constraints *)
-    let decide _ (t:term) : value = match t.t_var with
-      | Var_semantic {v_decide_state=State r as st; _} ->
+    let decide _ (t:term) : value = match Term.decide_state_exn t with
+      | State r as st ->
         let n =
           if can_be_eq t r.last_val then r.last_val
           else find_val t
