@@ -1468,7 +1468,7 @@ let rec gc_mark_clause (c:clause) : unit =
   if not (Clause.gc_marked c) then (
     Log.debugf 15 (fun k->k "(@[gc_mark_clause@ %a@])" Clause.pp_name c);
     Clause.gc_mark c;
-    Array.iter (gc_mark_atom ~mark_clause:true) c.c_atoms
+    Array.iter (gc_mark_atom ~mark_clause:true) c.c_atoms;
   )
 
 (* recursively mark [t] and its subterms *)

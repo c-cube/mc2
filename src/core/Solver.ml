@@ -73,8 +73,9 @@ module Sat_state = struct
 
   let iter_trail (St_sat s) f = Vec.iter f (S.trail s)
 
-  let eval (St_sat _s) t = S.eval t
-  let eval_level (St_sat _s) t = S.eval_level t
+  let[@inline] eval (St_sat _s) a = S.eval a
+  let[@inline] eval_opt (St_sat _s) a = try Some (S.eval a) with UndecidedLit _ -> None
+  let[@inline] eval_level (St_sat _s) a = S.eval_level a
   let model (St_sat s) = S.model s
 
   let check_model (s:t) : bool =

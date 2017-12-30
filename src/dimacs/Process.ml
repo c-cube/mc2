@@ -33,13 +33,14 @@ let check_model cs state : bool =
         (fun a ->
            Log.debugf 15
              (fun k -> k "(@[check.atom@ %a@])" Term.debug (Atom.term a));
-           let b = Solver.Sat_state.eval state a in
+           let b = Solver.Sat_state.eval_opt state a in
            (* check consistency with eval_bool *)
-           begin match Atom.eval a with
-             | Eval_unknown -> ()
-             | Eval_into (b', _) -> assert (b = Value.as_bool_exn b')
+           begin match Atom.eval a, b with
+             | _, None
+             | Eval_unknown, _ -> ()
+             | Eval_into (b', _), Some v_a -> assert (v_a = Value.as_bool_exn b')
            end;
-           b)
+           b = Some true)
         c
     in
     if not ok then (

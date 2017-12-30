@@ -277,7 +277,9 @@ let check_model state : bool =
   let check_clause c =
     Log.debugf 15
       (fun k -> k "(@[check.clause@ %a@])" Clause.debug_atoms c);
-    let ok = List.exists (Solver.Sat_state.eval state) c in
+    let ok =
+      List.exists (fun t -> Solver.Sat_state.eval_opt state t = Some true) c
+    in
     if not ok then (
       Log.debugf 0
         (fun k->k "(@[check.fail:@ clause %a@ not satisfied in model@])" Clause.debug_atoms c);

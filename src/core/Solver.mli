@@ -91,6 +91,10 @@ module Sat_state : sig
       of the sat solver.
       @raise UndecidedLit if the literal is not decided *)
 
+  val eval_opt : t -> atom -> bool option
+  (** Returns the valuation of a formula in the current state
+      of the sat solver. *)
+
   val eval_level: t -> atom -> bool * int
   (** Return the current assignment of the literals, as well as its
       decision level. If the level is 0, then it is necessary for
