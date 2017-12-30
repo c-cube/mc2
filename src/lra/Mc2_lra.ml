@@ -223,7 +223,7 @@ let eval (t:term) =
     begin match eval_le e with
       | None ->    Log.debugf 20 (fun k->k "lra.eval None %a" Term.debug t);
         Eval_unknown
-      | Some (n,l) ->    Log.debugf 20 (fun k->k "lra.eval Some %a" Q.pp_print n);
+      | Some (n,l) ->    Log.debugf 20 (fun k->k "lra.eval %a = Some %a" Term.debug t Q.pp_print n);
         Eval_into (Value.of_bool @@ eval_bool_const op n, l)
     end
   | ReLU {x;y;_} ->
@@ -341,16 +341,22 @@ let build
     (* Overwrites raise_conflict to handle the ReLU analysis *)
     let analyse_relu_or_raise_conflict acts
         ~strict ~pivot ~expr_up_bound ~expr_low_bound ~reason_up_bound ~reason_low_bound () =
+      Log.debugf 30 (fun k->k "analyse_relu_or_raise_conflict");
       let op = if strict then Lt0 else Leq0 in
       match reason_up_bound, reason_low_bound with
       | Atom ru, Atom rl ->
         let reasons = [ru; rl] in
         raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons ()
       | ReLU_prop_apply_3 r, Atom y_l_reason ->
+        Log.debugf 30
+          (fun k->k "analyse_relu_3 :relu %a :reason %a" pp_term (Term.view r) debug_reason reason_low_bound);
+        let ineq_term = mk_pred op (expr_low_bound -.. (relu_y r)) in
+        let ineq_atom = Term.Bool.pa ineq_term in
+        Actions.propagate_bool_lemma acts ineq_term true [Atom.neg y_l_reason ; ineq_atom] lemma_lra_prop;
         let c = [
           Term.Bool.na r;
           (* Atom.neg y_l_reason; (* small optimization; we don't need to recreate this one *) *)
-          Term.Bool.na (mk_pred op (expr_low_bound -.. (relu_y r)));
+          Atom.neg ineq_atom;
           Term.Bool.pa (mk_pred op expr_low_bound);
           Term.Bool.pa (mk_pred op (expr_low_bound -.. (relu_x r)))
         ]
@@ -361,14 +367,19 @@ let build
               pp_term (Term.view r) Clause.debug_atoms c);
         Actions.raise_conflict acts c lemma_relu
       | Atom x_u_reason, ReLU_prop_apply_4_or_5 r ->
-        let cond = eval_bool_const op (Q.neg (eval_le_num_exn expr_up_bound)) in
+        Log.debugf 30
+          (fun k->k "analyse_relu_4_5 :relu %a" pp_term (Term.view r));
+        let ineq_term = mk_pred op ((relu_x r) -.. expr_up_bound) in
+        let ineq_atom = Term.Bool.pa ineq_term in
+        Actions.propagate_bool_lemma acts ineq_term true [Atom.neg x_u_reason ; ineq_atom] lemma_lra_prop;
 
+        let cond = eval_bool_const op (Q.neg (eval_le_num_exn expr_up_bound)) in
         let c = if cond then
             (* lemma 5 *)
             [
               Term.Bool.na r;
               (* Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *) *)
-              Term.Bool.na (mk_pred op ((relu_x r) -.. expr_up_bound));
+              Atom.neg ineq_atom;
               Term.Bool.na (mk_pred op (LE.neg expr_up_bound));
               Term.Bool.pa (mk_pred op ((relu_y r) -.. expr_up_bound))
             ]
@@ -444,7 +455,9 @@ let build
       | _ -> assert false
 
     (* add upper bound *)
-    let add_up acts ~strict t num ~expr ~(reason:reason) : unit = match Term.decide_state_exn t with
+    let add_up acts ~strict t num ~expr ~(reason:reason) : unit =
+      Log.debugf 30 (fun k->k "add_up");
+      match Term.decide_state_exn t with
       | State s ->
         (* check consistency *)
         begin match s.eq, s.low with
@@ -482,7 +495,9 @@ let build
       | _ -> assert false
 
     (* add lower bound *)
-    let add_low acts ~strict t num ~expr ~(reason:reason) : unit = match Term.decide_state_exn t with
+    let add_low acts ~strict t num ~expr ~(reason:reason) : unit =
+      Log.debugf 30 (fun k->k "add_low");
+      match Term.decide_state_exn t with
       | State s ->
         (* check consistency *)
         begin match s.eq, s.up with
@@ -726,14 +741,14 @@ let build
     let update_watches acts t ~watch : watch_res =
       match Term.view t with
       | Pred p ->
-        if (p.op == Eq0) && (t == watch) && (Term.has_value t Value.true_) then
-          begin
+        (* if (p.op == Eq0) && (t == watch) && (Term.has_value t Value.true_) then
+           begin
             (* propagation *)
             let ineq_term = mk_pred Leq0 p.expr in
             Actions.propagate_bool_lemma acts ineq_term true [Term.Bool.na t; Term.Bool.pa ineq_term] lemma_lra_prop;
             let ineq_term = mk_pred Leq0 (LE.neg p.expr) in
             Actions.propagate_bool_lemma acts ineq_term true [Term.Bool.na t; Term.Bool.pa ineq_term] lemma_lra_prop;
-          end;
+           end; *)
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
