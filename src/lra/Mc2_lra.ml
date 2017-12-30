@@ -313,6 +313,11 @@ let build
               ~sign:false ~op:Eq0 ~pivot:t
               ~expr_up_bound:up.expr ~expr_low_bound:low.expr
               ~reasons:[up.reason; low.reason; reason_neq] ()
+          | B_some low, B_some up, EC_none when Q.equal low.num up.num ->
+            (* signal that the domain is a singleton *)
+            assert (not low.strict);
+            assert (not up.strict);
+            Actions.declare_term_with_singleton_domain acts t;
           | _ -> ()
         end
       | _ -> assert false
@@ -412,7 +417,9 @@ let build
         let old_b = s.eq in
         Actions.on_backtrack acts (fun () -> s.eq <- old_b);
         begin match s.eq with
-          | EC_none -> s.eq <- EC_eq {num;reason;expr}
+          | EC_none ->
+            s.eq <- EC_eq {num;reason;expr};
+            Actions.declare_term_with_singleton_domain acts t;
           | EC_neq {l;_} ->
             (* check if compatible *)
             List.iter
@@ -425,7 +432,8 @@ let build
                  ))
               l;
             (* erase *)
-            s.eq <- EC_eq {num;reason;expr}
+            s.eq <- EC_eq {num;reason;expr};
+            Actions.declare_term_with_singleton_domain acts t;
           | EC_eq eq ->
             if Q.equal eq.num num then (
               () (* do nothing *)

@@ -298,6 +298,8 @@ and actions = {
       in the current trail, and with a lemma to explain *)
   act_on_backtrack : (unit -> unit) -> unit;
   (** [act_on_backtrack f] will call [f] when we backtrack *)
+  act_declare_term_with_singleton_domain : term -> unit;
+  (** Declare that the term has only one possible value *)
 }
 (** Actions available to terms/plugins when doing propagation/model building,
     including adding clauses, registering actions to do upon

@@ -39,3 +39,5 @@ val raise_conflict : t -> atom list -> lemma -> 'a
 val on_backtrack : t -> (unit -> unit) -> unit
 (** [on_backtrack f] will call [f] when the solver backtracks *)
 
+val declare_term_with_singleton_domain : t -> term -> unit
+(** The given term can only take one possible value, decide it as soon as possible *)

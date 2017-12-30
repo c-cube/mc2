@@ -261,9 +261,11 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
           Actions.on_backtrack acts (fun () -> ds.c_list <- old_c_list);
           let r = {other;atom=eqn;lvl} in
           begin match ds.c_list with
-            | C_none -> ds.c_list <- C_eq {value=v;reason=r};
             | C_eq _ -> () (* do not change *)
-            | C_diseq _ -> ds.c_list <- C_eq {value=v;reason=r};
+            | C_none
+            | C_diseq _ ->
+              ds.c_list <- C_eq {value=v;reason=r};
+              Actions.declare_term_with_singleton_domain acts t;
           end;
           Log.debugf 30
             (fun k->k

@@ -115,6 +115,9 @@ type t = {
   term_heap : H.t;
   (* Heap ordered by variable activity *)
 
+  singleton_q : term Queue.t;
+  (* terms that can only take one value *)
+
   var_decay : float;
   (* inverse of the activity factor for variables. Default 1/0.999 *)
   clause_decay : float;
@@ -352,6 +355,7 @@ let create_real (actions:actions lazy_t) : t = {
   tmp_term_vec = Vec.make 10 dummy_term;
 
   term_heap = H.create();
+  singleton_q = Queue.create();
 
   var_incr = 1.;
   clause_incr = 1.;
@@ -1379,6 +1383,11 @@ end = struct
           Term.debug t v lvl Clause.debug_atoms atoms);
     enqueue_bool_theory_propagate env a ~lvl atoms lemma
 
+  let declare_singleton_term (env:t) (t:term) : unit =
+    if not (Term.has_some_value t) then (
+      Queue.push t env.singleton_q
+    )
+
   (* build the "actions" available to the plugins *)
   let make (env:t) : actions =
     let act_level (): level = decision_level env
@@ -1393,6 +1402,7 @@ end = struct
       act_raise_conflict=raise_conflict env;
       act_propagate_bool_eval=propagate_bool_eval env;
       act_propagate_bool_lemma=propagate_bool_lemma env;
+      act_declare_term_with_singleton_domain=declare_singleton_term env;
     }
 end
 
@@ -1443,12 +1453,16 @@ and pick_branch_lit (env:t) : unit =
       env.next_decision <- None;
       pick_branch_aux env atom
     | None ->
-      (* look into the heap for the next decision *)
-      if H.is_empty env.term_heap then (
+      (* look into the heap and into the queue of terms with
+         singleton domains for the next decision *)
+      if Queue.is_empty env.singleton_q && H.is_empty env.term_heap then (
         raise Sat (* full trail! *)
       ) else (
-        (* pick some term *)
-        let t = H.remove_min env.term_heap in
+        let t =
+          if Queue.is_empty env.singleton_q
+          then H.remove_min env.term_heap
+          else Queue.pop env.singleton_q
+        in
         if Term.is_deleted t then pick_branch_lit env (* try next *)
         else begin match t.t_var with
           | Var_none ->  assert false
