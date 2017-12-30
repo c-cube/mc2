@@ -277,7 +277,8 @@ and tc_lemma = {
 
 and actions = {
   act_push_clause : clause -> unit;
-  (** push a new clause *)
+  (** push a new clause. This clause is added to the solver and will
+      not be backtracked. *)
   act_level : unit -> level;
   (** access current decision level *)
   act_propagate_bool_eval : term -> bool -> subs:term list -> unit;
