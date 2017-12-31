@@ -14,7 +14,7 @@ let name = "lra"
 
 let lra_alt = ref false
 
-let set_lra_alt b = Log.debugf 0 (fun k->k "lra_alt %b" b); lra_alt := b
+let set_lra_alt b = Log.debugf 10 (fun k->k "lra_alt %b" b); lra_alt := b
 
 type num = Q.t
 

@@ -7,7 +7,8 @@ from scipy.special import expit as logistic_sigmoid
 
 # def ReLU(x):
 #     return np.maximum(0, x)
-# def e(inp):
+# 
+# def eval_nn(clf, inp):
 #     inp = [[inp]]
 #     n = clf.n_layers_ - 2
 #     for i, (m, b) in enumerate(zip(clf.coefs_, clf.intercepts_)):
@@ -78,13 +79,13 @@ def nn_to_smt2(clf, input_bounds=None, output_bounds=None):
     ans += '\n(check-sat)\n'
     return ans
 
-precision = 1 # number of decimals
+precision = 6 # number of decimals
 n = 20 # number of samples
 k = 1 # dimension
 X = np.random.rand(n, k)
 y = [1] * (n - 1) + [0]
 clf = MLPClassifier(solver='lbfgs', max_iter=100000,
-                    hidden_layer_sizes=(6,) * 3)
+                    hidden_layer_sizes=(4,)*3)
 from sys import stderr
 
 clf.fit(X, y)

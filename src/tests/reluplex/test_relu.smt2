@@ -1,6 +1,14 @@
 (set-info :smt-lib-version 2.6)
 (set-logic QF_UFLRA)
 
+;; (declare-fun x () Real)
+;; (declare-fun y () Real)
+;; (declare-fun z () Real)
+;; (assert (= x y))
+;; (assert (> x z))
+;; (assert (> z y))
+
+
 ;; Declare the neuron variables
 (declare-fun n_0_0 () Real)
 (declare-fun n_1_0 () Real)
