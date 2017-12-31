@@ -27,3 +27,5 @@ val k_make_relu : (Linexp.t -> Linexp.t -> term) Service.Key.t
 (** Build relu *)
 
 val plugin : Plugin.Factory.t
+
+val set_lra_alt : (bool -> unit)

@@ -92,6 +92,7 @@ let argspec = Arg.align [
     "-size", Arg.String (int_arg size_limit), " <s>[kMGT] sets the size limit for the sat solver";
     "-time", Arg.String (int_arg time_limit), " <t>[smhd] sets the time limit for the sat solver";
     "-v", Arg.Int Log.set_debug, "<lvl> sets the debug verbose level";
+    "-lra-alt", Arg.Bool Mc2_lra.set_lra_alt, "<bool> activates a variant of eq analysis in LRA";
   ]
 
 type syntax =

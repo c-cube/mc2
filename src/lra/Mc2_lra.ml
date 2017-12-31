@@ -12,6 +12,10 @@ open LE.Infix
 
 let name = "lra"
 
+let lra_alt = ref false
+
+let set_lra_alt b = Log.debugf 0 (fun k->k "lra_alt %b" b); lra_alt := b
+
 type num = Q.t
 
 type ty_view +=
@@ -338,6 +342,40 @@ let build
             (Util.pp_list Atom.debug) reasons Clause.debug_atoms c);
       Actions.raise_conflict acts c lemma_lra
 
+
+    let _bound_reason_from_atom ~cond acts eq_reason ~pivot =
+      begin
+        match Term.view (Atom.term eq_reason) with
+        | Pred{op=Eq0;expr;_} ->
+          assert (Atom.is_pos eq_reason); (* test it is an equality *)
+          let branch = cond (LE.find_term_exn pivot expr) in
+          let term = if branch then (mk_pred Leq0 expr) else (mk_pred Lt0 expr) in
+          let atom = if branch then Term.Bool.pa term else Term.Bool.na term in
+          let clause = [Atom.neg eq_reason ; atom] in
+          if Term.has_some_value term then
+            begin
+              if not (Term.has_value term (Value.of_bool branch)) then
+                Actions.raise_conflict acts clause lemma_lra_prop
+            end
+          else
+            Actions.propagate_bool_lemma acts term branch clause lemma_lra_prop;
+          atom
+        | Pred{op=Leq0;expr;_} | Pred{op=Lt0;expr;_} ->
+          assert (Atom.is_pos eq_reason == (cond (LE.find_term_exn pivot expr)));
+          eq_reason
+        | _ -> assert false
+      end
+
+    let low_bound_reason_from_atom acts eq_reason ~pivot =
+      Log.debugf 30 (fun k->k "deduce_low_from_eq %a %a" Atom.debug eq_reason Term.debug pivot);
+      _bound_reason_from_atom ~cond:(fun q -> (q < Q.zero)) acts eq_reason ~pivot
+
+
+    let up_bound_reason_from_atom acts (eq_reason:atom) ~pivot =
+      Log.debugf 30 (fun k->k "deduce_up_from_eq %a %a" Atom.debug eq_reason Term.debug pivot);
+      _bound_reason_from_atom ~cond:(fun q -> (q > Q.zero)) acts eq_reason ~pivot
+
+
     (* Overwrites raise_conflict to handle the ReLU analysis *)
     let analyse_relu_or_raise_conflict acts
         ~strict ~pivot ~expr_up_bound ~expr_low_bound ~reason_up_bound ~reason_low_bound () =
@@ -345,66 +383,75 @@ let build
       let op = if strict then Lt0 else Leq0 in
       match reason_up_bound, reason_low_bound with
       | Atom ru, Atom rl ->
-        let reasons = [ru; rl] in
+        let reasons =
+          if !lra_alt then
+            [up_bound_reason_from_atom acts ru ~pivot; low_bound_reason_from_atom acts rl ~pivot]
+          else [ru; rl] in
         raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons ()
       | ReLU_prop_apply_3 r, Atom y_l_reason ->
-        Log.debugf 30
-          (fun k->k "analyse_relu_3 :relu %a :reason %a" pp_term (Term.view r) debug_reason reason_low_bound);
-        let ineq_term = mk_pred op (expr_low_bound -.. (relu_y r)) in
-        let ineq_atom = Term.Bool.pa ineq_term in
-        (* Actions.propagate_bool_lemma acts ineq_term true [Atom.neg y_l_reason ; ineq_atom] lemma_lra_prop; *)
-        (* Actions.push_clause acts (Clause.make [Atom.neg y_l_reason ; ineq_atom] (Lemma lemma_lra_prop)); *)
-        let c = [
-          Term.Bool.na r;
-          Atom.neg y_l_reason; (* small optimization; we don't need to recreate this one *)
-          (* Atom.neg ineq_atom; *)
-          Term.Bool.pa (mk_pred op expr_low_bound);
-          Term.Bool.pa (mk_pred op (expr_low_bound -.. (relu_x r)))
-        ]
-        in Log.debugf 30
-          (fun k->k
-              "(@[<hv>lra.analyse_relu_3@ \
-               :relu %a@ :clause %a@])"
-              pp_term (Term.view r) Clause.debug_atoms c);
-        Actions.raise_conflict acts c lemma_relu
+        let y_l_reason = low_bound_reason_from_atom acts y_l_reason ~pivot in
+        begin
+          Log.debugf 30
+            (fun k->k "analyse_relu_3 :relu %a :reason %a" pp_term (Term.view r) debug_reason reason_low_bound);
+          let ineq_term = mk_pred op (expr_low_bound -.. (relu_y r)) in
+          let ineq_atom = Term.Bool.pa ineq_term in
+          (* Actions.propagate_bool_lemma acts ineq_term true [Atom.neg y_l_reason ; ineq_atom] lemma_lra_prop; *)
+          (* Actions.push_clause acts (Clause.make [Atom.neg y_l_reason ; ineq_atom] (Lemma lemma_lra_prop)); *)
+          let c = [
+            Term.Bool.na r;
+            Atom.neg y_l_reason; (* small optimization; we don't need to recreate this one *)
+            (* Atom.neg ineq_atom; *)
+            Term.Bool.pa (mk_pred op expr_low_bound);
+            Term.Bool.pa (mk_pred op (expr_low_bound -.. (relu_x r)))
+          ]
+          in Log.debugf 30
+            (fun k->k
+                "(@[<hv>lra.analyse_relu_3@ \
+                 :relu %a@ :clause %a@])"
+                pp_term (Term.view r) Clause.debug_atoms c);
+          Actions.raise_conflict acts c lemma_relu
+        end
       | Atom x_u_reason, ReLU_prop_apply_4_or_5 r ->
-        Log.debugf 30
-          (fun k->k "analyse_relu_4_5 :relu %a" pp_term (Term.view r));
-        let ineq_term = mk_pred op ((relu_x r) -.. expr_up_bound) in
-        let ineq_atom = Term.Bool.pa ineq_term in
-        (* Actions.propagate_bool_lemma acts ineq_term true [Atom.neg x_u_reason ; ineq_atom] lemma_lra_prop; *)
-        (* Actions.push_clause acts (Clause.make [Atom.neg x_u_reason ; ineq_atom] (Lemma lemma_lra_prop)); *)
-        let cond = eval_bool_const op (Q.neg (eval_le_num_exn expr_up_bound)) in
-        let c = if cond then
-            (* lemma 5 *)
-            [
-              Term.Bool.na r;
-              Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
-              (* Atom.neg ineq_atom; *)
-              Term.Bool.na (mk_pred op (LE.neg expr_up_bound));
-              Term.Bool.pa (mk_pred op ((relu_y r) -.. expr_up_bound))
-            ]
-          else
-            (* lemma 4 *)
-            [
-              Term.Bool.na r;
-              Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
-              (* Term.Bool.na (mk_pred op ((relu_x r) -.. expr_up_bound)); *)
-              (* Atom.neg ineq_atom; *)
-              Term.Bool.pa (mk_pred op (LE.neg expr_up_bound));
-              Term.Bool.pa (mk_pred Leq0 (relu_y r))
-            ]
-        in
-        Log.debugf 30
-          (fun k->k
-              (if cond then
-                 "(@[<hv>lra.analyse_relu_5@ \
-                  :relu %a@ :clause %a@ :pivot %a@])"
-               else
-                 "(@[<hv>lra.analyse_relu_4@ \
-                  :relu %a@ :clause %a@ :pivot %a@])")
-              pp_term (Term.view r) Clause.debug_atoms c Term.debug pivot);
-        Actions.raise_conflict acts c lemma_relu
+        let x_u_reason = up_bound_reason_from_atom acts x_u_reason ~pivot in
+        begin
+          Log.debugf 30
+            (fun k->k "analyse_relu_4_5 :relu %a" pp_term (Term.view r));
+          let ineq_term = mk_pred op ((relu_x r) -.. expr_up_bound) in
+          let ineq_atom = Term.Bool.pa ineq_term in
+          (* Actions.propagate_bool_lemma acts ineq_term true [Atom.neg x_u_reason ; ineq_atom] lemma_lra_prop; *)
+          (* Actions.push_clause acts (Clause.make [Atom.neg x_u_reason ; ineq_atom] (Lemma lemma_lra_prop)); *)
+          let cond = eval_bool_const op (Q.neg (eval_le_num_exn expr_up_bound)) in
+          let c = if cond then
+              (* lemma 5 *)
+              [
+                Term.Bool.na r;
+                Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
+                (* Atom.neg ineq_atom; *)
+                Term.Bool.na (mk_pred op (LE.neg expr_up_bound));
+                Term.Bool.pa (mk_pred op ((relu_y r) -.. expr_up_bound))
+              ]
+            else
+              (* lemma 4 *)
+              [
+                Term.Bool.na r;
+                Atom.neg x_u_reason; (* small optimization; we don't need to recreate this one *)
+                (* Term.Bool.na (mk_pred op ((relu_x r) -.. expr_up_bound)); *)
+                (* Atom.neg ineq_atom; *)
+                Term.Bool.pa (mk_pred op (LE.neg expr_up_bound));
+                Term.Bool.pa (mk_pred Leq0 (relu_y r))
+              ]
+          in
+          Log.debugf 30
+            (fun k->k
+                (if cond then
+                   "(@[<hv>lra.analyse_relu_5@ \
+                    :relu %a@ :clause %a@ :pivot %a@])"
+                 else
+                   "(@[<hv>lra.analyse_relu_4@ \
+                    :relu %a@ :clause %a@ :pivot %a@])")
+                pp_term (Term.view r) Clause.debug_atoms c Term.debug pivot);
+          Actions.raise_conflict acts c lemma_relu
+        end
       | _, _ -> assert false
 
     (* [make op e t ~reason b] turns this unit constraint over [t]
@@ -466,40 +513,12 @@ let build
           | EC_eq eq, _ when
               (strict && Q.compare eq.num num >= 0) ||
               (not strict && Q.compare eq.num num > 0) ->
-            let reason_low_bound =
-              begin
-                Log.debugf 30 (fun k->k "deduce_low_from_eq %a" Atom.debug eq.reason);
-                match Term.view (Atom.term eq.reason) with
-                | Pred{op=Eq0;expr;_} ->
-                  if (LE.find_term_exn t expr) < Q.zero then
-                    let term = (mk_pred Leq0 expr) in
-                    let atom = Term.Bool.pa term in
-                    if Term.has_some_value term then
-                      (
-                        if not (Term.has_value term Value.true_) then
-                          Actions.raise_conflict acts [Atom.neg eq.reason ; atom] lemma_lra_prop
-                      )
-                    else
-                      Actions.propagate_bool_lemma acts term true [Atom.neg eq.reason ; atom] lemma_lra_prop;
-                    Atom atom
-                  else
-                    let term = (mk_pred Lt0 expr) in
-                    let atom = Term.Bool.na term in
-                    if Term.has_some_value term then
-                      (
-                        if not (Term.has_value term Value.false_) then
-                          Actions.raise_conflict acts [Atom.neg eq.reason ; atom] lemma_lra_prop
-                      )
-                    else
-                      Actions.propagate_bool_lemma acts term false [Atom.neg eq.reason ; atom] lemma_lra_prop;
-                    Atom atom
-                | _ -> assert false
-              end
-            in
+            (* let reason_low_bound = low_bound_from_eq acts eq.reason t
+               in *)
             analyse_relu_or_raise_conflict acts
               ~strict ~pivot:t
               ~expr_up_bound:expr ~expr_low_bound:eq.expr
-              ~reason_up_bound:reason ~reason_low_bound ()
+              ~reason_up_bound:reason ~reason_low_bound:(Atom eq.reason) ()
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num >= 0) ||
               (Q.compare b.num num > 0) ->
@@ -536,40 +555,12 @@ let build
           | EC_eq eq, _ when
               (strict && Q.compare eq.num num <= 0) ||
               (not strict && Q.compare eq.num num < 0) ->
-            let reason_up_bound =
-              begin
-                Log.debugf 30 (fun k->k "deduce_up_from_eq %a" Atom.debug eq.reason);
-                match Term.view (Atom.term eq.reason) with
-                | Pred{op=Eq0;expr;_} ->
-                  if (LE.find_term_exn t expr) > Q.zero then
-                    let term = (mk_pred Leq0 expr) in
-                    let atom = Term.Bool.pa term in
-                    if Term.has_some_value term then
-                      (
-                        if not (Term.has_value term Value.true_) then
-                          Actions.raise_conflict acts [Atom.neg eq.reason ; atom] lemma_lra_prop
-                      )
-                    else
-                      Actions.propagate_bool_lemma acts term true [Atom.neg eq.reason ; atom] lemma_lra_prop;
-                    Atom atom
-                  else
-                    let term = (mk_pred Lt0 expr) in
-                    let atom = Term.Bool.na term in
-                    if Term.has_some_value term then
-                      (
-                        if not (Term.has_value term Value.false_) then
-                          Actions.raise_conflict acts [Atom.neg eq.reason ; atom] lemma_lra_prop
-                      )
-                    else
-                      Actions.propagate_bool_lemma acts term false [Atom.neg eq.reason ; atom] lemma_lra_prop;
-                    Atom atom
-                | _ -> assert false
-              end
-            in
+            (* let reason_up_bound = up_bound_from_eq acts eq.reason t
+               in *)
             analyse_relu_or_raise_conflict acts
               ~strict ~pivot:t
               ~expr_low_bound:expr ~expr_up_bound:eq.expr
-              ~reason_low_bound:reason ~reason_up_bound ()
+              ~reason_low_bound:reason ~reason_up_bound:(Atom eq.reason) ()
           | _, B_some b when
               ((strict || b.strict) && Q.compare b.num num <= 0) ||
               (Q.compare b.num num < 0) ->
