@@ -143,6 +143,7 @@ type t = {
 
   mutable starts : int; (* number of (re)starts *)
   mutable decisions : int; (* number of decisions *)
+  mutable bool_decisions : int; (* number of decisions *)
   mutable propagations : int; (* number of propagations *)
   mutable conflicts : int; (* number of conflicts *)
   mutable n_learnt : int; (* total number of clauses learnt *)
@@ -313,7 +314,11 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
 
 (* make a decision for [t] based on its type *)
 let[@inline] decide_term (env:t) (t:term): value =
-  Type.decide (Term.ty t) (actions env) t
+  let ty = (Term.ty t) in
+  if ty == Type.Bool then
+    (* this case doesn't seem to happen *)
+    env.bool_decisions <- env.bool_decisions + 1;
+  Type.decide ty (actions env) t
 
 let[@inline] assign_term (env:t) (t:term) value reason level : unit =
   assert (t.t_assign == TA_none);
@@ -361,6 +366,7 @@ let create_real (actions:actions lazy_t) : t = {
 
   starts = 0;
   decisions = 0;
+  bool_decisions = 0;
   propagations = 0;
   conflicts = 0;
   n_learnt=0;
@@ -1413,6 +1419,7 @@ let rec pick_branch_aux (env:t) (atom:atom) : unit =
       | Eval_unknown ->
         (* do a decision *)
         env.decisions <- env.decisions + 1;
+        env.bool_decisions <- env.bool_decisions + 1;
         new_decision_level env;
         Log.debugf debug (fun k->k "(@[solver.bool_decide@ %a@])" Atom.debug atom);
         let current_level = decision_level env in
@@ -1880,11 +1887,11 @@ let trail env = env.trail
 let pp_stats out (s:t): unit =
   Fmt.fprintf out
     "(@[stats@ :n_conflicts %d@ \
-     :n_decisions %d@ :n_propagations %d@ :n_restarts %d@ \
+     :n_decisions %d@ :n_bool_decisions %d@ :n_propagations %d@ :n_restarts %d@ \
      :n_learnt %d@ :n_initial %d@ \
      @[:gc_c %d@ :deleted_c %d@]@ \
      @[:gc_t %d :deleted_t %d@]@])"
-    s.conflicts s.decisions s.propagations s.starts s.n_learnt
+    s.conflicts s.decisions s.bool_decisions s.propagations s.starts s.n_learnt
     (Vec.size s.clauses_hyps) s.n_gc_c s.n_deleted_c s.n_gc_t s.n_deleted_t
 
 let[@inline] clear_progress () = print_string "\r\027[K";

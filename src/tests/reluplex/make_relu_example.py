@@ -85,7 +85,7 @@ k = 1 # dimension
 X = np.random.rand(n, k)
 y = [1] * (n - 1) + [0]
 clf = MLPClassifier(solver='lbfgs', max_iter=100000,
-                    hidden_layer_sizes=(5,)*3)
+                    hidden_layer_sizes=(10,) * 2)
 from sys import stderr
 
 clf.fit(X, y)
