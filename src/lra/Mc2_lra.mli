@@ -28,4 +28,4 @@ val k_make_relu : (Linexp.t -> Linexp.t -> term) Service.Key.t
 
 val plugin : Plugin.Factory.t
 
-val set_lra_alt : (bool -> unit)
+val set_lra_alt : (int -> unit)

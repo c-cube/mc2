@@ -12,9 +12,9 @@ open LE.Infix
 
 let name = "lra"
 
-let lra_alt = ref false
+let lra_alt = ref 0
 
-let set_lra_alt b = Log.debugf 10 (fun k->k "lra_alt %b" b); lra_alt := b
+let set_lra_alt b = Log.debugf 10 (fun k->k "lra_alt %i" b); lra_alt := b
 
 type num = Q.t
 
@@ -342,6 +342,23 @@ let build
             (Util.pp_list Atom.debug) reasons Clause.debug_atoms c);
       Actions.raise_conflict acts c lemma_lra
 
+    (* same as raise_conflict above but doesn't throw an error *)
+    let learn_clause acts
+        ~sign ~op ~pivot ~expr_up_bound ~expr_low_bound ~(reasons: atom list) () : 'a =
+      let expr = LE.diff expr_low_bound expr_up_bound in
+      assert (not (LE.mem_term pivot expr));
+      let concl = mk_pred op expr in
+      let concl = if sign then Term.Bool.pa concl else Term.Bool.na concl in
+      let c = concl :: List.map Atom.neg reasons in
+      Log.debugf 30
+        (fun k->k
+            "(@[<hv>lra.learn_clause@ :pivot %a@ :expr %a %a@ \
+             :e_up_b %a@ :e_low_b %a@ \
+             :reasons (@[<v>%a@])@ :clause %a@])"
+            Term.debug pivot LE.pp expr pp_op op LE.pp expr_up_bound LE.pp expr_low_bound
+            (Util.pp_list Atom.debug) reasons Clause.debug_atoms c);
+      Actions.push_clause acts (Clause.make c (Lemma lemma_lra))
+
 
     let _bound_reason_from_atom ~cond acts eq_reason ~pivot =
       begin
@@ -383,18 +400,33 @@ let build
       let op = if strict then Lt0 else Leq0 in
       match reason_up_bound, reason_low_bound with
       | Atom ru, Atom rl ->
-        let reasons =
-          if !lra_alt then
-            [up_bound_reason_from_atom acts ru ~pivot; low_bound_reason_from_atom acts rl ~pivot]
-          else [ru; rl] in
-        raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons ()
+        begin
+          let raw_reasons = [ru; rl]
+          and ineq_reasons = [up_bound_reason_from_atom acts ru ~pivot; low_bound_reason_from_atom acts rl ~pivot]
+          in
+          if !lra_alt == 3 then
+            begin
+              learn_clause acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ();
+              raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ();
+            end
+          else if !lra_alt == 2 then
+            begin
+              learn_clause acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ();
+              raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ();
+            end
+          else if !lra_alt == 1 then
+            raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ()
+          else if !lra_alt == 0 then
+            raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ()
+          else assert false;
+        end
       | ReLU_prop_apply_3 r, Atom y_l_reason ->
         let y_l_reason = low_bound_reason_from_atom acts y_l_reason ~pivot in
         begin
           Log.debugf 30
             (fun k->k "analyse_relu_3 :relu %a :reason %a" pp_term (Term.view r) debug_reason reason_low_bound);
-          let ineq_term = mk_pred op (expr_low_bound -.. (relu_y r)) in
-          let ineq_atom = Term.Bool.pa ineq_term in
+          (* let ineq_term = mk_pred op (expr_low_bound -.. (relu_y r)) in *)
+          (* let ineq_atom = Term.Bool.pa ineq_term in *)
           (* Actions.propagate_bool_lemma acts ineq_term true [Atom.neg y_l_reason ; ineq_atom] lemma_lra_prop; *)
           (* Actions.push_clause acts (Clause.make [Atom.neg y_l_reason ; ineq_atom] (Lemma lemma_lra_prop)); *)
           let c = [
@@ -416,8 +448,8 @@ let build
         begin
           Log.debugf 30
             (fun k->k "analyse_relu_4_5 :relu %a" pp_term (Term.view r));
-          let ineq_term = mk_pred op ((relu_x r) -.. expr_up_bound) in
-          let ineq_atom = Term.Bool.pa ineq_term in
+          (* let ineq_term = mk_pred op ((relu_x r) -.. expr_up_bound) in *)
+          (* let ineq_atom = Term.Bool.pa ineq_term in *)
           (* Actions.propagate_bool_lemma acts ineq_term true [Atom.neg x_u_reason ; ineq_atom] lemma_lra_prop; *)
           (* Actions.push_clause acts (Clause.make [Atom.neg x_u_reason ; ineq_atom] (Lemma lemma_lra_prop)); *)
           let cond = eval_bool_const op (Q.neg (eval_le_num_exn expr_up_bound)) in
