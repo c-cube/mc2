@@ -299,7 +299,8 @@ let build
         | None ->
           let e = LE.simplify e in
           let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
-          T.make view Type.bool
+          let ans = T.make view Type.bool
+        in Term.set_weight ans ((Term.weight ans) *. 1e50); ans
       end
 
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
