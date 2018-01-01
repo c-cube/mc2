@@ -300,7 +300,7 @@ let build
           let e = LE.simplify e in
           let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
           let ans = T.make view Type.bool
-        in Term.set_weight ans ((Term.weight ans) *. 1e50); ans
+          in Term.set_weight ans ((Term.weight ans) *. 1e10); ans
       end
 
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
@@ -322,7 +322,8 @@ let build
           let x = LE.singleton1 (LE.singleton_term x) and y = LE.singleton1 (LE.singleton_term y) in
           let view = ReLU {x=x; y=y; watches=Term.Watch2.dummy} in
           Log.debugf 20 (fun k->k "mk_relu %a" pp_term view);
-          T.make view Type.bool
+          let ans = T.make view Type.bool
+          in Term.set_weight ans ((Term.weight ans) *. 1e10); ans
       end
 
     (* raise a conflict that deduces [expr_up_bound - Hexpr_low_bound op 0] (which must
