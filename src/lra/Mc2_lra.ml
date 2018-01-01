@@ -404,21 +404,24 @@ let build
           let raw_reasons = [ru; rl]
           and ineq_reasons = [up_bound_reason_from_atom acts ru ~pivot; low_bound_reason_from_atom acts rl ~pivot]
           in
-          if !lra_alt == 3 then
+          let choice = if !lra_alt == 4 then Random.int !lra_alt else !lra_alt
+          in
+          match choice with
+          | 3 ->
             begin
               learn_clause acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ();
               raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ();
             end
-          else if !lra_alt == 2 then
+          | 2 ->
             begin
               learn_clause acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ();
               raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ();
             end
-          else if !lra_alt == 1 then
+          | 1 ->
             raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ()
-          else if !lra_alt == 0 then
+          | 0 ->
             raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ()
-          else assert false;
+          | _ -> assert false;
         end
       | ReLU_prop_apply_3 r, Atom y_l_reason ->
         let y_l_reason = low_bound_reason_from_atom acts y_l_reason ~pivot in
