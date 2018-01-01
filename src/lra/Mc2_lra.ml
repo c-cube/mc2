@@ -404,9 +404,19 @@ let build
           let raw_reasons = [ru; rl]
           and ineq_reasons = [up_bound_reason_from_atom acts ru ~pivot; low_bound_reason_from_atom acts rl ~pivot]
           in
-          let choice = if !lra_alt == 4 then Random.int !lra_alt else !lra_alt
+          let choice = if !lra_alt == 6 then Random.int !lra_alt else !lra_alt
           in
           match choice with
+          | 5 ->
+            begin
+              learn_clause acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ();
+              raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:ineq_reasons ();
+            end
+          | 4 ->
+            begin
+              learn_clause acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ();
+              raise_conflict acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ();
+            end
           | 3 ->
             begin
               learn_clause acts ~sign:true ~op ~pivot ~expr_up_bound ~expr_low_bound ~reasons:raw_reasons ();
