@@ -315,7 +315,7 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
 (* make a decision for [t] based on its type *)
 let[@inline] decide_term (env:t) (t:term): value =
   let ty = (Term.ty t) in
-  if ty == Type.Bool then
+  if ty == Bool then
     (* this case doesn't seem to happen *)
     env.bool_decisions <- env.bool_decisions + 1;
   Type.decide ty (actions env) t
