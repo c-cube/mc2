@@ -143,6 +143,7 @@ type t = {
 
   mutable starts : int; (* number of (re)starts *)
   mutable decisions : int; (* number of decisions *)
+  mutable bool_decisions : int; (* number of boolean decisions *)
   mutable propagations : int; (* number of propagations *)
   mutable conflicts : int; (* number of conflicts *)
   mutable n_learnt : int; (* total number of clauses learnt *)
@@ -313,7 +314,11 @@ let[@inline] bump_clause_activity (env:t) (c:clause) : unit =
 
 (* make a decision for [t] based on its type *)
 let[@inline] decide_term (env:t) (t:term): value =
-  Type.decide (Term.ty t) (actions env) t
+  let ty = (Term.ty t) in
+  if ty == Bool then
+    (* this case doesn't seem to happen *)
+    env.bool_decisions <- env.bool_decisions + 1;
+  Type.decide ty (actions env) t
 
 let[@inline] assign_term (env:t) (t:term) value reason level : unit =
   assert (t.t_assign == TA_none);
@@ -361,6 +366,7 @@ let create_real (actions:actions lazy_t) : t = {
 
   starts = 0;
   decisions = 0;
+  bool_decisions = 0;
   propagations = 0;
   conflicts = 0;
   n_learnt=0;
@@ -450,7 +456,7 @@ let partition_atoms (atoms:atom array) : atom list * raw_premise_step list =
           raise Trivial (* A var true at level 0 gives a trivially true clause *)
         ) else (
           (a :: trues) @ unassigned @ falses @
-            (arr_to_list atoms (i + 1)), history
+          (arr_to_list atoms (i + 1)), history
         )
       ) else if Atom.is_false a then (
         let l = Atom.level a in
@@ -726,7 +732,7 @@ let eval_atom_to_false ~save (env:t) (a:atom): unit =
   ) else (
     let v = Atom.eval a in
     Log.debugf debug (fun k->k "(@[atom_must_be_false@ %a@ :eval_to %a@])"
-        Atom.debug a debug_eval v);
+                         Atom.debug a debug_eval v);
     begin match v with
       | Eval_into (V_false, subs) ->
         (* update value, if it doesn't have one already *)
@@ -1330,8 +1336,8 @@ end = struct
 
   let raise_conflict (env:t) (atoms:atom list) (lemma:lemma) : 'a =
     Log.debugf debug (fun k->k
-        "(@[<hv>@{<yellow>raise_conflict@}@ :clause %a@ :lemma %a@])"
-        Clause.debug_atoms atoms Lemma.pp lemma);
+                         "(@[<hv>@{<yellow>raise_conflict@}@ :clause %a@ :lemma %a@])"
+                         Clause.debug_atoms atoms Lemma.pp lemma);
     env.bcp_head <- Vec.size env.trail;
     env.th_head <- Vec.size env.trail;
     (* cleanup list of atoms, removing duplicates and absurd lits *)
@@ -1413,6 +1419,7 @@ let rec pick_branch_aux (env:t) (atom:atom) : unit =
       | Eval_unknown ->
         (* do a decision *)
         env.decisions <- env.decisions + 1;
+        env.bool_decisions <- env.bool_decisions + 1;
         new_decision_level env;
         Log.debugf debug (fun k->k "(@[solver.bool_decide@ %a@])" Atom.debug atom);
         let current_level = decision_level env in
@@ -1524,7 +1531,7 @@ let gc_clauses (env:t) ~down_to : unit =
     ) else (
       (* remove the clause *)
       Log.debugf 15 (fun k->k"(@[gc_clauses.remove_clause@ %a@ :activity %f@])"
-          Clause.debug c (Clause.activity c));
+                        Clause.debug c (Clause.activity c));
       Clause.set_deleted c;
       env.n_deleted_c <- env.n_deleted_c + 1;
     )
@@ -1712,24 +1719,24 @@ let solve
         let nconf = if restarts then to_int !n_of_conflicts else max_int in
         search env ~gc ~time ~memory ~progress nconf
       with
-        | () -> ()
-        | exception Restart ->
-          (* garbage collect clauses, if needed *)
-          if gc &&
-             !n_of_learnts >= 0. &&
-             float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
-          then (
-            let n = (to_int !n_of_learnts) + 1 in
-            gc_clauses env ~down_to:n;
-          );
+      | () -> ()
+      | exception Restart ->
+        (* garbage collect clauses, if needed *)
+        if gc &&
+           !n_of_learnts >= 0. &&
+           float(Vec.size env.clauses_learnt - Vec.size env.trail) >= !n_of_learnts
+        then (
+          let n = (to_int !n_of_learnts) + 1 in
+          gc_clauses env ~down_to:n;
+        );
 
-          (* increment parameters to ensure termination *)
-          n_of_conflicts := !n_of_conflicts *. env.restart_inc;
-          n_of_learnts   := !n_of_learnts *. env.learntsize_inc;
-          (* diminish by how much n_of_learnts increases *)
-          env.learntsize_inc <- 1. +. (env.learntsize_inc -. 1.) /. 1.3 ;
-          loop()
-        | exception Sat -> check_sat ()
+        (* increment parameters to ensure termination *)
+        n_of_conflicts := !n_of_conflicts *. env.restart_inc;
+        n_of_learnts   := !n_of_learnts *. env.learntsize_inc;
+        (* diminish by how much n_of_learnts increases *)
+        env.learntsize_inc <- 1. +. (env.learntsize_inc -. 1.) /. 1.3 ;
+        loop()
+      | exception Sat -> check_sat ()
     end
   and check_sat () =
     assert (fully_propagated env);
@@ -1880,11 +1887,11 @@ let trail env = env.trail
 let pp_stats out (s:t): unit =
   Fmt.fprintf out
     "(@[stats@ :n_conflicts %d@ \
-     :n_decisions %d@ :n_propagations %d@ :n_restarts %d@ \
+     :n_decisions %d@ :n_bool_decisions %d@ :n_propagations %d@ :n_restarts %d@ \
      :n_learnt %d@ :n_initial %d@ \
      @[:gc_c %d@ :deleted_c %d@]@ \
      @[:gc_t %d :deleted_t %d@]@])"
-    s.conflicts s.decisions s.propagations s.starts s.n_learnt
+    s.conflicts s.decisions s.bool_decisions s.propagations s.starts s.n_learnt
     (Vec.size s.clauses_hyps) s.n_gc_c s.n_deleted_c s.n_gc_t s.n_deleted_t
 
 let[@inline] clear_progress () = print_string "\r\027[K";
