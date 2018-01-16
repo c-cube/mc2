@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import argparse
+
 import numpy as np
 from sklearn.neural_network import MLPClassifier
 from scipy.special import expit as logistic_sigmoid
@@ -7,7 +9,7 @@ from scipy.special import expit as logistic_sigmoid
 
 # def ReLU(x):
 #     return np.maximum(0, x)
-# 
+#
 # def eval_nn(clf, inp):
 #     inp = [[inp]]
 #     n = clf.n_layers_ - 2
@@ -23,7 +25,7 @@ from scipy.special import expit as logistic_sigmoid
 
 
 def format_number(x):
-    return ('%%.0%sf' % precision) % x if x >= 0 else ('(- %%.0%sf)' % precision) % (-x)
+    return ('%%.0%sf' % args.precision) % x if x >= 0 else ('(- %%.0%sf)' % args.precision) % (-x)
 
 
 def nn_to_smt2(clf, input_bounds=None, output_bounds=None):
@@ -79,17 +81,27 @@ def nn_to_smt2(clf, input_bounds=None, output_bounds=None):
     ans += '\n(check-sat)\n'
     return ans
 
-precision = 6 # number of decimals
-n = 20 # number of samples
-k = 1 # dimension
-X = np.random.rand(n, k)
-y = [1] * (n - 1) + [0]
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--precision', type=int,
+                    default=6, help='number of decimals')
+parser.add_argument('--samples', type=int, default=20,
+                    help='number of samples')
+parser.add_argument('--dimension', type=int, default=1,
+                    help='dimension of input')
+parser.add_argument('--hidden', default='10,10', help='hidden layers')
+args = parser.parse_args()
+hidden_layer_sizes = tuple(map(int, args.hidden.split(',')))
+
+
+X = np.random.rand(args.samples, args.dimension)
+y = [1] * (args.samples - 1) + [0]
 clf = MLPClassifier(solver='lbfgs', max_iter=100000,
-                    hidden_layer_sizes=(10,) * 2)
+                    hidden_layer_sizes=hidden_layer_sizes)
 from sys import stderr
 
 clf.fit(X, y)
 print(clf.predict(X[-1:]) and 'unsat?' or 'sat?', file=stderr)
 # bounds are in the order lower, upper, strict lower, strict upper
 print(nn_to_smt2(clf, input_bounds=[
-      (0, 1, None, None)] * k, output_bounds=[(None, None, 0, 1)]))
+      (0, 1, None, None)] * args.dimension, output_bounds=[(None, None, 0, 1)]))
