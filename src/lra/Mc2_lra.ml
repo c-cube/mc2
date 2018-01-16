@@ -60,10 +60,11 @@ let relu_y t = match Term.view t with
   | ReLU r -> r.y
   | _ -> assert false
 
+(* reason of bound *)
 type reason =
-  | Atom of atom
-  | ReLU_prop_apply_3 of term
-  | ReLU_prop_apply_4_or_5 of term
+  | Atom of atom (* atomic reason aka equality / inequality / disequality *)
+  | ReLU_prop_apply_3 of term (* reason that can be analysed with Lemma 3 *)
+  | ReLU_prop_apply_4_or_5 of term (* reason that can be analysed with Lemma 4 or 5 *)
 
 let debug_reason out = function
   | Atom a -> Atom.debug out a
@@ -307,6 +308,7 @@ let build
 
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
 
+    (* build a relu *)
     let mk_relu (x:LE.t) (y:LE.t): term =
       begin match LE.as_const x, LE.as_const y with
         | Some nx, _ ->
@@ -363,7 +365,7 @@ let build
             (Util.pp_list Atom.debug) reasons Clause.debug_atoms c);
       Actions.push_clause acts (Clause.make c (Lemma lemma_lra))
 
-
+    (* utility function for the functions below *)
     let _bound_reason_from_atom ~cond acts eq_reason ~pivot =
       begin
         match Term.view (Atom.term eq_reason) with
@@ -387,11 +389,16 @@ let build
         | _ -> assert false
       end
 
+    (* transform an equality into a lower bound on the pivot variable
+       if provided with an inequality, asserts its sign is right
+    *)
     let low_bound_reason_from_atom acts eq_reason ~pivot =
       Log.debugf 30 (fun k->k "deduce_low_from_eq %a %a" Atom.debug eq_reason Term.debug pivot);
       _bound_reason_from_atom ~cond:(fun q -> (q < Q.zero)) acts eq_reason ~pivot
 
-
+    (* transform an equality into an upper bound on the pivot variable
+       if provided with an inequality, asserts its sign is right
+    *)
     let up_bound_reason_from_atom acts (eq_reason:atom) ~pivot =
       Log.debugf 30 (fun k->k "deduce_up_from_eq %a %a" Atom.debug eq_reason Term.debug pivot);
       _bound_reason_from_atom ~cond:(fun q -> (q > Q.zero)) acts eq_reason ~pivot
@@ -405,6 +412,8 @@ let build
       match reason_up_bound, reason_low_bound with
       | Atom ru, Atom rl ->
         begin
+          (* we don't know why 5 is not the same as 1, so we wrote all cases *)
+          (* if ru or rl are already inequalities, raw_reasons == ineq_reasons *)
           let raw_reasons = [ru; rl]
           and ineq_reasons = [up_bound_reason_from_atom acts ru ~pivot; low_bound_reason_from_atom acts rl ~pivot]
           in
@@ -811,6 +820,7 @@ let build
         end
       | _ -> assert false
 
+    (* initialization of a term *)
     let init acts t : unit = match Term.view t with
       | Const _ -> ()
       | Pred p ->
@@ -837,25 +847,15 @@ let build
         Term.Watch2.init r.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> ())
-      (* ~on_unit:(fun u -> propagate_relu acts t ~u) *)
-      (* ~on_all_set:(fun () -> check_consistent acts t) *)
+      (* here we could extend the check_consistent to provide an
+         on_all_set function but it does not change anything *)
       | _ -> assert false
 
+    (* I don't know what this function does
+       but update the watches like in init *)
     let update_watches acts t ~watch : watch_res =
       match Term.view t with
       | Pred p ->
-        (* if (p.op == Eq0) && (t == watch) && (Term.has_value t Value.true_) then
-           begin
-            (* propagation *)
-            let ineq_term = mk_pred Leq0 p.expr in
-            let ineq_atom = Term.Bool.pa ineq_term in
-            Actions.push_clause acts (Clause.make [Term.Bool.na t ; ineq_atom] (Lemma lemma_lra_prop));
-            (* Actions.propagate_bool_lemma acts ineq_term true [Term.Bool.na t; ineq_atom] lemma_lra_prop; *)
-            let ineq_term = mk_pred Leq0 (LE.neg p.expr) in
-            let ineq_atom = Term.Bool.pa ineq_term in
-            Actions.push_clause acts (Clause.make [Term.Bool.na t ; ineq_atom] (Lemma lemma_lra_prop));
-            (* Actions.propagate_bool_lemma acts ineq_term true [Term.Bool.na t; ineq_atom] lemma_lra_prop; *)
-           end; *)
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
@@ -863,8 +863,6 @@ let build
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> ())
-      (* ~on_unit:(fun u -> propagate_relu acts t ~u) *)
-      (* ~on_all_set:(fun () -> check_consistent acts t) *)
       | Const _ -> assert false
       | _ -> assert false
 
