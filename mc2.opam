@@ -3,7 +3,7 @@ name: "mc2"
 license: "Apache"
 version: "dev"
 author: ["Sylvain Conchon" "Alain Mebsout" "Stephane Lecuyer" "Simon Cruanes" "Guillaume Bury"]
-maintainer: ["simon.cruanes@inria.fr"]
+maintainer: ["simon.cruanes.2007@m4x.org"]
 build: [
     [make "build-install"]
 ]
