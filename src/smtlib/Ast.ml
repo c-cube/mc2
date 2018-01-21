@@ -557,7 +557,7 @@ module Ctx = struct
 
   let pp out t =
     Format.fprintf out "ctx {@[%a@]}"
-      (ID.Tbl.print ID.pp pp_kind) t.kinds
+      Fmt.(seq ~sep:(return "@ ") @@ pair ID.pp pp_kind) (ID.Tbl.to_seq t.kinds)
 end
 
 let error_loc ctx : string = Fmt.sprintf "at %a: " Locations.pp_opt (Ctx.loc ctx)
