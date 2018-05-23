@@ -9,6 +9,8 @@
 
 open Mc2_core
 
+module Plugin_sat = Plugin_sat
+
 type 'a or_error = ('a, string) CCResult.t
 
 val plugin : Plugin.Factory.t
