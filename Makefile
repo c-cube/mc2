@@ -8,10 +8,10 @@ TIMEOUT?=30
 TARGETS=src/main.exe
 OPTS= -j $(J)
 
-all: build test
-
 build:
 	jbuilder build $(TARGETS) $(OPTS)
+
+all: build test
 
 build-install:
 	jbuilder build @install
