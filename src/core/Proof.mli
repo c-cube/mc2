@@ -101,7 +101,7 @@ val check : t -> unit
 
 (** {3 Unsafe} *)
 
-module H : Hashtbl.S with type key = clause
+module H : CCHashtbl.S with type key = clause
 (** Hashtable over clauses. Uses the details of the internal representation
     to achieve the best performances, however hashtables from this module
     become invalid when solving is restarted, so they should only be live
