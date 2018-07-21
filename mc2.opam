@@ -25,6 +25,7 @@ depends: [
   "containers"
   "sequence"
   "jbuilder" {build}
+  "dolmen" {test}
 ]
 depopts: [
   "dolmen"
