@@ -14,7 +14,7 @@ build:
 all: build test
 
 build-install:
-	jbuilder build @install
+	jbuilder build @install -p mc2
 
 build-dev:
 	jbuilder build $(TARGETS) $(OPTS) --dev
@@ -35,7 +35,7 @@ uninstall:
 	jbuilder uninstall
 
 doc:
-	jbuilder build @doc
+	jbuilder build @doc -p mc2
 
 test:
 	@echo "run API tests…"
