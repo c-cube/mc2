@@ -26,6 +26,9 @@ depends: [
   "sequence"
   "jbuilder" {build}
 ]
+depopts: [
+  "dolmen"
+]
 available: [
   ocaml-version >= "4.03.0"
 ]
