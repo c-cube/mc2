@@ -787,7 +787,7 @@ module Conflict = struct
   let[@inline] pp out (c:t) = Clause.debug out c
 
   let[@inline] level (c:t) : level =
-    (Array.fold_left[@inlined])
+    Array.fold_left
       (fun acc p -> max acc (Atom.level p)) 0 c.c_atoms
 end
 
