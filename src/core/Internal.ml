@@ -820,7 +820,7 @@ module Conflict = struct
   let level (e:t) : level = match e with
     | Conflict_eval {lvl_assign;lvl_eval;_} -> max lvl_assign lvl_eval
     | Conflict_clause c ->
-      (Array.fold_left[@inlined])
+      Array.fold_left
         (fun acc p -> max acc (Atom.level p)) 0 c.c_atoms
 end
 

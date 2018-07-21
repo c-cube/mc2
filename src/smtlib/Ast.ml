@@ -485,7 +485,7 @@ module Ctx = struct
 
   let pp out t =
     Format.fprintf out "ctx {@[%a@]}"
-      (ID.Tbl.print ID.pp pp_kind) t.kinds
+      Fmt.(seq @@ hvbox @@ pair ~sep:(return "@ -> ") ID.pp pp_kind) (ID.Tbl.to_seq t.kinds)
 end
 
 let errorf_ctx ctx msg =
