@@ -59,6 +59,10 @@ type term_view +=
       expr: LE.t;
       mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
+  | Linexp of {
+      expr: LE.t;
+      mutable watches: Term.Watch2.t; (* can sometimes propagate *)
+    }
 
 type lemma_view +=
   | Lemma_lra
@@ -66,6 +70,7 @@ type lemma_view +=
 let k_rat = Service.Key.makef "%s.rat" name
 let k_make_const = Service.Key.makef "%s.make_const" name
 let k_make_pred = Service.Key.makef "%s.make_pred" name
+let k_make_linexp = Service.Key.makef "%s.make_linexp" name
 
 let[@inline] equal_op a b =
   begin match a, b with
@@ -155,6 +160,7 @@ let pp_state out = function
 let[@inline] subterms (t:term_view) : term Sequence.t = match t with
   | Const _ -> Sequence.empty
   | Pred {expr=e;_} -> LE.terms e
+  | Linexp {expr=e; _} -> LE.terms e
   | _ -> assert false
 
 let pp_op out = function
@@ -166,6 +172,7 @@ let pp_term out = function
   | Const n -> Q.pp_print out n
   | Pred {op;expr;_} ->
     Fmt.fprintf out "(@[%a@ %a@])" LE.pp_no_paren expr pp_op op
+  | Linexp {expr; _} -> Format.fprintf out "(@[%a@])" LE.pp_no_paren expr
   | _ -> assert false
 
 (* evaluate [op n] where [n] is a constant *)
@@ -184,6 +191,11 @@ let eval (t:term) = match Term.view t with
     begin match eval_le e with
       | None -> Eval_unknown
       | Some (n,l) -> Eval_into (Value.of_bool @@ eval_bool_const op n, l)
+    end
+  | Linexp {expr=e} ->
+    begin match eval_le e with
+      | None -> Eval_unknown
+      | Some (n,l) -> Eval_into (mk_val n,l)
     end
   | _ -> assert false
 
@@ -210,10 +222,12 @@ let build
       let equal a b = match a, b with
         | Const n1, Const n2 -> Q.equal n1 n2
         | Pred p1, Pred p2 -> p1.op = p2.op && LE.equal p1.expr p2.expr
+        | Linexp p1, Linexp p2 -> LE.equal p1.expr p2.expr
         | _ -> false
       let hash = function
         | Const n -> LE.hash_q n
         | Pred {op;expr;_} -> CCHash.combine3 10 (hash_op op) (LE.hash expr)
+        | Linexp {expr;_} -> CCHash.combine2 20 (LE.hash expr)
         | _ -> assert false
     end)
   in
@@ -249,6 +263,15 @@ let build
       end
 
     let mk_const (n:num) : term = T.make (Const n) (Lazy.force ty_rat)
+
+    (* build a linear expression (sub) term *)
+    let mk_linexp (e:LE.t) : term =
+      begin match LE.as_const e with
+        | Some n -> mk_const n
+        | None ->
+          let view = Linexp {expr=e; } in
+          T.make view @@ Lazy.force ty_rat
+      end
 
     (* raise a conflict that deduces [expr_up_bound - expr_low_bound op 0] (which must
        eval to [false]) from [reasons] *)
@@ -540,10 +563,20 @@ let build
         Term.Watch2.init p.watches t
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
+      | Linexp p ->
+        let watches = Term.Watch2.make (t :: LE.terms_l p.expr) in
+        p.watches <- watches;
+        Term.Watch2.init p.watches t
+          ~on_unit:(fun u -> check_or_propagate acts t ~u)
+          ~on_all_set:(fun () -> check_consistent acts t)
       | _ -> assert false
 
     let update_watches acts t ~watch : watch_res = match Term.view t with
       | Pred p ->
+        Term.Watch2.update p.watches t ~watch
+          ~on_unit:(fun u -> check_or_propagate acts t ~u)
+          ~on_all_set:(fun () -> check_consistent acts t)
+      | Linexp p ->
         Term.Watch2.update p.watches t ~watch
           ~on_unit:(fun u -> check_or_propagate acts t ~u)
           ~on_all_set:(fun () -> check_consistent acts t)
@@ -645,6 +678,7 @@ let build
       Service.Any (k_rat, Lazy.force ty_rat);
       Service.Any (k_make_const, mk_const);
       Service.Any (k_make_pred, mk_pred);
+      Service.Any (k_make_linexp, mk_linexp);
     ]
   end in
   (module P)

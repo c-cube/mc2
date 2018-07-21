@@ -76,20 +76,13 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   let mk_eq t u = Term.Bool.pa (mk_eq_ t u) in
   let mk_neq t u = Term.Bool.na (mk_eq_ t u) in
   let mk_lra_pred = Reg.find_exn reg Mc2_lra.k_make_pred in
+  let mk_lra_linexp = Reg.find_exn reg Mc2_lra.k_make_linexp in
   let mk_lra_eq t u = mk_lra_pred Mc2_lra.Eq0 (RLE.diff t u) |> Term.Bool.pa in
   let side_clauses : atom list list ref = ref [] in
-  (* introduce intermediate variable for LRA sub-expression *)
   let mk_lra_expr (e:RLE.t): term = match RLE.as_const e, RLE.as_singleton e with
     | Some n, _ -> Reg.find_exn reg Mc2_lra.k_make_const n
     | None, Some (n,t) when Q.equal n Q.one -> t
-    | _ ->
-      let id = mk_lra_id() in
-      Log.debugf 30
-        (fun k->k"(@[smtlib.name_lra@ %a@ :as %a@])" RLE.pp e ID.pp id);
-      decl id [] (Reg.find_exn reg Mc2_lra.k_rat);
-      let t = mk_const id in
-      side_clauses := [mk_lra_eq (RLE.singleton1 t) e] :: !side_clauses;
-      t
+    | _ -> mk_lra_linexp e
   in
   (* adaptative equality *)
   let mk_eq_t_tf (t:term) (u:term_or_form) : F.t = match u with
