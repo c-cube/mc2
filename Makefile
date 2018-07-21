@@ -40,9 +40,9 @@ doc:
 test:
 	@echo "run API tests…"
 	jbuilder runtest
-	@echo "run benchmarks…"
+	#@echo "run benchmarks…"
 	# @/usr/bin/time -f "%e" ./tests/run smt
-	@/usr/bin/time -f "%e" ./tests/run mcsat
+	#@/usr/bin/time -f "%e" ./tests/run mcsat
 
 TESTOPTS ?= -j $(J)
 TESTTOOL=logitest

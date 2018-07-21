@@ -11,3 +11,9 @@
    (ocamlopt_flags (:standard -O3
                     -unbox-closures -unbox-closures-factor 20))
   ))
+
+(alias
+ ((name    runtest)
+  (deps    (test_api.exe))
+  (action  (run ${<}))))
+
