@@ -42,7 +42,7 @@ test:
 	jbuilder runtest
 	@echo "run benchmarks…"
 	# @/usr/bin/time -f "%e" ./tests/run smt
-	@/usr/bin/time -f "%e" ./src/tests/run mcsat
+	@/usr/bin/time -f "%e" ./tests/run mcsat
 
 TESTOPTS ?= -j $(J)
 TESTTOOL=logitest
@@ -51,7 +51,7 @@ FULL_TEST?=QF_UF
 
 logitest-quick:
 	@mkdir -p snapshots
-	$(TESTTOOL) run -c src/tests/conf.toml src/tests/ $(TESTOPTS) \
+	$(TESTTOOL) run -c tests/conf.toml tests/ $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
 	  --meta `git rev-parse HEAD` --summary snapshots/quick-$(DATE).txt \
 	  --csv snapshots/quick-$(DATE).csv
@@ -60,7 +60,7 @@ logitest-full:
 	@mkdir -p snapshots
 	@DATE=`date +%F.%H:%M`
 	@echo "full test on FULL_TEST=$(FULL_TEST)"
-	$(TESTTOOL) run -c src/tests/conf.toml $(FULL_TEST) $(TESTOPTS) \
+	$(TESTTOOL) run -c tests/conf.toml $(FULL_TEST) $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
 	  --meta `git rev-parse HEAD` --summary snapshots/full-$(FULL_TEST)-$(DATE).txt \
 	  --csv snapshots/full-$(FULL_TEST)-$(DATE).csv
