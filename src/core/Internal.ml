@@ -1194,14 +1194,14 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
           Array.unsafe_set atoms k (Atom.neg a);
           (* remove [c] from [a.watched], add it to [ak.neg.watched] *)
           Vec.push (Atom.neg ak).a_watched c;
-          raise Exit
+          raise_notrace Exit
         )
       done;
       (* no watch lit found *)
       if Atom.is_false first then (
         (* clause is false *)
         env.bcp_head <- Vec.size env.trail;
-        raise (Conflict c)
+        raise_notrace (Conflict c)
       ) else (
         begin match th_eval env first with
           | None -> (* clause is unit, keep the same watches, but propagate *)
@@ -1214,7 +1214,7 @@ let propagate_in_clause (env:t) (a:atom) (c:clause) : watch_res =
           | Some V_true -> ()
           | Some V_false ->
             env.bcp_head <- Vec.size env.trail;
-            raise (Conflict c)
+            raise_notrace (Conflict c)
           | Some _ -> assert false
         end
       );
