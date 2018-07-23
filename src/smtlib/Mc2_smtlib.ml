@@ -242,7 +242,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   and aux_t subst (t:A.term) : term = match aux subst t with
     | T t -> t
     | Rat e -> mk_lra_expr e
-    | F (F.Lit a) when Atom.is_pos a -> Atom.term a
+    | F {F.view=F.Lit a;_} when Atom.is_pos a -> Atom.term a
     | F f ->
       (* name the sub-formula and add CNF *)
       let placeholder_id = mk_sub_form() in
