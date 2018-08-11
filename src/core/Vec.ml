@@ -121,7 +121,7 @@ let[@inline] move_to t t' =
   t'.data <- Array.copy t.data;
   t'.sz <- t.sz
 
-let fast_remove t i =
+let[@inline] fast_remove t i =
   assert (i < t.sz);
   t.data.(i) <- t.data.(t.sz - 1);
   t.sz <- t.sz - 1
@@ -137,7 +137,7 @@ let sort t f =
   Array.fast_sort f sub_arr;
   t.data <- sub_arr
 
-let iter f t =
+let[@inline] iter f t =
   for i = 0 to size t - 1 do
     f (Array.unsafe_get t.data i)
   done
