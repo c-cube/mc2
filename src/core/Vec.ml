@@ -34,6 +34,10 @@ let from_array data sz d =
   assert (sz <= Array.length data);
   {data = data; sz = sz; dummy = d}
 
+let from_list l d =
+  let a = Array.of_list l in
+  from_array a (Array.length a) d
+
 let to_list s =
   let l = ref [] in
   for i = 0 to s.sz - 1 do
@@ -84,16 +88,16 @@ let[@inline] is_full t = Array.length t.data = t.sz
 
 let[@inline] push t e =
   if is_full t then grow_to_double_size t;
-  t.data.(t.sz) <- e;
+  Array.unsafe_set t.data (t.sz) e;
   t.sz <- t.sz + 1
 
 let[@inline] last t =
   if t.sz = 0 then invalid_arg "vec.last";
-  t.data.(t.sz - 1)
+  Array.unsafe_get t.data (t.sz - 1)
 
 let[@inline] pop_last t =
   if t.sz = 0 then invalid_arg "vec.pop_last";
-  let x = t.data.(t.sz - 1) in
+  let x = Array.unsafe_get t.data (t.sz - 1) in
   t.sz <- t.sz - 1;
   x
 
@@ -103,27 +107,21 @@ let[@inline] get t i =
 
 let[@inline] set t i v =
   if i < 0 || i > t.sz then invalid_arg "vec.set";
-  if i = t.sz then
+  if i = t.sz then (
     push t v
-  else
+  ) else (
     Array.unsafe_set t.data i v
+  )
 
 let[@inline] copy t =
   let data = Array.copy t.data in
-  {t with data; }
+  {data; sz=t.sz; dummy=t.dummy}
 
 let[@inline] move_to t t' =
   t'.data <- Array.copy t.data;
   t'.sz <- t.sz
 
-let remove t e =
-  let j = ref 0 in
-  while (!j < t.sz && not (t.data.(!j) == e)) do incr j done;
-  assert (!j < t.sz);
-  for i = !j to t.sz - 2 do t.data.(i) <- t.data.(i+1) done;
-  pop t
-
-let[@inline] fast_remove t i =
+let fast_remove t i =
   assert (i < t.sz);
   t.data.(i) <- t.data.(t.sz - 1);
   t.sz <- t.sz - 1
@@ -147,6 +145,8 @@ let iter f t =
 let append a b =
   grow_to_at_least a (size a + size b);
   iter (push a) b
+
+let append_l v l = List.iter (push v) l
 
 let fold f acc t =
   let rec _fold f acc t i =

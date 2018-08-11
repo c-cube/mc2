@@ -30,6 +30,8 @@ val from_array : 'a array -> int -> 'a -> 'a t
     to create a vector. [size] is the length of the slice of [data] that is
     used ([size <= Array.length data] must hold) *)
 
+val from_list : 'a list -> 'a -> 'a t
+
 val to_list : 'a t -> 'a list
 (** Returns the list of elements of the vector *)
 
@@ -64,6 +66,8 @@ val push : 'a t -> 'a -> unit
 val append : 'a t -> 'a t -> unit
 (** [append v1 v2] pushes all elements of [v2] into [v1] *)
 
+val append_l : 'a t -> 'a list -> unit
+
 val last : 'a t -> 'a
 (** Last element, or
     @raise Invalid_argument if the vector is empty *)
@@ -86,9 +90,6 @@ val copy : 'a t -> 'a t
 
 val move_to : 'a t -> 'a t -> unit
 (** [move_to a b] copies the content of [a] to [b], discarding [b]'s old content *)
-
-val remove : 'a t -> 'a -> unit
-(** Uses [(==)] for comparison *)
 
 val fast_remove : 'a t -> int -> unit
 (** Remove element at index [i] without preserving order
