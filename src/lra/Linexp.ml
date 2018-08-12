@@ -15,28 +15,29 @@ type t = {
 let empty : t = { const=Q.zero; terms=TM.empty; }
 let zero = empty
 
-let[@inline] merge_ ~f1 ~f2 ~fboth a b : t = {
+let[@inline] merge_ ~f_left ~f_right ~fboth a b : t = {
   const=fboth a.const b.const;
   terms=TM.merge_safe a.terms b.terms
       ~f:(fun _ -> function
-        | `Left n -> Some (f1 n)
-        | `Right n -> Some (f2 n)
+        | `Left n -> Some (f_left n)
+        | `Right n -> Some (f_right n)
         | `Both (n1,n2) ->
           let n = fboth n1 n2 in
           if Q.sign n=0 then None else Some n);
 }
 
 let[@inline] add a b : t =
-  merge_ a b ~f1:(fun x->x) ~f2:(fun x->x) ~fboth:Q.add
+  merge_ a b ~f_left:(fun x->x) ~f_right:(fun x->x) ~fboth:Q.add
 
 let[@inline] diff a b : t =
-  merge_ a b ~f1:(fun x->x) ~f2:Q.neg ~fboth:Q.sub
+  merge_ a b ~f_left:(fun x->x) ~f_right:Q.neg ~fboth:Q.sub
 
 let[@inline] equal e1 e2 : bool =
   Q.equal e1.const e2.const &&
   TM.equal Q.equal e1.terms e2.terms
 
-let[@inline] hash_q (n:Q.t) : int = Q.to_string n |> CCHash.string
+let[@inline] hash_q (n:Q.t) : int =
+  CCHash.combine2 (Z.hash @@ Q.num n) (Z.hash @@ Q.den n)
 
 let[@inline] hash (e:t) : int =
   let hash_pair (t,n) = CCHash.combine3 11 (Term.hash t) (hash_q n) in

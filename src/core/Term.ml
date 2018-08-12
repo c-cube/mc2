@@ -352,7 +352,7 @@ module TC = struct
 
   let[@inline] lazy_from_val (tc:tc) : lazy_tc = {
     l_tc=Some tc;
-    l_get=Lazy.from_val tc;
+    l_get=Lazy.from_val tc; (* only call after [l_tc] is set. Used for perf. *)
   }
 
   let lazy_make () : lazy_tc =
