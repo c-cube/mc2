@@ -709,7 +709,7 @@ let th_eval (env:t) (a:atom) : value option =
 
 let pp_subs out l : unit =
   let pp_p out t =
-    Fmt.fprintf out "(@[%a@ → %a@])" Term.debug t Value.pp (Term.value_exn t)
+    Fmt.fprintf out "(@[%a@ @<1>→ %a@])" Term.debug t Value.pp (Term.value_exn t)
   in
   Fmt.fprintf out "(@[<v>%a@])" (Util.pp_list pp_p) l
 
