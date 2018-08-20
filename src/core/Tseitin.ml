@@ -132,6 +132,8 @@ module Make (F : Tseitin_intf.Arg) = struct
     mutable proxies : atom list;
   }
 
+  exception Is_false
+
   (* build a clause by flattening (if sub-formulas have the
      same combinator) and_ proxy-ing sub-formulas that have the
      opposite operator. *)
@@ -146,13 +148,17 @@ module Make (F : Tseitin_intf.Arg) = struct
             Tbl.add st.tbl_and f res;
             res
         end
-      | _ -> assert false
+      | True -> None, []
+      | Comb (Not, [{view=True;_}]) -> raise Is_false
+      | _ ->
+        Log.debugf 1(fun k->k"(@[cnf.bad-formula@ %a@])" pp f);
+        assert false
     and aux_noncached f = match f with
       | Comb (And, l) ->
         List.fold_left
           (fun (_, acc) f ->
              match aux f with
-               | _, [] -> assert false
+               | _, [] -> Some And, acc
                | _, [a] -> Some And, a :: acc
                | Some And, l ->
                  Some And, List.rev_append l acc
@@ -170,7 +176,8 @@ module Make (F : Tseitin_intf.Arg) = struct
         List.fold_left
           (fun (_, acc) f ->
              match aux f with
-               | _, [] -> assert false
+               | exception Is_false -> Some Or, acc
+               | _, [] -> Some Or, acc
                | _, [a] -> Some Or, a :: acc
                | Some Or, l ->
                  Some Or, List.rev_append l acc
@@ -188,7 +195,8 @@ module Make (F : Tseitin_intf.Arg) = struct
         aux_noncached (Comb (Or, [not_ a; b]))
       | _ -> assert false
     in
-    snd @@ aux f
+    try snd @@ aux f
+    with Is_false -> [] (* empty clause *)
 
   let cnf ?simplify:_ ~fresh (f:t) : atom list list =
     let st = {
