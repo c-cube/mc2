@@ -124,26 +124,30 @@ module Make (F : Tseitin_intf.Arg) = struct
       let hash = hash
     end)
 
+  type cnf_res =
+    | R_atom of atom
+    | R_and of atom list
+    | R_or of atom list
+    | R_true
+    | R_false
+
   type state = {
     fresh: unit -> atom;
-    tbl_and: (combinator option * atom list) Tbl.t; (* caching *)
+    tbl_and: cnf_res Tbl.t; (* caching *)
     mutable acc_or : (atom * atom list) list;
     mutable acc_and : (atom * atom list) list;
     mutable proxies : atom list;
   }
 
-  exception Is_true
-  exception Is_false
-
   (* build a clause by flattening (if sub-formulas have the
      same combinator) and_ proxy-ing sub-formulas that have the
      opposite operator. *)
   let cnf_under_and (st:state) (f:t) : atom list option =
-    let rec aux f : _ * atom list = match f.view with
-      | Lit a -> None, [a]
-      | True -> raise_notrace Is_true
-      | Comb (Not, [{view=True;_}]) -> raise_notrace Is_false
-      | Comb (Not, [{view=Lit a;_}]) -> None, [F.neg a]
+    let rec aux f : cnf_res = match f.view with
+      | Lit a -> R_atom a
+      | True -> R_true
+      | Comb (Not, [{view=True;_}]) -> R_false
+      | Comb (Not, [{view=Lit a;_}]) -> R_atom (F.neg a)
       | Comb ((And | Or | Imply), _) ->
         begin try Tbl.find st.tbl_and f
           with Not_found ->
@@ -154,48 +158,46 @@ module Make (F : Tseitin_intf.Arg) = struct
       | _ ->
         Log.debugf 1(fun k->k"(@[cnf.bad-formula@ %a@])" pp f);
         assert false
-    and aux_noncached f = match f with
+    and aux_noncached f : cnf_res =
+      match f with
       | Comb (And, l) ->
-        let l = List.fold_left
+        List.fold_left
           (fun acc f ->
-             match aux f with
-               | exception Is_true -> acc
-               | _, [] -> acc
-               | _, [a] -> a :: acc
-               | Some And, l -> List.rev_append l acc
-               | Some Or, l ->
-                 let proxy = st.fresh() in
-                 st.acc_or <- (proxy, l) :: st.acc_or;
-                 proxy :: acc
-               | None, l -> List.rev_append l acc
-               | _ -> assert false)
-          [] l
-        in
-        Some And, l
+             match acc, aux f with
+             | R_false, _ | _, R_false -> R_false
+             | R_and acc, R_true -> R_and acc
+             | R_and acc, R_atom a -> R_and (a::acc)
+             | R_and acc, R_and l -> R_and (List.rev_append l acc)
+             | R_and acc, R_or l ->
+               let proxy = st.fresh() in
+               st.acc_or <- (proxy, l) :: st.acc_or;
+               R_and (proxy :: acc)
+             | _ -> assert false)
+          (R_and []) l
       | Comb (Or, l) ->
-        let l = List.fold_left
+        List.fold_left
           (fun acc f ->
-             match aux f with
-               | exception Is_false -> acc
-               | _, [] -> acc
-               | _, [a] -> a :: acc
-               | Some Or, l -> List.rev_append l acc
-               | Some And, l ->
-                 let proxy = st.fresh() in
-                 st.acc_and <- (proxy, l) :: st.acc_and;
-                 proxy :: acc
-               | None, l -> List.rev_append l acc
-               | _ -> assert false)
-          [] l
-        in Some Or, l
+             match acc, aux f with
+             | R_true, _ | _, R_true -> R_true
+             | R_or acc, R_false -> R_or acc
+             | R_or acc, R_atom a -> R_or (a::acc)
+             | R_or acc, R_or l -> R_or (List.rev_append l acc)
+             | R_or acc, R_and l ->
+               let proxy = st.fresh() in
+               st.acc_and <- (proxy, l) :: st.acc_and;
+               R_or (proxy :: acc)
+             | _ -> assert false)
+          (R_or []) l
       | Comb (Imply, [a;b]) ->
         aux_noncached @@ Comb (Or, [not_ a; b])
       | _ -> assert false
     in
-    try Some (snd @@ aux f)
-    with
-      | Is_false -> Some [] (* empty clause *)
-      | Is_true -> None (* trivial clause *)
+    match aux f with
+    | R_atom a -> Some [a]
+    | R_or l -> Some l
+    | R_false -> Some [] (* empty clause *)
+    | R_true -> None (* trivial clause *)
+    | _ -> assert false
 
   let cnf ?simplify:_ ~fresh (f:t) : atom list list =
     let st = {
