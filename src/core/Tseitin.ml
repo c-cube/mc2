@@ -132,14 +132,17 @@ module Make (F : Tseitin_intf.Arg) = struct
     mutable proxies : atom list;
   }
 
+  exception Is_true
   exception Is_false
 
   (* build a clause by flattening (if sub-formulas have the
      same combinator) and_ proxy-ing sub-formulas that have the
      opposite operator. *)
-  let cnf_under_and (st:state) (f:t) : atom list =
+  let cnf_under_and (st:state) (f:t) : atom list option =
     let rec aux f : _ * atom list = match f.view with
       | Lit a -> None, [a]
+      | True -> raise_notrace Is_true
+      | Comb (Not, [{view=True;_}]) -> raise_notrace Is_false
       | Comb (Not, [{view=Lit a;_}]) -> None, [F.neg a]
       | Comb ((And | Or | Imply), _) ->
         begin try Tbl.find st.tbl_and f
@@ -148,55 +151,51 @@ module Make (F : Tseitin_intf.Arg) = struct
             Tbl.add st.tbl_and f res;
             res
         end
-      | True -> None, []
-      | Comb (Not, [{view=True;_}]) -> raise Is_false
       | _ ->
         Log.debugf 1(fun k->k"(@[cnf.bad-formula@ %a@])" pp f);
         assert false
     and aux_noncached f = match f with
       | Comb (And, l) ->
-        List.fold_left
-          (fun (_, acc) f ->
+        let l = List.fold_left
+          (fun acc f ->
              match aux f with
-               | _, [] -> Some And, acc
-               | _, [a] -> Some And, a :: acc
-               | Some And, l ->
-                 Some And, List.rev_append l acc
-               (* let proxy = mk_proxy () in *)
-               (* acc_and := (proxy, l) :: !acc_and; *)
-               (* proxy :: acc *)
+               | exception Is_true -> acc
+               | _, [] -> acc
+               | _, [a] -> a :: acc
+               | Some And, l -> List.rev_append l acc
                | Some Or, l ->
                  let proxy = st.fresh() in
                  st.acc_or <- (proxy, l) :: st.acc_or;
-                 Some And, proxy :: acc
-               | None, l -> Some And, List.rev_append l acc
+                 proxy :: acc
+               | None, l -> List.rev_append l acc
                | _ -> assert false)
-          (None, []) l
+          [] l
+        in
+        Some And, l
       | Comb (Or, l) ->
-        List.fold_left
-          (fun (_, acc) f ->
+        let l = List.fold_left
+          (fun acc f ->
              match aux f with
-               | exception Is_false -> Some Or, acc
-               | _, [] -> Some Or, acc
-               | _, [a] -> Some Or, a :: acc
-               | Some Or, l ->
-                 Some Or, List.rev_append l acc
-               (* let proxy = mk_proxy () in *)
-               (* acc_or := (proxy, l) :: !acc_or; *)
-               (* proxy :: acc *)
+               | exception Is_false -> acc
+               | _, [] -> acc
+               | _, [a] -> a :: acc
+               | Some Or, l -> List.rev_append l acc
                | Some And, l ->
                  let proxy = st.fresh() in
                  st.acc_and <- (proxy, l) :: st.acc_and;
-                 Some Or, proxy :: acc
-               | None, l -> Some Or, List.rev_append l acc
+                 proxy :: acc
+               | None, l -> List.rev_append l acc
                | _ -> assert false)
-          (None, []) l
+          [] l
+        in Some Or, l
       | Comb (Imply, [a;b]) ->
-        aux_noncached (Comb (Or, [not_ a; b]))
+        aux_noncached @@ Comb (Or, [not_ a; b])
       | _ -> assert false
     in
-    try snd @@ aux f
-    with Is_false -> [] (* empty clause *)
+    try Some (snd @@ aux f)
+    with
+      | Is_false -> Some [] (* empty clause *)
+      | Is_true -> None (* trivial clause *)
 
   let cnf ?simplify:_ ~fresh (f:t) : atom list list =
     let st = {
@@ -209,8 +208,8 @@ module Make (F : Tseitin_intf.Arg) = struct
     let acc = match f.view with
       | True -> []
       | Comb (Not, [{view=True;_}]) -> [[]]
-      | Comb (And, l) -> List.rev_map (cnf_under_and st) l
-      | _ -> [cnf_under_and st f]
+      | Comb (And, l) -> CCList.filter_map (cnf_under_and st) l
+      | _ -> CCOpt.to_list @@ cnf_under_and st f
     in
     (* encode clauses that make proxies in !acc_and equivalent to
        their clause *)
