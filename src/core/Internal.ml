@@ -992,19 +992,25 @@ end = struct
     }
 end
 
+(* NOTE: check proof steps as we go *)
+let[@inline] check_ c =
+  if false then Proof.check_step (Proof.prove c);
+  c
+
 (* add the learnt clause to the clause database, propagate, etc. *)
 let record_learnt_clause (env:t) (cr:Conflict_res.t): unit =
   let open Conflict_res in
   begin match cr.cr_learnt with
     | [||] ->
       (* empty clause *)
-      let c = Clause.make_arr [||] (Premise.raw_steps_or_simplify cr.cr_history) in
+      let c = Clause.make_arr [||] (Premise.raw_steps_or_simplify cr.cr_history) |> check_ in
       report_unsat env c
     | [|fuip|] ->
       assert (cr.cr_backtrack_lvl = 0);
       env.n_learnt <- env.n_learnt + 1;
       let uclause =
         Clause.make_arr cr.cr_learnt (Premise.raw_steps_or_simplify cr.cr_history)
+        |> check_
         |> simplify_clause
       in
       add_atom env fuip;
@@ -1021,7 +1027,7 @@ let record_learnt_clause (env:t) (cr:Conflict_res.t): unit =
     | c_learnt ->
       let fuip = c_learnt.(0) in
       let premise = Premise.raw_steps_or_simplify cr.cr_history in
-      let lclause = Clause.make_arr c_learnt premise |> simplify_clause in
+      let lclause = Clause.make_arr c_learnt premise |> check_ |> simplify_clause in
       Vec.push env.clauses_learnt lclause;
       Array.iter (add_atom env) lclause.c_atoms;
       env.n_learnt <- env.n_learnt + 1;
