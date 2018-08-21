@@ -120,6 +120,7 @@ type t = {
   clause_decay : float;
   (* inverse of the activity factor for clauses. Default 1/0.95 *)
 
+  tmp_atom_vec: atom Vec.t; (* temporary vec used during conflict analysis *)
   tmp_term_vec : term Vec.t;
   (* temporary vector used during conflict analysis.
      Contains terms marked during analysis, to be unmarked at cleanup *)
@@ -349,6 +350,7 @@ let create_real (actions:actions lazy_t) : t = {
   backtrack_levels = Vec.make 10 (-1);
   decision_levels = Vec.make 601 (-1);
   user_levels = Vec.make 10 (-1);
+  tmp_atom_vec = Vec.make 10 dummy_atom;
   tmp_term_vec = Vec.make 10 dummy_term;
 
   term_heap = H.create();
@@ -812,10 +814,7 @@ end = struct
   (* state for conflict analysis *)
   type state = {
     cs_conflict_level: int; (* conflict level *)
-    mutable cs_continue: bool;
-    mutable cs_n_to_analyze: int; (* number of atoms yet to analyze *)
-    mutable cs_ptr_trail: int; (* current offset in the trail *)
-    mutable cs_clause: clause option; (* current clause to analyze *)
+    cs_atoms_to_process: atom Vec.t; (* stack of atoms to process *)
     mutable cs_learnt: atom list; (* resulting clause to be learnt *)
     mutable cs_history: raw_premise_step list; (* proof object *)
   }
@@ -848,6 +847,60 @@ end = struct
       )
     )
 
+  let[@inline] resolve_with st (c:clause): unit = st.cs_history <- c :: st.cs_history
+
+  let[@inline] add_atom_to_result st (a:atom): unit =
+    Log.debugf 15 (fun k->k "(@[analyze_conflict.learn_atom@ %a@])" Atom.debug a);
+    st.cs_learnt <- a :: st.cs_learnt
+
+  let analyze_clause (env:t) (st:state) (clause:clause): unit =
+    (* if we have a clause, do resolution on it by marking all its
+         literals that are not "seen" yet. *)
+    Log.debugf debug
+      (fun k->k "(@[analyze_conflict.resolving@ :clause %a@])" Clause.debug clause);
+    (* increase activity since [c] participates in a conflict *)
+    begin match clause.c_premise with
+      | P_raw_steps _ | P_steps _ -> bump_clause_activity env clause
+      | Hyp | Local | Simplify _ | Lemma _ -> ()
+    end;
+    resolve_with st clause;
+    (* visit the current predecessors *)
+    CCArray.to_seq clause.c_atoms
+    |> Sequence.filter (fun a -> not @@ Term.marked a.a_term)
+    |> Sequence.iter (fun a ->
+      assert (Atom.is_true a || Atom.is_false a && Atom.level a >= 0); (* unsure? *)
+      if Atom.level a <= 0 then (
+        (* Must be a 0-level propagation. [a] is not part
+           of the conflict clause, because it will be useless,
+           but we still keep track of it in the proof. *)
+        assert (Atom.level a=0 && Atom.is_false a);
+        begin match Atom.reason_exn a with
+          | Bcp cl | Bcp_lazy (lazy cl) -> resolve_with st cl
+          | Eval [] -> () (* absurd *)
+          | Eval l ->
+            assert (List.for_all (fun t->Term.level t=0) l);
+            assert false (* cannot happen without non-bool propagations *)
+          | _ -> assert false
+        end
+      );
+      (* if we have not explored this atom yet, do it now.
+         It can either be part of the final clause, or it can lead
+         to resolution with another clause *)
+      Term.mark a.a_term;
+      Vec.push (seen env) a.a_term;
+      (* only atoms above level 0 can participate to the conflict,
+           these proved at level 0 would bring no information *)
+      if Atom.level a > 0 then (
+        bump_term_activity env a.a_term;
+        if Atom.level a >= st.cs_conflict_level then (
+          Log.debugf 15 (fun k->k "(@[analyze_conflict.push_atom@ %a@])" Atom.debug a);
+          Vec.push st.cs_atoms_to_process a
+        ) else (
+          (* [a] will be part of the learnt clause *)
+          add_atom_to_result st a;
+        )
+      )
+    )
 
   (* loop until there is either:
      - the clause is empty (found unsat)
@@ -861,99 +914,19 @@ end = struct
      above the conflict_level.
   *)
   let analyze_loop (env:t) (st:state) : unit =
-    while st.cs_continue do
-      (* if we have a clause, do resolution on it by marking all its
-         literals that are not "seen" yet. *)
-      begin match st.cs_clause with
-        | None ->
-          Log.debug debug "(analyze_conflict.skip_resolution)"
-        | Some clause ->
-          Log.debugf debug
-            (fun k->k "(@[analyze_conflict.resolving@ :clause %a@])" Clause.debug clause);
-          (* increase activity since [c] participates in a conflict *)
-          begin match clause.c_premise with
-            | P_raw_steps _ | P_steps _ -> bump_clause_activity env clause
-            | Hyp | Local | Simplify _ | Lemma _ -> ()
-          end;
-          st.cs_history <- clause :: st.cs_history;
-          (* visit the current predecessors *)
-          for j = 0 to Array.length clause.c_atoms - 1 do
-            let q = clause.c_atoms.(j) in
-            assert (Atom.is_true q || Atom.is_false q && Atom.level q >= 0); (* unsure? *)
-            if Atom.level q <= 0 then (
-              (* Must be a 0-level propagation. [q] is not part
-                 of the conflict clause, because it will be useless,
-                 but we still keep track of it in the proof. *)
-              assert (Atom.level q=0 && Atom.is_false q);
-              begin match Atom.reason_exn q with
-                | Bcp cl | Bcp_lazy (lazy cl) ->
-                  st.cs_history <- cl :: st.cs_history
-                | Eval [] -> () (* absurd *)
-                | Eval l -> assert (List.for_all (fun t->Term.level t=0) l);
-                | _ -> assert false
-              end
-            );
-            (* if we have not explored this atom yet, do it now.
-               It can either be part of the final clause, or it can lead
-               to resolution with another clause *)
-            if not (Term.marked q.a_term) then (
-              Term.mark q.a_term;
-              Vec.push (seen env) q.a_term;
-              (* only atoms above level 0 can participate to the conflict,
-                 these proved at level 0 would bring no information *)
-              if Atom.level q > 0 then (
-                bump_term_activity env q.a_term;
-                if Atom.level q >= st.cs_conflict_level then (
-                  st.cs_n_to_analyze <- 1 + st.cs_n_to_analyze;
-                ) else (
-                  (* [q] will be part of the learnt clause *)
-                  st.cs_learnt <- q :: st.cs_learnt;
-                )
-              )
-            )
-          done
-      end;
-
-      (* look for the next node to expand by going down the trail *)
-      while
-        let t = Vec.get env.trail st.cs_ptr_trail in
-        Log.debugf 30 (fun k -> k "(@[conflict_analyze.at_trail_elt@ %a@])" Term.debug t);
-        begin match t.t_var with
-          | Var_none -> assert false
-          | Var_semantic _ -> true (* skip semantic assignments *)
-          | Var_bool _ ->
-            (* skip a term if:
-               - it is not marked (not part of resolution), OR
-               - below conflict level
-            *)
-            not (Term.marked t) || Term.level t < st.cs_conflict_level
-        end
-      do
-        st.cs_ptr_trail <- st.cs_ptr_trail - 1;
-      done;
-      (* now [t] is the term to analyze. *)
-      let t = Vec.get env.trail st.cs_ptr_trail in
-      let p = Term.Bool.assigned_atom_exn t in
-      st.cs_n_to_analyze <- st.cs_n_to_analyze - 1;
-      st.cs_ptr_trail <- st.cs_ptr_trail - 1;
-      let reason = Term.reason_exn t in
-      Log.debugf 30
-        (fun k->k"(@[<hv>conflict_analyze.check_done:@ %a@ :n_to_analyze %d@ :reason %a@])"
-            Term.debug t st.cs_n_to_analyze Reason.pp (Term.level t,reason));
-      begin match st.cs_n_to_analyze, reason with
-        | 0, _ ->
-          (* [t] is the UIP, or we have a semantic split *)
-          st.cs_continue <- false;
-          st.cs_learnt <- Atom.neg p :: st.cs_learnt
-        | n, Eval _ ->
-          assert (n > 0);
-          st.cs_learnt <- Atom.neg p :: st.cs_learnt;
-          st.cs_clause <- None
-        | n, (Bcp cl | Bcp_lazy (lazy cl))->
-          assert (n > 0);
-          assert (Atom.level p >= st.cs_conflict_level);
-          st.cs_clause <- Some cl
-        | _ -> assert false
+    while not @@ Vec.is_empty st.cs_atoms_to_process do
+      let a = Vec.pop_last st.cs_atoms_to_process in
+      assert (Atom.is_false a);
+      let reason = Term.reason_exn a.a_term in
+      Log.debugf 15
+        (fun k->k"(@[<hv>conflict_analyze.check_atom@ %a@ :reason %a@])"
+            Atom.debug a Reason.pp (Atom.level a,reason));
+      begin match reason with
+        | _ when Atom.level a < st.cs_conflict_level ->
+          add_atom_to_result st a; (* below conflict level, keep *)
+        | (Bcp cl | Bcp_lazy (lazy cl)) ->
+          analyze_clause env st cl
+        | Eval _ | Decision -> add_atom_to_result st a;
       end
     done;
     ()
@@ -962,19 +935,20 @@ end = struct
     assert (decision_level env > 0);
     let conflict_level = Conflict.level c in
     let st = {
-      cs_n_to_analyze=0;
       cs_learnt=[];
-      cs_continue=true;
-      cs_clause=Some c;
-      cs_ptr_trail=(Vec.size env.trail - 1);
+      cs_atoms_to_process=env.tmp_atom_vec;
       cs_history=[];
       cs_conflict_level=conflict_level;
     } in
-    Vec.clear (seen env);
     Log.debugf 15
       (fun k -> k "(@[analyze_conflict (%d/%d)@ :conflict %a@])"
           conflict_level (decision_level env) Clause.debug c);
     assert (conflict_level >= 0);
+    (* push atoms of [c] on the stack of atoms to process *)
+    Vec.clear st.cs_atoms_to_process;
+    Vec.clear (seen env);
+    (* analyze clause *)
+    analyze_clause env st c;
     analyze_loop env st;
     Vec.iter Term.unmark (seen env);
     Vec.clear (seen env);
@@ -992,7 +966,7 @@ end = struct
     }
 end
 
-(* NOTE: check proof steps as we go *)
+(* check proof steps as we go *)
 let[@inline] check_ c =
   if false then Proof.check_step (Proof.prove c);
   c
