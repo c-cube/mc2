@@ -329,6 +329,7 @@ end = struct
 
   (* state for one hyper{resolution,paramodulation} step *)
   type state = {
+    killed: Term.Set.t;
     cur: Atom.Set.t;
   }
 
@@ -343,20 +344,22 @@ end = struct
              (* perform resolution with [c] over [pivot] *)
              Array.fold_left
                (fun st a ->
-                  if Term.equal pivot (Atom.term a) then (
+                  let t = Atom.term a in
+                  if Term.Set.mem t st.killed then st
+                  else if Term.equal pivot t then (
                     if not (Atom.Set.mem (Atom.neg a) st.cur) then (
                       Util.errorf
                         "(@[<hv>proof.check_hyper_res.pivot_not_found@ \
                          :pivot %a@ :c1 %a@ :c2 %a@])"
                         Term.debug pivot pp_a_set st.cur Clause.debug c2
                     );
-                    { cur=Atom.Set.remove (Atom.neg a) st.cur; }
+                    { cur=Atom.Set.remove (Atom.neg a) st.cur; killed=Term.Set.add t st.killed }
                   ) else (
-                    { cur=Atom.Set.add a st.cur }
+                    { st with cur=Atom.Set.add a st.cur }
                   ))
                st c2.c_atoms
          end)
-      {cur=set_of_c init}
+      {cur=set_of_c init; killed=Term.Set.empty}
       steps
 
   let check_node (n:node) : unit =
