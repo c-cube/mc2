@@ -317,6 +317,7 @@ let fold f acc p =
 let[@inline] iter f p = fold (fun () x -> f x) () p
 
 module Check : sig
+  val check_step : t -> unit
   val check : t -> unit
 end = struct
   let[@inline] set_of_c (c:clause): Atom.Set.t =
@@ -358,7 +359,7 @@ end = struct
       {cur=set_of_c init}
       steps
 
-  let check (p:t) : unit =
+  let check_node (n:node) : unit =
     (* compare lists of atoms, ignoring order and duplicates *)
     let check_same_set ~ctx ~expect:c d =
       if not (Atom.Set.equal c d) then (
@@ -370,53 +371,55 @@ end = struct
           pp_a_set (Atom.Set.diff d c)
       );
     in
-    iter
-      (fun n ->
-         let concl = conclusion n in
-         let step = step n in
-         Log.debugf 15 (fun k->k"(@[<hv>proof.check.step@ :concl %a@ :step %a@])"
-             Clause.debug concl debug_step step);
-         begin match step with
-           | Lemma _ -> () (* TODO: check lemmas *)
-           | Hypothesis -> ()
-           | Assumption -> ()
-           | Simplify s ->
-             let dups' = find_duplicates s.init in
-             if not (Atom.Set.equal
-                   (Atom.Set.of_list s.duplicates) (Atom.Set.of_list dups')) then (
+    let concl = conclusion n in
+    let step = step n in
+    Log.debugf 15 (fun k->k"(@[<hv>proof.check.step@ :concl %a@ :step %a@])"
+        Clause.debug concl debug_step step);
+    begin match step with
+      | Lemma _ -> () (* TODO: check lemmas *)
+      | Hypothesis -> ()
+      | Assumption -> ()
+      | Simplify s ->
+        let dups' = find_duplicates s.init in
+        if not (Atom.Set.equal
+              (Atom.Set.of_list s.duplicates) (Atom.Set.of_list dups')) then (
+          Util.errorf
+            "(@[<hv>proof.check.invalid_simplify_step@ :from %a@ :to %a@ :dups1 %a@ :dups2 %a@])"
+            Clause.debug s.init Clause.debug concl Clause.debug_atoms s.duplicates
+            Clause.debug_atoms dups'
+        );
+        begin match CCList.find_pred (fun a -> not (Atom.is_absurd a)) s.absurd with
+          | None -> ()
+          | Some a ->
+            Util.errorf
+              "(@[<hv>proof.check.invalid_simplify_step@ :in %a@ :not-absurd %a@])"
+              Clause.debug s.init Atom.debug a
+        end;
+        (* remove absurd literals, and check equality modulo duplicates *)
+        let c = set_of_c s.init in
+        let c = Atom.Set.diff c (Atom.Set.of_list s.absurd) in
+        check_same_set ~ctx:"in-dedup" c ~expect:(set_of_c concl)
+      | Hyper_res {init;steps} ->
+        let st = perform_hyper_step init steps in
+        check_same_set ~ctx:"in-res" st.cur ~expect:(set_of_c concl);
+        (* check it's not a tautology *)
+        Atom.Set.iter
+          (fun a ->
+             if Atom.Set.mem (Atom.neg a) st.cur then (
                Util.errorf
-                 "(@[<hv>proof.check.invalid_simplify_step@ :from %a@ :to %a@ :dups1 %a@ :dups2 %a@])"
-                 Clause.debug s.init Clause.debug concl Clause.debug_atoms s.duplicates
-                 Clause.debug_atoms dups'
-             );
-             begin match CCList.find_pred (fun a -> not (Atom.is_absurd a)) s.absurd with
-               | None -> ()
-               | Some a ->
-                 Util.errorf
-                   "(@[<hv>proof.check.invalid_simplify_step@ :in %a@ :not-absurd %a@])"
-                   Clause.debug s.init Atom.debug a
-             end;
-             (* remove absurd literals, and check equality modulo duplicates *)
-             let c = set_of_c s.init in
-             let c = Atom.Set.diff c (Atom.Set.of_list s.absurd) in
-             check_same_set ~ctx:"in-dedup" c ~expect:(set_of_c concl)
-           | Hyper_res {init;steps} ->
-             let st = perform_hyper_step init steps in
-             check_same_set ~ctx:"in-res" st.cur ~expect:(set_of_c concl);
-             (* check it's not a tautology *)
-             Atom.Set.iter
-               (fun a ->
-                  if Atom.Set.mem (Atom.neg a) st.cur then (
-                    Util.errorf
-                      "(@[<hv>proof.check_hyper_res.clause_is_tautology@ \
-                       :clause %a@])"
-                      pp_a_set st.cur
+                 "(@[<hv>proof.check_hyper_res.clause_is_tautology@ \
+                  :clause %a@])"
+                 pp_a_set st.cur
 
                   ))
                st.cur;
              ()
-         end)
-      p
+    end
+
+  let check_step (p:t) : unit = check_node @@ expand p
+
+  let check (p:t) : unit =
+    iter check_node p
 end
 
 include Check

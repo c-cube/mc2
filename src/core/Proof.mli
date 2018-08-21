@@ -96,6 +96,9 @@ val debug_step : step CCFormat.printer
 
 (** {3 Misc} *)
 
+val check_step : t -> unit
+(** Check only this proof step *)
+
 val check : t -> unit
 (** Check the contents of a proof. Mainly for internal use *)
 
