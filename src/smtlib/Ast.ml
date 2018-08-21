@@ -434,7 +434,9 @@ let imply_l = mk_bool_op Imply
 
 let and_ a b = and_l [a;b]
 let or_ a b = or_l [a;b]
-let imply a b = imply_l [a;b]
+let imply a b = match b.term with
+  | Op (Imply, l) -> imply_l (a::l) (* flatten *)
+  | _ -> imply_l [a;b]
 
 let not_ t =
   check_bool_ t;

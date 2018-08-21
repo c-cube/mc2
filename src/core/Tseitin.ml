@@ -15,7 +15,7 @@ module type Arg = Tseitin_intf.Arg
 module type S = Tseitin_intf.S
 
 module Make (F : Tseitin_intf.Arg) = struct
-  type combinator = And | Or | Imply | Not
+  type combinator = And | Or | Not
 
   type atom = F.t
   type id = int
@@ -40,8 +40,6 @@ module Make (F : Tseitin_intf.Arg) = struct
       Format.fprintf out "(@[<hv1>not %a@])" pp f
     | Comb (And, l) -> Format.fprintf out "(@[<hv>and %a@])" (Util.pp_list pp) l
     | Comb (Or, l) ->  Format.fprintf out "(@[<hv>or %a@])" (Util.pp_list pp) l
-    | Comb (Imply, [f1; f2]) ->
-      Format.fprintf out "(@[<hv1>=>@ %a@ %a)" pp f1 pp f2
     | _ -> assert false
 
   let mk_ =
@@ -102,17 +100,13 @@ module Make (F : Tseitin_intf.Arg) = struct
     | Lit a -> atom (F.neg a)
     | Comb (And, l) -> or_ @@ List.rev_map not_ l
     | Comb (Or, l) -> and_ @@ List.rev_map not_ l
-    | Comb (Imply, [a;b]) -> and_ [not_ a; b]
     | _ -> make Not [f]
 
-  let imply f1 f2 = make Imply [f1; f2]
+  let imply f1 f2 = or_ [not_ f1; f2]
   let equiv f1 f2 = and_ [imply f1 f2; imply f2 f1]
   let xor f1 f2 = or_ [ and_ [ not_ f1; f2 ]; and_ [ f1; not_ f2 ] ]
 
-  let rec imply_l a b = match a with
-    | [] -> b
-    | [x] -> imply x b
-    | x :: a' -> imply x (imply_l a' b)
+  let imply_l a b = or_ (b :: List.rev_map not_ a)
 
   let[@inline] equal a b = a.id = b.id
   let[@inline] hash a = CCHash.int a.id
@@ -148,10 +142,10 @@ module Make (F : Tseitin_intf.Arg) = struct
       | True -> R_true
       | Comb (Not, [{view=True;_}]) -> R_false
       | Comb (Not, [{view=Lit a;_}]) -> R_atom (F.neg a)
-      | Comb ((And | Or | Imply), _) ->
+      | Comb ((And | Or), _) ->
         begin try Tbl.find st.tbl_and f
           with Not_found ->
-            let res = aux_noncached f.view in
+            let res = aux_noncached f in
             Tbl.add st.tbl_and f res;
             res
         end
@@ -159,7 +153,7 @@ module Make (F : Tseitin_intf.Arg) = struct
         Log.debugf 1(fun k->k"(@[cnf.bad-formula@ %a@])" pp f);
         assert false
     and aux_noncached f : cnf_res =
-      match f with
+      match f.view with
       | Comb (And, l) ->
         List.fold_left
           (fun acc f ->
@@ -188,8 +182,6 @@ module Make (F : Tseitin_intf.Arg) = struct
                R_or (proxy :: acc)
              | _ -> assert false)
           (R_or []) l
-      | Comb (Imply, [a;b]) ->
-        aux_noncached @@ Comb (Or, [not_ a; b])
       | _ -> assert false
     in
     match aux f with

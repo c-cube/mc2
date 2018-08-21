@@ -33,7 +33,7 @@ module type S = sig
   type atom
   (** The type of atomic formulas. *)
 
-  type combinator = And | Or | Imply | Not
+  type combinator = And | Or | Not
 
   type id
 
