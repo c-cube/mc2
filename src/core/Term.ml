@@ -112,6 +112,7 @@ module As_key = struct
   let hash = hash
 end
 module Map = CCMap.Make(As_key)
+module Set = CCSet.Make(As_key)
 module Tbl = CCHashtbl.Make(As_key)
 
 (** {2 Low Level constructors. Use at your own risks.} *)
