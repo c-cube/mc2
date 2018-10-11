@@ -3,43 +3,40 @@
 
 .PHONY: clean build build-dev
 
-J?=3
-TIMEOUT?=30
-TARGETS=src/main.exe
-OPTS= -j $(J)
+J ?= 3
+TIMEOUT ?= 30
+TARGETS ?= @install
+OPTS ?= -j $(J)
 
 build:
-	jbuilder build $(TARGETS) $(OPTS)
+	@dune build $(TARGETS) $(OPTS)
 
 all: build test
 
 build-install:
-	jbuilder build @install -p mc2
-
-build-dev:
-	jbuilder build $(TARGETS) $(OPTS) --dev
+	@dune build @install -p mc2
 
 enable_log:
-	cd src/core; ln -sf log_real.ml log.ml
+	@cd src/core; ln -sf log_real.ml log.ml
 
 disable_log:
-	cd src/core; ln -sf log_dummy.ml log.ml
+	@cd src/core; ln -sf log_dummy.ml log.ml
 
 clean:
-	jbuilder clean
+	@dune clean
 
 install: build-install
-	jbuilder install
+	@dune install
 
 uninstall:
-	jbuilder uninstall
+	@dune uninstall
 
 doc:
-	jbuilder build @doc -p mc2
+	@dune build @doc -p mc2
 
 test:
 	@echo "run API tests…"
-	jbuilder runtest
+	@dune runtest --force --no-buffer
 	#@echo "run benchmarks…"
 	# @/usr/bin/time -f "%e" ./tests/run smt
 	#@/usr/bin/time -f "%e" ./tests/run mcsat
@@ -65,7 +62,7 @@ logitest-full:
 	  --meta `git rev-parse HEAD` --summary snapshots/full-$(FULL_TEST)-$(DATE).txt \
 	  --csv snapshots/full-$(FULL_TEST)-$(DATE).csv
 
-reinstall: | uninstall install
+reinstall: uninstall install
 
 ocp-indent:
 	@which ocp-indent > /dev/null || { \
@@ -80,7 +77,7 @@ reindent: ocp-indent
 watch:
 	while find src/ -print0 | xargs -0 inotifywait -e delete_self -e modify ; do \
 		echo "============ at `date` ==========" ; \
-		make build-dev ; \
+		make build ; \
 	done
 
 .PHONY: clean doc all bench install uninstall remove reinstall enable_log disable_log bin test

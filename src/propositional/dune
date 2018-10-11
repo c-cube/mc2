@@ -1,0 +1,8 @@
+(library
+  (name mc2_propositional)
+  (public_name mc2.propositional)
+  (libraries containers mc2.core)
+  (flags :standard -w +a-4-42-44-48-50-58-32-60@8)
+  (ocamlopt_flags :standard -O3
+                  -unbox-closures -unbox-closures-factor 20)
+  )

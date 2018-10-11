@@ -5,9 +5,8 @@ _build/
 *.status
 .*.swp
 .session
-*.docdir
+*.html
 src/util/log.ml
-doc/index.html
 .merlin
-
+*.install
 snapshots
