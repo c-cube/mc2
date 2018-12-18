@@ -9,7 +9,7 @@ TARGETS ?= @install
 OPTS ?= -j $(J)
 
 build:
-	@dune build $(TARGETS) $(OPTS)
+	@dune build $(TARGETS) $(OPTS) --profile=release
 
 all: build test
 
