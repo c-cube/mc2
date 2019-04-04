@@ -51,7 +51,7 @@ val level_sub : t -> level
 val max_level : level -> level -> level
 (** maximum of the levels, or [-1] if either is [-1] *)
 
-val iter_subterms : t -> t Sequence.t
+val iter_subterms : t -> t Iter.t
 (** Iteration over subterms.
     When incrementing activity, adding new terms, etc.
     we want to be able to iterate over all subterms of a formula.  *)
@@ -117,7 +117,7 @@ module Watch1 : sig
   val dummy : t
   val make : term list -> t
   val make_a : term array -> t (** owns the array *)
-  val iter : t -> term Sequence.t (** current watch(es) *)
+  val iter : t -> term Iter.t (** current watch(es) *)
 
   val init :
     t ->
@@ -151,7 +151,7 @@ module Watch2 : sig
   val dummy : t
   val make : term list -> t
   val make_a : term array -> t (** owns the array *)
-  val iter : t -> term Sequence.t (** current watch(es) *)
+  val iter : t -> term Iter.t (** current watch(es) *)
 
   val init :
     t ->
@@ -254,7 +254,7 @@ end
 module type TERM_ALLOC = sig
   val make : view -> Type.t -> t (** Make a term of the theory *)
   val delete : t -> unit (** Delete a term of the theory *)
-  val iter_terms : term Sequence.t (** All terms *)
+  val iter_terms : term Iter.t (** All terms *)
   val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)
 end
 

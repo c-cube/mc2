@@ -19,7 +19,7 @@ depends: [
   "zarith"
   "menhir"
   "containers"
-  "sequence"
+  "iter"
   "dune" {build}
   "odoc" {with-doc}
 ]

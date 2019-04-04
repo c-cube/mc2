@@ -73,19 +73,19 @@ let build p_id Plugin.S_nil : Plugin.t =
 
     (* build [{ a1.(i)≠a2.(i) | i}], removing trivial ones *)
     let mk_neq_ a1 a2 : atom list =
-      Sequence.(0 -- (Array.length a1-1))
-      |> Sequence.flat_map
+      Iter.(0 -- (Array.length a1-1))
+      |> Iter.flat_map
         (fun i ->
            let t = a1.(i) and u = a2.(i) in
-           if Term.equal t u then Sequence.empty
+           if Term.equal t u then Iter.empty
            else if Type.is_bool (Term.ty t) then (
              (* instead of a1.(i)≠a2.(i), assume w.l.o.g a1.(i)=true=a2.(i),
                 then output  ¬a1.(i), ¬a2.(i) *)
              if Term.Bool.is_true a1.(i)
-             then Sequence.doubleton (Term.Bool.na a1.(i)) (Term.Bool.na a2.(i))
-             else Sequence.doubleton (Term.Bool.pa a1.(i)) (Term.Bool.pa a2.(i))
-           ) else Sequence.return (Term.Bool.mk_neq t u))
-      |> Sequence.to_rev_list
+             then Iter.doubleton (Term.Bool.na a1.(i)) (Term.Bool.na a2.(i))
+             else Iter.doubleton (Term.Bool.pa a1.(i)) (Term.Bool.pa a2.(i))
+           ) else Iter.return (Term.Bool.mk_neq t u))
+      |> Iter.to_rev_list
 
     (* [t] and [u] are two terms with equal arguments but distinct values,
        build [t1=u1 ∧ … ∧ tn=un => t=u] *)

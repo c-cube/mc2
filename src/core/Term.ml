@@ -33,9 +33,9 @@ let[@inline] is_deleted t = field_get field_t_is_deleted t
 let[@inline] is_added t = field_get field_t_is_added t
 let[@inline] var t = t.t_var
 let[@inline] ty t = t.t_ty
-let[@inline] iter_subterms (t:term): term Sequence.t = t.t_tc.tct_subterms t.t_view
+let[@inline] iter_subterms (t:term): term Iter.t = t.t_tc.tct_subterms t.t_view
 let[@inline] is_bool t = Type.is_bool t.t_ty
-let[@inline] subterms t : t list = iter_subterms t |> Sequence.to_list
+let[@inline] subterms t : t list = iter_subterms t |> Iter.to_list
 let[@inline] level t = match t.t_assign with
   | TA_none -> -1
   | TA_assign {level;_} -> level
@@ -406,7 +406,7 @@ end
 module type TERM_ALLOC = sig
   val make : view -> Type.t -> t (** Make a term of the theory *)
   val delete : t -> unit (** Delete a term of the theory *)
-  val iter_terms : term Sequence.t (** All terms *)
+  val iter_terms : term Iter.t (** All terms *)
   val gc_all : unit -> int (** GC all unmarked tems; unmark alive terms *)
 end
 

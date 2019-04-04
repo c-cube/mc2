@@ -88,10 +88,10 @@ end = struct
         (fun c ->
            let pivot =
              match
-               Sequence.of_array c.c_atoms
-               |> Sequence.filter
+               Iter.of_array c.c_atoms
+               |> Iter.filter
                  (fun a -> Atom.marked (Atom.neg a))
-               |> Sequence.to_list
+               |> Iter.to_list
              with
                | [a] -> a
                | [] ->
@@ -321,7 +321,7 @@ module Check : sig
   val check : t -> unit
 end = struct
   let[@inline] set_of_c (c:clause): Atom.Set.t =
-    Sequence.of_array c.c_atoms |> Atom.Set.of_seq
+    Iter.of_array c.c_atoms |> Atom.Set.of_seq
 
   let pp_a_set out (a:Atom.Set.t) : unit =
     Fmt.fprintf out "(@[<v>%a@])"
