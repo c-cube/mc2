@@ -20,6 +20,7 @@ depends: [
   "menhir"
   "containers"
   "iter"
+  "smtlib-utils" { >= "0.1" & < "0.2" }
   "dune" {build}
   "odoc" {with-doc}
 ]

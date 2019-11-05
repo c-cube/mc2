@@ -1,11 +1,10 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Preprocessing AST} *)
 
 open Mc2_core
 
-module Loc = Locations
+module Loc = Smtlib_utils.Loc
 module Fmt = CCFormat
 
 type 'a or_error = ('a, string) CCResult.t
@@ -494,7 +493,7 @@ module Ctx = struct
     names: ID.t StrTbl.t;
     kinds: kind ID.Tbl.t;
     data: (ID.t * Ty.t) list ID.Tbl.t; (* data -> cstors *)
-    mutable loc: Locations.t option; (* current loc *)
+    mutable loc: Loc.t option; (* current loc *)
   }
 
   let create () : t = {
@@ -562,20 +561,20 @@ module Ctx = struct
       Fmt.(seq ~sep:(return "@ ") @@ pair ID.pp pp_kind) (ID.Tbl.to_seq t.kinds)
 end
 
-let error_loc ctx : string = Fmt.sprintf "at %a: " Locations.pp_opt (Ctx.loc ctx)
+let error_loc ctx : string = Fmt.sprintf "at %a: " Loc.pp_opt (Ctx.loc ctx)
 let errorf_ctx ctx msg =
-  errorf ("at %a:@ " ^^ msg) Locations.pp_opt (Ctx.loc ctx)
+  errorf ("at %a:@ " ^^ msg) Loc.pp_opt (Ctx.loc ctx)
 
 let find_id_ ctx (s:string): ID.t =
   try StrTbl.find ctx.Ctx.names s
   with Not_found -> errorf_ctx ctx "name `%s` not in scope" s
 
-module A = Parse_ast
+module A = Smtlib_utils.Ast
 
 let rec conv_ty ctx (t:A.ty) =
   try conv_ty_aux ctx t
   with Ill_typed msg ->
-    Ty.ill_typed "at %a:@ %s" Locations.pp_opt (Ctx.loc ctx) msg
+    Ty.ill_typed "at %a:@ %s" Loc.pp_opt (Ctx.loc ctx) msg
 
 and conv_ty_aux ctx t = match t with
   | A.Ty_bool -> Ty.bool, Ctx.K_ty Ctx.K_bool
@@ -602,7 +601,7 @@ let is_num s =
 let rec conv_term ctx (t:A.term) : term =
   try conv_term_aux ctx t
   with Ill_typed msg ->
-    Ty.ill_typed "at %a:@ %s" Locations.pp_opt (Ctx.loc ctx) msg
+    Ty.ill_typed "at %a:@ %s" Loc.pp_opt (Ctx.loc ctx) msg
 
 and conv_term_aux ctx t : term = match t with
   | A.True -> true_
@@ -680,10 +679,8 @@ and conv_term_aux ctx t : term = match t with
     let a = conv_term ctx a in
     let b = conv_term ctx b in
     imply a b
-  | A.Xor (a,b) ->
-    let a = conv_term ctx a in
-    let b = conv_term ctx b in
-    or_ (and_ a (not_ b)) (and_ (not_ a) b)
+  | A.Is_a _ ->
+    assert false (* TODO *)
   | A.Match (_lhs, _l) ->
     assert false
   (* FIXME
@@ -803,6 +800,7 @@ and conv_term_aux ctx t : term = match t with
       Ty.ill_typed "term `%a`@ should have type `%a`" pp_term t Ty.pp ty_expect
     );
     t
+  | A.Attr (t,_) -> conv_term ctx t
 
 let find_file_ name ~dir : string option =
   Log.debugf 2 (fun k->k "search A.%sA. in A.%sA." name dir);
@@ -842,8 +840,8 @@ let rec conv_statement ctx (s:A.statement): statement list =
 
 and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view stmt with
   | A.Stmt_set_logic s -> [SetLogic s]
+  | A.Stmt_set_info (a,b) -> [SetInfo [a;b]]
   | A.Stmt_set_option l -> [SetOption l]
-  | A.Stmt_set_info l -> [SetInfo l]
   | A.Stmt_exit -> [Exit]
   | A.Stmt_decl_sort (s,n) ->
     let id = Ctx.add_id ctx s (Ctx.K_ty Ctx.K_uninterpreted) in
@@ -944,21 +942,12 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     let t = conv_term ctx t in
     check_bool_ t;
     [Assert t]
-  | A.Stmt_assert_not ([], t) ->
-    let vars, t = unfold_binder Forall (conv_term ctx t) in
-    let g = not_ t in (* negate *)
-    [Goal (vars, g)]
-  | A.Stmt_assert_not (_::_, _) ->
-    errorf_ctx ctx "cannot convert polymorphic goal@ `@[%a@]`"
-      A.pp_stmt stmt
-  | A.Stmt_lemma _ ->
-    errorf_ctx ctx "smbc does not know how to handle `lemma` statements"
   | A.Stmt_check_sat -> [CheckSat]
 
 let parse_chan_exn ?(filename="<no name>") ic =
   let lexbuf = Lexing.from_channel ic in
   Loc.set_file lexbuf filename;
-  Parser.parse_list Lexer.token lexbuf
+  Smtlib_utils.Parser.parse_list Smtlib_utils.Lexer.token lexbuf
 
 let parse_chan ?filename ic =
   try Result.Ok (parse_chan_exn ?filename ic)
