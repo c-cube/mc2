@@ -75,9 +75,6 @@ reindent: ocp-indent
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 ocp-indent -i
 
 watch:
-	while find src/ -print0 | xargs -0 inotifywait -e delete_self -e modify ; do \
-		echo "============ at `date` ==========" ; \
-		make build ; \
-	done
+	@dune build $(TARGETS) $(OPTS) -w
 
 .PHONY: clean doc all bench install uninstall remove reinstall enable_log disable_log bin test
