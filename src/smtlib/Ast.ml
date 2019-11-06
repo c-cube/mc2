@@ -4,7 +4,7 @@
 
 open Mc2_core
 
-module Loc = Smtlib_utils.Loc
+module Loc = Smtlib_utils.V_2_6.Loc
 module Fmt = CCFormat
 
 type 'a or_error = ('a, string) CCResult.t
@@ -569,7 +569,7 @@ let find_id_ ctx (s:string): ID.t =
   try StrTbl.find ctx.Ctx.names s
   with Not_found -> errorf_ctx ctx "name `%s` not in scope" s
 
-module A = Smtlib_utils.Ast
+module A = Smtlib_utils.V_2_6.Ast
 
 let rec conv_ty ctx (t:A.ty) =
   try conv_ty_aux ctx t
@@ -850,7 +850,7 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     let f, ty = conv_fun_decl ctx fr in
     let id = Ctx.add_id ctx f (Ctx.K_fun ty) in
     [Decl (id, ty)]
-  | A.Stmt_data ([],_l) ->
+  | A.Stmt_data _ ->
     assert false
   (* FIXME
      (* first, read and declare each datatype (it can occur in the other
@@ -897,8 +897,6 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
      in
      [Data l]
   *)
-  | A.Stmt_data _ ->
-    errorf_ctx ctx "not implemented: parametric datatypes" A.pp_stmt stmt
   | A.Stmt_funs_rec _defs ->
     errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
   (* FIXME
@@ -943,11 +941,26 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     check_bool_ t;
     [Assert t]
   | A.Stmt_check_sat -> [CheckSat]
+  | A.Stmt_check_sat_assuming _
+  | A.Stmt_get_assertions 
+  | A.Stmt_get_option _
+  | A.Stmt_get_info _
+  | A.Stmt_get_model
+  | A.Stmt_get_proof
+  | A.Stmt_get_unsat_core
+  | A.Stmt_get_unsat_assumptions
+  | A.Stmt_get_assignment
+  | A.Stmt_reset
+  | A.Stmt_reset_assertions
+  | A.Stmt_push _
+  | A.Stmt_pop _
+  | A.Stmt_get_value _
+    -> errorf_ctx ctx "not implemented"
 
 let parse_chan_exn ?(filename="<no name>") ic =
   let lexbuf = Lexing.from_channel ic in
   Loc.set_file lexbuf filename;
-  Smtlib_utils.Parser.parse_list Smtlib_utils.Lexer.token lexbuf
+  Smtlib_utils.V_2_6.(Parser.parse_list Lexer.token) lexbuf
 
 let parse_chan ?filename ic =
   try Result.Ok (parse_chan_exn ?filename ic)
