@@ -24,10 +24,6 @@ depends: [
   "dune" {build}
   "odoc" {with-doc}
 ]
-pin-depends: [
-  ["smtlib-utils.0.1" "git+https://github.com/c-cube/smtlib-utils.git"]
-]
-
 build: [
   ["dune" "build" "@install" "-p" name "-j" jobs]
   ["dune" "runtest" "-p" name] {with-test}
