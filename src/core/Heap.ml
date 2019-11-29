@@ -142,14 +142,17 @@ module Make(Elt : RANKED) = struct
     if Vec.size heap=0 then raise Not_found;
     let x = Vec.get heap 0 in
     Elt.set_idx x _absent_index;
-    let new_hd = Vec.last heap in (* heap.last() *)
-    Vec.set heap 0 new_hd;
-    Elt.set_idx new_hd 0;
-    Vec.pop heap; (* remove last *)
-    (* enforce heap property again *)
-    if Vec.size heap > 1 then (
+    if Vec.size heap = 1 then (
+      Vec.pop heap; (* remove [x] *)
+    ) else (
+      let new_hd = Vec.last heap in (* heap.last() *)
+      Vec.set heap 0 new_hd;
+      Elt.set_idx new_hd 0;
+      Vec.pop heap; (* remove last, or [x] if it *)
+      (* enforce heap property again *)
       percolate_down s new_hd;
     );
     x
 
+  let to_iter self k = Vec.iter k self.heap
 end

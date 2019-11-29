@@ -48,4 +48,6 @@ module type S = sig
 
   val filter : t -> (elt -> bool) -> unit
   (** Filter out values that don't satisfy the predicate *)
+
+  val to_iter : t -> elt Iter.t
 end
