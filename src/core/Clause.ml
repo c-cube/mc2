@@ -5,8 +5,6 @@ module Fields = Solver_types.Clause_fields
 
 type t = clause
 
-let dummy : t = dummy_clause
-
 (* Name generation *)
 let fresh_name =
   let n = ref 0 in

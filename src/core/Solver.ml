@@ -44,10 +44,10 @@ let pp_all t lvl status =
         "@[<v>%s - Full resume:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,\
          @[<hov 2>Hyps:@\n%a@]@,@[<hov 2>Lemmas:@\n%a@]@,@]@."
         status
-        (Vec.print ~sep:"" Term.pp) (S.trail t)
-        (Vec.print ~sep:"" Clause.debug) (S.temp t)
-        (Vec.print ~sep:"" Clause.debug) (S.hyps t)
-        (Vec.print ~sep:"" Clause.debug) (S.history t))
+        (Vec.pp ~sep:"" Term.pp) (S.trail t)
+        (Vec.pp ~sep:"" Clause.debug) (S.temp t)
+        (Vec.pp ~sep:"" Clause.debug) (S.hyps t)
+        (Vec.pp ~sep:"" Clause.debug) (S.history t))
 
 (* Wrappers around internal functions*)
 let assume = S.assume

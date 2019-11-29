@@ -130,7 +130,7 @@ module Unsafe = struct
     let t_fields = Fields.empty in
     let t_weight = 0. in
     let t_idx = ~-1 in
-    let t_watches = lazy (Vec.make_empty dummy_term) in
+    let t_watches = Vec.create ()in
     { t_id; t_view; t_ty; t_fields; t_weight; t_idx;
       t_var=Var_none; t_assign=TA_none; t_watches; t_tc; }
 end
@@ -141,11 +141,11 @@ let mk_var_ (t:t): var =
     let t_id_double = t.t_id lsl 1 in
     let pa = {
       a_term=t;
-      a_watched = Vec.make 10 dummy_clause;
+      a_watched = Vec.create();
       a_id = t_id_double; (* aid = vid*2 *)
     } and na = {
         a_term=t;
-        a_watched = Vec.make 10 dummy_clause;
+        a_watched = Vec.create();
         a_id = t_id_double + 1; (* aid = vid*2+1 *)
       } in
     Var_bool {pa; na}
@@ -168,8 +168,7 @@ let[@inline] setup_var t =
   )
 
 let[@inline] add_watch (t:t) (u:t) : unit =
-  let lazy vec = t.t_watches in
-  Vec.push vec u
+  Vec.push t.t_watches u
 
 let marked t = Term_fields.get field_t_seen t.t_fields
 let mark t = t.t_fields <- Term_fields.set field_t_seen true t.t_fields
@@ -213,7 +212,8 @@ let[@inline] eval (t:term) : eval_res = t.t_tc.tct_eval t
 
 let debug_no_val out t : unit =
   let state = if is_deleted t then "][D" else "" in
-  Format.fprintf out "%a[%d%s]" pp t (id t) state
+  let inheap = if t.t_idx >= 0 then "¿" else "" in
+  Format.fprintf out "%a[%d%s%s]" pp t (id t) state inheap
 
 (* verbose debug printer *)
 let debug out t : unit =
@@ -459,7 +459,7 @@ module[@inline] Term_allocator(Ops : TERM_ALLOC_OPS) : TERM_ALLOC = struct
 
   let gc_all () : int =
     Log.debugf 5 (fun k->k "(@[term.alloc.gc_all@ :p_id %d@])" Ops.p_id);
-    let to_gc = Vec.make_empty dummy_term in (* terms to be collected *)
+    let to_gc = Vec.create() in (* terms to be collected *)
     let n_alive = ref 0 in
     (* collect *)
     H.values tbl

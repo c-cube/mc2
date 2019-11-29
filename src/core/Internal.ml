@@ -34,7 +34,6 @@ module H = Heap.Make(struct
     let[@inline] idx t = t.t_idx
     let[@inline] set_idx t i = t.t_idx <- i
     let[@inline] cmp i j = Term.weight j < Term.weight i (* comparison by weight *)
-    let dummy = dummy_term
   end)
 
 (* full state of the solver *)
@@ -334,9 +333,9 @@ let create_real (actions:actions lazy_t) : t = {
   services = Service.Registry.create();
   actions;
 
-  clauses_hyps = Vec.make 0 dummy_clause;
-  clauses_learnt = Vec.make 0 dummy_clause;
-  clauses_temp = Vec.make 0 dummy_clause;
+  clauses_hyps = Vec.create();
+  clauses_learnt = Vec.create();
+  clauses_temp = Vec.create();
 
   clauses_root = Stack.create ();
   clauses_to_add = Stack.create ();
@@ -344,12 +343,12 @@ let create_real (actions:actions lazy_t) : t = {
   th_head = 0;
   bcp_head = 0;
 
-  trail = Vec.make 601 dummy_term;
+  trail = Vec.create();
   backtrack_stack = Vec.make 601 (fun () -> assert false);
   backtrack_levels = Vec.make 10 (-1);
   decision_levels = Vec.make 601 (-1);
   user_levels = Vec.make 10 (-1);
-  tmp_term_vec = Vec.make 10 dummy_term;
+  tmp_term_vec = Vec.create();
 
   term_heap = H.create();
 
@@ -548,11 +547,13 @@ let cancel_until (env:t) (lvl:int) : unit =
         Vec.set env.trail !head t;
         head := !head + 1;
       ) else (
+        Log.debugf 50 (fun k->k "pop term %a (in heap %B, deleted %B)"
+                          Term.debug t (H.in_heap t) (Term.is_deleted t));
         t.t_assign <- TA_none;
         if not (Term.is_deleted t) then (
           schedule_decision_term env t;
         )
-      )
+      );
     done;
     (* elements we kept are already BCP, update pointers accordingly *)
     env.bcp_head <- !head;
@@ -562,7 +563,7 @@ let cancel_until (env:t) (lvl:int) : unit =
     Vec.shrink env.backtrack_levels lvl;
     (* call undo-actions registered by plugins *)
     while Vec.size env.backtrack_stack > backtrack_top do
-      let f = Vec.pop_last env.backtrack_stack in
+      let f = Vec.pop env.backtrack_stack in
       f();
     done;
   );
@@ -674,6 +675,7 @@ let enqueue_bool_theory_propagate (env:t) (a:atom)
 
 (* MCsat semantic assignment *)
 let enqueue_assign (env:t) (t:term) (value:value) (reason:reason) ~(level:int) : unit =
+  (* assert (not (H.in_heap t)); *)
   if Term.has_some_value t then (
     Log.debugf error
       (fun k -> k "Trying to assign an already assigned literal: %a" Term.debug t);
@@ -1156,8 +1158,6 @@ let add_clause (env:t) (c0:clause) : unit =
 let flush_clauses (env:t) =
   if not (Stack.is_empty env.clauses_to_add) then (
     let nbc = env.nb_init_clauses + Stack.length env.clauses_to_add in
-    Vec.grow_to_at_least env.clauses_hyps nbc;
-    Vec.grow_to_at_least env.clauses_learnt nbc;
     env.nb_init_clauses <- nbc;
     while not (Stack.is_empty env.clauses_to_add) do
       let c = Stack.pop env.clauses_to_add in
@@ -1268,9 +1268,8 @@ let propagate_term_real (env:t) (t:term) watched: unit =
 (* propagate term by notifying all watchers. This is the fast path
    in case there are no watchers. *)
 let[@inline] propagate_term (env:t) (t:term) : unit =
-  let lazy watched = t.t_watches in
-  if Vec.size watched > 0 then (
-    propagate_term_real env t watched
+  if Vec.size t.t_watches > 0 then (
+    propagate_term_real env t t.t_watches
   )
 
 (* some terms were decided/propagated. Now we
@@ -1522,10 +1521,10 @@ let gc_clauses (env:t) ~down_to : unit =
   Vec.sort env.clauses_learnt
     (fun c1 c2 -> CCFloat.compare (Clause.activity c2)(Clause.activity c1));
   (* collect learnt clauses *)
-  let kept_clauses = Vec.make_empty dummy_clause in (* low activity, but needed *)
+  let kept_clauses = Vec.create() in (* low activity, but needed *)
   while Vec.size env.clauses_learnt > 0 &&
         Vec.size env.clauses_learnt + Vec.size kept_clauses > down_to do
-    let c = Vec.pop_last env.clauses_learnt in
+    let c = Vec.pop env.clauses_learnt in
     if Clause.gc_marked c then (
       Vec.push kept_clauses c; (* keep this one, it's alive *)
     ) else (
@@ -1599,6 +1598,8 @@ let search (env:t) ~gc ~time ~memory ~progress n_of_conflicts : unit =
   let conflictC = ref 0 in
   env.starts <- env.starts + 1;
   while true do
+    Log.debugf 50
+      (fun k->k "(@[cur-heap@ %a@])" (Util.pp_seq Term.pp) @@ H.to_iter env.term_heap);
     begin match propagate env with
       | Some confl -> (* Conflict *)
         incr conflictC;
@@ -1767,13 +1768,13 @@ let push (env:t) : unit =
   cancel_until env (base_level env);
   Log.debugf 30
     (fun k->k"(@[solver.push.status@ :prop_head %d/%d@ :trail (@[<hv>%a@])@])"
-        env.bcp_head env.th_head (Vec.print ~sep:"" Term.debug) env.trail);
+        env.bcp_head env.th_head (Vec.pp ~sep:"" Term.debug) env.trail);
   begin match propagate env with
     | Some c -> report_unsat env c
     | None ->
       Log.debugf 30
         (fun k -> k "(@[<v>solver.current_trail@ (@[<hv>%a@])@])"
-            (Vec.print ~sep:"" Term.debug) env.trail);
+            (Vec.pp ~sep:"" Term.debug) env.trail);
       new_decision_level env;
       Log.debugf info
         (fun k->k"(@[<hv>solver.create_new_user_level@ :cur-level %d@])" (decision_level env));
@@ -1789,8 +1790,7 @@ let pop (env:t) : unit =
     Log.debug info "(solver.pop)";
     assert (base_level env > 0);
     env.unsat_conflict <- None;
-    let n = Vec.last env.user_levels in
-    Vec.pop env.user_levels; (* before the [cancel_until]! *)
+    let n = Vec.pop env.user_levels in (* before the [cancel_until]! *)
     (* FIXME: shouldn't this be done only when the last level is [pop()]'d? *)
     (* Add the root clauses to the clauses to add *)
     Stack.iter (fun c -> Stack.push c env.clauses_to_add) env.clauses_root;
