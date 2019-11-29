@@ -133,10 +133,7 @@ module Tbl = struct
 end
 
 module Map = struct
-  module M = Map.Make(struct
-      type t = int
-      let compare (i:int) j = Pervasives.compare i j
-    end)
+  module M = Map.Make(CCInt)
 
   type t = exn_pair M.t
 
