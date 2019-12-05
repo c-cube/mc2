@@ -148,6 +148,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         aux subst u
       | A.Op (A.And, l) -> F.and_ (List.map (aux_form subst) l) |> ret_f
       | A.Op (A.Or, l) -> F.or_ (List.map (aux_form subst) l) |> ret_f
+      | A.Op (A.Xor, [a;b]) -> F.xor (aux_form subst a)(aux_form subst b) |> ret_f
+      | A.Op (A.Xor, _) -> assert false
       | A.Op (A.Imply, l) ->
         let rec curry_imply_ = function
           | [] -> assert false

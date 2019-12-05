@@ -121,6 +121,7 @@ type op =
   | And
   | Or
   | Imply
+  | Xor
   | Eq
   | Distinct
 
@@ -203,6 +204,7 @@ let pp_binder out = function
 let pp_op out = function
   | And -> Fmt.string out "and"
   | Or -> Fmt.string out "or"
+  | Xor -> Fmt.string out "xor"
   | Imply -> Fmt.string out "=>"
   | Eq -> Fmt.string out "="
   | Distinct -> Fmt.string out "distinct"
@@ -436,6 +438,7 @@ let or_ a b = or_l [a;b]
 let imply a b = match b.term with
   | Op (Imply, l) -> imply_l (a::l) (* flatten *)
   | _ -> imply_l [a;b]
+let xor a b = mk_bool_op Xor [a;b]
 
 let not_ t =
   check_bool_ t;
@@ -754,6 +757,7 @@ and conv_term_aux ctx t : term = match t with
      in
      match_ lhs cases
   *)
+  | A.App ("xor", [a;b]) -> xor (conv_term ctx a) (conv_term ctx b)
   | A.App (s, args) ->
     let id = find_id_ ctx s in
     let args = List.map (conv_term ctx) args in

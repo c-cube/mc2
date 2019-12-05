@@ -71,6 +71,7 @@ type op =
   | And
   | Or
   | Imply
+  | Xor
   | Eq
   | Distinct
 
