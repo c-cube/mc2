@@ -41,26 +41,24 @@ test:
 	# @/usr/bin/time -f "%e" ./tests/run smt
 	#@/usr/bin/time -f "%e" ./tests/run mcsat
 
-TESTOPTS ?= -j $(J)
+TESTOPTS ?= -j $(J) -c tests/logitest.sexp --progress
 TESTTOOL=logitest
 DATE=$(shell date +%FT%H:%M)
-FULL_TEST?=QF_UF
 
-logitest-quick:
+snapshots:
 	@mkdir -p snapshots
-	$(TESTTOOL) run -c tests/conf.toml tests/ $(TESTOPTS) \
-	  --timeout $(TIMEOUT) \
-	  --meta `git rev-parse HEAD` --summary snapshots/quick-$(DATE).txt \
-	  --csv snapshots/quick-$(DATE).csv
 
-logitest-full:
-	@mkdir -p snapshots
-	@DATE=`date +%F.%H:%M`
-	@echo "full test on FULL_TEST=$(FULL_TEST)"
-	$(TESTTOOL) run -c tests/conf.toml $(FULL_TEST) $(TESTOPTS) \
+logitest-quick: snapshots
+	$(TESTTOOL) run $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
-	  --meta `git rev-parse HEAD` --summary snapshots/full-$(FULL_TEST)-$(DATE).txt \
-	  --csv snapshots/full-$(FULL_TEST)-$(DATE).csv
+	  --summary snapshots/quick-$(DATE).txt \
+	  --csv snapshots/quick-$(DATE).csv --task mc2-local-test tests/
+
+logitest-full: snapshots
+	$(TESTTOOL) run $(TESTOPTS) \
+	  --timeout $(TIMEOUT) \
+	  --summary snapshots/full-$(DATE).txt \
+	  --csv snapshots/full-$(DATE).csv --task mc2-local-test $$home/workspace/smtlib/
 
 reinstall: uninstall install
 
