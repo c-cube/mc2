@@ -41,20 +41,20 @@ test:
 	# @/usr/bin/time -f "%e" ./tests/run smt
 	#@/usr/bin/time -f "%e" ./tests/run mcsat
 
-TESTOPTS ?= -j $(J) -c tests/logitest.sexp --progress
-TESTTOOL=logitest
+TESTTOOL=benchpress
+TESTOPTS ?= -j $(J) -c tests/$(TESTTOOL).sexp --progress
 DATE=$(shell date +%FT%H:%M)
 
 snapshots:
 	@mkdir -p snapshots
 
-logitest-quick: snapshots
+$(TESTTOOL)-quick: snapshots
 	$(TESTTOOL) run $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
 	  --summary snapshots/quick-$(DATE).txt \
 	  --csv snapshots/quick-$(DATE).csv --task mc2-local-test tests/
 
-logitest-full: snapshots
+$(TESTTOOL)-full: snapshots
 	$(TESTTOOL) run $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
 	  --summary snapshots/full-$(DATE).txt \
