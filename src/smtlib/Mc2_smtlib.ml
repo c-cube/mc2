@@ -54,6 +54,11 @@ let[@inline] ret_f f = F f
 let[@inline] ret_rat t = Rat t
 let[@inline] ret_any t = if Term.is_bool t then F (F.atom (Term.Bool.pa t)) else T t
 
+let pp_tof out = function
+  | T t -> Fmt.fprintf out "(@[T %a@])" Term.pp t
+  | F f -> Fmt.fprintf out "(@[F %a@])" F.pp f
+  | Rat lre -> Fmt.fprintf out "(@[RLE %a@])" RLE.pp_no_paren lre
+
 let conv_ty (reg:Reg.t) (ty:A.Ty.t) : Type.t =
   let mk_ty = Reg.find_exn reg Mc2_unin_sort.k_make in
   (* convert a type *)
@@ -103,7 +108,9 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
     | T t, Rat u | Rat u, T t -> mk_lra_eq (RLE.singleton1 t) u |> F.atom
     | Rat t, Rat u -> mk_lra_eq t u |> F.atom
     | F t, F u -> F.equiv t u
-    | _ -> assert false
+    | _ ->
+      Log.debugf 1 (fun k->k "eq %a %a" pp_tof t pp_tof u);
+      assert false
   in
   (* convert term *)
   let rec aux (subst:term_or_form Subst.t) (t:A.term) : term_or_form =
