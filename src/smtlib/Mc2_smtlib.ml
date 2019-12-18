@@ -108,6 +108,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
     | T t, Rat u | Rat u, T t -> mk_lra_eq (RLE.singleton1 t) u |> F.atom
     | Rat t, Rat u -> mk_lra_eq t u |> F.atom
     | F t, F u -> F.equiv t u
+    | F t, T u -> F.equiv t (F.atom @@ Term.Bool.pa u)
+    | T t, F u -> F.equiv (F.atom @@ Term.Bool.pa t) u
     | _ ->
       Log.debugf 1 (fun k->k "eq %a %a" pp_tof t pp_tof u);
       assert false
