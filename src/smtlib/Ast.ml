@@ -855,7 +855,7 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     let id = Ctx.add_id ctx f (Ctx.K_fun ty) in
     [Decl (id, ty)]
   | A.Stmt_data _ ->
-    assert false
+    Util.errorf "unsupported: datatypes in@ %a" A.pp_stmt stmt
   (* FIXME
      (* first, read and declare each datatype (it can occur in the other
      datatypes' construtors) *)
