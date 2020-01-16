@@ -28,3 +28,16 @@
       (provers mc2-dev mc2-nogc-dev z3)
       (timeout 30)
       (dirs))))
+
+(task
+  (name mc2-ci)
+  (synopsis "pull last commit, build it, and run basic tests")
+  (action
+    (progn
+      (run_cmd "git pull origin master --ff-only")
+      (git_checkout (dir $cur_dir) (ref "master"))
+      (run_cmd "dune build @install -p mc2")
+      (run_provers
+        (provers mc2-dev)
+        (timeout 10)
+        (dirs $cur_dir/tests/sat $cur_dir/tests/unsat)))))
