@@ -41,7 +41,7 @@ let[@inline] services t = S.services t
 let pp_all t lvl status =
   Log.debugf lvl
     (fun k -> k
-        "@[<v>%s - Full resume:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,\
+        "@[<v>%s - Full summary:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,\
          @[<hov 2>Hyps:@\n%a@]@,@[<hov 2>Lemmas:@\n%a@]@,@]@."
         status
         (Vec.pp ~sep:"" Term.pp) (S.trail t)
