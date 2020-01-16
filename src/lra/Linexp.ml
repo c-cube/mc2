@@ -72,7 +72,7 @@ let[@inline] div e n : t =
   if Q.sign n=0 then raise Division_by_zero
   else {
     const=Q.div e.const n;
-    terms=TM.map (Q.div n) e.terms;
+    terms=TM.map (fun x -> Q.div x n) e.terms;
   }
 
 let add_term (n:num) (t:term) (e:t) : t =
