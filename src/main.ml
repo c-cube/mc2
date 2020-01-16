@@ -81,15 +81,15 @@ let argspec = Arg.align [
     "--no-gc", Arg.Clear gc, " disable garbage collection";
     "--restarts", Arg.Set restarts, " enable restarts";
     "--no-restarts", Arg.Clear restarts, " disable restarts";
-    "--dot", Arg.Set_string p_dot_proof, " if provided, print the dot proof in the given file";
+    "--dot", Arg.Set_string p_dot_proof, "<file> if provided, print the dot proof in the given file";
     "--stat", Arg.Set p_stat, " print statistics";
     "--model", Arg.Set p_model, " print model";
     "--no-model", Arg.Clear p_model, " do not print model";
     "--gc-stat", Arg.Set p_gc_stat, " outputs statistics about the GC";
     "-p", Arg.Set p_progress, " print progress bar";
     "--no-p", Arg.Clear p_progress, " no progress bar";
-    "--size", Arg.String (int_arg size_limit), " <s>[kMGT] sets the size limit for the sat solver";
-    "--time", Arg.String (int_arg time_limit), " <t>[smhd] sets the time limit for the sat solver";
+    "--size", Arg.String (int_arg size_limit), "<s>[kMGT] sets the size limit for the sat solver";
+    "--time", Arg.String (int_arg time_limit), "<t>[smhd] sets the time limit for the sat solver";
     "-t", Arg.String (int_arg time_limit), " same as --time";
     "-d", Arg.Int Log.set_debug, "<lvl> sets the debug verbose level";
   ]
