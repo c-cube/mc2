@@ -302,17 +302,32 @@ let build
             ->
             assert (not low.strict);
             assert (not up.strict);
-            let reason_neq =
+            let reason_neq, expr_neq =
               CCList.find_map
-                (fun (n,_,r) -> if Q.equal low.num n then Some r else None)
+                (fun (n,e,r) -> if Q.equal low.num n then Some (r,e) else None)
                 l |> CCOpt.get_exn
+            in
+            Log.debugf 30
+              (fun k->k
+                  "(@[<hv>lra.raise_conflict.tight-bound@ \
+                   @[:term %a@]@ @[low: %a@]@ @[up: %a@]@ @[eq: %a@]@ \
+                   expr-low %a@ expr-up %a@ expr-neq: %a@])"
+                  Term.pp t pp_bound s.low pp_bound s.up pp_eq s.eq
+                  LE.pp low.expr LE.pp up.expr LE.pp expr_neq);
+            (* conflict is:
+               [low <= t & t <= up & t != neq ===> (low < neq \/ neq < up)] *)
+            let case1 =
+              mk_pred Lt0 (LE.diff low.expr expr_neq)
+            and case2 =
+              mk_pred Lt0 (LE.diff expr_neq up.expr)
             in
             (* conflict should be:
                [low <= t & t <= up & low=up => t = neq]. *)
-            raise_conflict acts
-              ~sign:false ~op:Eq0 ~pivot:t
-              ~expr_up_bound:up.expr ~expr_low_bound:low.expr
-              ~reasons:[up.reason; low.reason; reason_neq] ()
+            let c =
+              Term.Bool.pa case1 :: Term.Bool.pa case2 ::
+              List.rev_map Atom.neg [low.reason; up.reason; reason_neq]
+            in
+            Actions.raise_conflict acts c lemma_lra
           | _ -> ()
         end
       | _ -> assert false
