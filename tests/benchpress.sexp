@@ -2,7 +2,8 @@
 
 (prover
   (name mc2-dev)
-  (cmd "${cur_dir}/../mc2 --check --time $timeout $file")
+  (binary "${cur_dir}/../mc2.exe")
+  (cmd "${cur_dir}/../mc2.exe --check --time $timeout $file")
   (unsat "Unsat")
   (sat "Sat")
   (unknown "Timeout|Unknown")
@@ -10,7 +11,8 @@
 
 (prover
   (name mc2-nogc-dev)
-  (cmd "${cur_dir}/../mc2 --check --no-gc --time $timeout $file")
+  (binary "${cur_dir}/../mc2.exe")
+  (cmd "${cur_dir}/../mc2.exe --check --no-gc --time $timeout $file")
   (unsat "Unsat")
   (sat "Sat")
   (unknown "Timeout|Unknown")

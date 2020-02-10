@@ -18,12 +18,12 @@ depends: [
   "containers"
   "iter"
   "smtlib-utils" { >= "0.1" & < "0.2" }
-  "dune" {build}
+  "dune" { >= "1.11" }
   "odoc" {with-doc}
 ]
 build: [
   ["dune" "build" "@install" "-p" name "-j" jobs]
-  ["dune" "runtest" "-p" name] {with-test}
-  ["dune" "build" "@doc" "-p" name] {with-doc}
+  ["dune" "runtest" "-p" name "-j" jobs] {with-test}
+  ["dune" "build" "@doc" "-p" name "-j" jobs] {with-doc}
 ]
 dev-repo: "git+https://github.com/c-cube/mc2.git"

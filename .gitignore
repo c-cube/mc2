@@ -10,3 +10,4 @@ src/util/log.ml
 .merlin
 *.install
 snapshots
+*.exe
