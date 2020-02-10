@@ -52,7 +52,7 @@ $(TESTTOOL)-quick: snapshots
 	$(TESTTOOL) run $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
 	  --summary snapshots/quick-$(DATE).txt \
-	  --csv snapshots/quick-$(DATE).csv --task mc2-local-test tests/
+	  --csv snapshots/quick-$(DATE).csv --task mc2-local-test tests/{bugs,hanoi,pigeon,sat,unsat,ssa}
 
 $(TESTTOOL)-full: snapshots
 	$(TESTTOOL) run $(TESTOPTS) \
