@@ -15,7 +15,7 @@ depends: [
   "ocaml" {>= "4.03.0"}
   "zarith"
   "menhir"
-  "containers"
+  "containers" { >= "2.6" }
   "iter"
   "smtlib-utils" { >= "0.1" & < "0.2" }
   "dune" { >= "1.11" }
