@@ -25,11 +25,21 @@
 
 (task
   (name mc2-local-test)
+  (synopsis "run mc2 on directories provided on the command line")
   (action
     (run_provers
       (provers mc2-dev mc2-nogc-dev z3)
       (timeout 30)
       (dirs))))
+
+(task
+  (name mc2-all-tests)
+  (synopsis "run mc2 on all files in tests/")
+  (action
+    (run_provers
+      (provers mc2-dev z3)
+      (timeout 30)
+      (dirs $cur_dir))))
 
 (task
   (name mc2-ci)
