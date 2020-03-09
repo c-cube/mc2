@@ -10,6 +10,8 @@ OPTS ?= -j $(J)
 
 TIME=10s
 
+all: build test
+
 testperf: build
 	./src/tests/reluplex/make_relu_example.py > /tmp/test.smt2
 	./src/tests/reluplex/match_relu.py /tmp/test.smt2 > /tmp/test_with_relu.smt2
@@ -30,17 +32,11 @@ testperf: build
 testrelu: build
 	./mc2 src/tests/reluplex/test_relu.smt2 -v 100
 
-debug:
-	jbuilder build src/main.bc $(OPTS)
-	rlwrap ocamldebug ./_build/default/src/main.bc src/tests/reluplex/test_relu.smt2 -v 100	
-
 testrelu0: build
 	./mc2 src/tests/reluplex/test_relu.smt2 -v 0
 
 build:
 	@dune build $(TARGETS) $(OPTS) --profile=release
-
-all: build test
 
 build-install:
 	@dune build @install -p mc2
