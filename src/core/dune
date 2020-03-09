@@ -3,8 +3,5 @@
   (public_name mc2.core)
   (synopsis "core data structures and algorithms for MC2")
   (libraries containers iter result)
-  (flags :standard -w +a-4-42-44-48-50-58-32-60@8 -color always)
-  (ocamlopt_flags :standard -O3 -bin-annot
-                  -unbox-closures -unbox-closures-factor 20)
   )
 
