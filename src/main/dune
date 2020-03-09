@@ -4,6 +4,7 @@
   (public_name mc2)
   (package mc2)
   (promote (until-clean) (into ../../))
+  (modes native)
   (libraries containers iter result
              mc2.core mc2.backend mc2.smtlib mc2.uf
              mc2.propositional mc2.unin_sort mc2.lra
