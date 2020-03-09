@@ -2,7 +2,6 @@
 (** {1 Uninterpreted Functions and Types} *)
 
 open Mc2_core
-open Solver_types
 
 module Fmt = CCFormat
 
@@ -56,11 +55,11 @@ type lemma_view +=
   | Transitivity
 
 let tc_lemma =
-  let tcl_pp out = function
+  let pp out = function
     | Transitivity -> Fmt.string out "transitivity_eq"
     | _ -> assert false
   in
-  { tcl_pp }
+  Lemma.TC.make ~pp ()
 
 let[@inline] c_list_as_seq (tbl:reason Value.Tbl.t) : (value * reason) Iter.t =
   Value.Tbl.to_seq tbl
@@ -91,7 +90,7 @@ module V = struct
     | V_unin i, V_unin j -> i=j
     | _ -> false
 
-  let tc_value = { tcv_pp; tcv_equal; tcv_hash; }
+  let tc_value = Value.TC.make ~pp:tcv_pp ~equal:tcv_equal ~hash:tcv_hash ()
 
   let[@inline] mk (i:int) : value = Value.make tc_value (V_unin i)
 end
@@ -225,8 +224,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
 
     (* propagate [t := v because eqn] *)
     let add_singleton acts t v ~eqn ~other : unit =
-      begin match Term.var t with
-        | Var_semantic {v_decide_state=DS ds; _} ->
+      begin match Term.decide_state_exn t with
+        | DS ds ->
           Log.debugf 15
             (fun k->k
                 "(@[<hv>%s.add_singleton@ :to %a@ :val %a@ :other %a@ :eqn %a@ :c_list %a@])"
@@ -275,8 +274,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
 
     (* add constraint [t != v because diseqn] *)
     let add_diff acts t v ~diseqn ~other : unit =
-      begin match Term.var t with
-        | Var_semantic {v_decide_state=DS ds; _} ->
+      begin match Term.decide_state_exn t with
+        | DS ds ->
           Log.debugf 15
             (fun k->k "(@[<hv>%s.add_diff@ :to %a@ :val %a@ :other %a@ :diseqn %a@ :c_list %a@])"
                 name Term.debug t Value.pp v Term.debug other Atom.debug diseqn pp_c_list ds.c_list);
@@ -366,8 +365,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
 
     (* how to make a decision for terms of uninterpreted type *)
     let decide (acts:actions) (t:term) : value =
-      begin match Term.var t with
-        | Var_semantic {v_decide_state=DS{c_list}; _} ->
+      begin match Term.decide_state_exn t with
+        | DS{c_list} ->
           let v = find_value c_list in
           Log.debugf 5
             (fun k->k "(@[<hv>%s.@{<yellow>decide@}@ :term %a@ :val %a@ :lvl %d@ :c_list %a@])"

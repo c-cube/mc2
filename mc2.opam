@@ -17,7 +17,8 @@ depends: [
   "menhir"
   "containers" { >= "2.8" }
   "iter"
-  "dune" {build & >= "1.0"}
+  "smtlib-utils" { >= "0.1" & < "0.2" }
+  "dune" { >= "1.11" }
   "odoc" {with-doc}
 ]
 build: [
@@ -25,4 +26,4 @@ build: [
   ["dune" "runtest" "-p" name "-j" jobs] {with-test}
   ["dune" "build" "@doc" "-p" name "-j" jobs] {with-doc}
 ]
-
+dev-repo: "git+https://github.com/c-cube/mc2.git"

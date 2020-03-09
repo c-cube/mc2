@@ -3,10 +3,10 @@
 
 .PHONY: clean build build-dev
 
-J?=3
-TIMEOUT?=30
-TARGETS=src/main.exe
-OPTS= -j $(J)
+J ?= 3
+TIMEOUT ?= 30
+TARGETS ?= @install
+OPTS ?= -j $(J)
 
 TIME=10s
 
@@ -38,62 +38,58 @@ testrelu0: build
 	./mc2 src/tests/reluplex/test_relu.smt2 -v 0
 
 build:
-	jbuilder build $(TARGETS) $(OPTS)
+	@dune build $(TARGETS) $(OPTS) --profile=release
+
+all: build test
 
 build-install:
-	jbuilder build @install
-
-build-dev:
-	jbuilder build $(TARGETS) $(OPTS) --dev
+	@dune build @install -p mc2
 
 enable_log:
-	cd src/core; ln -sf log_real.ml log.ml
+	@cd src/core; ln -sf log_real.ml log.ml
 
 disable_log:
-	cd src/core; ln -sf log_dummy.ml log.ml
+	@cd src/core; ln -sf log_dummy.ml log.ml
 
 clean:
-	jbuilder clean
+	@dune clean
 
 install: build-install
-	jbuilder install
+	@dune install
 
 uninstall:
-	jbuilder uninstall
+	@dune uninstall
 
 doc:
-	jbuilder build @doc
+	@dune build @doc -p mc2
 
 test:
 	@echo "run API tests…"
-	jbuilder runtest
-	@echo "run benchmarks…"
+	@dune runtest --force --no-buffer
+	#@echo "run benchmarks…"
 	# @/usr/bin/time -f "%e" ./tests/run smt
-	# @/usr/bin/time -f "%e" ./src/tests/run mcsat
-	@/opt/local/bin/gtime -f "%e" ./src/tests/run
+	#@/usr/bin/time -f "%e" ./tests/run mcsat
 
-TESTOPTS ?= -j $(J)
-TESTTOOL=logitest
+TESTTOOL=benchpress
+TESTOPTS ?= -j $(J) -c tests/$(TESTTOOL).sexp --progress
 DATE=$(shell date +%FT%H:%M)
-FULL_TEST?=QF_UF
 
-logitest-quick:
+snapshots:
 	@mkdir -p snapshots
-	$(TESTTOOL) run -c src/tests/conf.toml src/tests/ $(TESTOPTS) \
-	  --timeout $(TIMEOUT) \
-	  --meta `git rev-parse HEAD` --summary snapshots/quick-$(DATE).txt \
-	  --csv snapshots/quick-$(DATE).csv
 
-logitest-full:
-	@mkdir -p snapshots
-	@DATE=`date +%F.%H:%M`
-	@echo "full test on FULL_TEST=$(FULL_TEST)"
-	$(TESTTOOL) run -c src/tests/conf.toml $(FULL_TEST) $(TESTOPTS) \
+$(TESTTOOL)-quick: snapshots
+	$(TESTTOOL) run $(TESTOPTS) \
 	  --timeout $(TIMEOUT) \
-	  --meta `git rev-parse HEAD` --summary snapshots/full-$(FULL_TEST)-$(DATE).txt \
-	  --csv snapshots/full-$(FULL_TEST)-$(DATE).csv
+	  --summary snapshots/quick-$(DATE).txt \
+	  --csv snapshots/quick-$(DATE).csv --task mc2-local-test tests/{bugs,hanoi,pigeon,sat,unsat,ssa}
 
-reinstall: | uninstall install
+$(TESTTOOL)-full: snapshots
+	$(TESTTOOL) run $(TESTOPTS) \
+	  --timeout $(TIMEOUT) \
+	  --summary snapshots/full-$(DATE).txt \
+	  --csv snapshots/full-$(DATE).csv --task mc2-local-test $$home/workspace/smtlib/
+
+reinstall: uninstall install
 
 ocp-indent:
 	@which ocp-indent > /dev/null || { \
@@ -106,9 +102,6 @@ reindent: ocp-indent
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 ocp-indent -i
 
 watch:
-	while find src/ -print0 | xargs -0 inotifywait -e delete_self -e modify ; do \
-		echo "============ at `date` ==========" ; \
-		make build-dev ; \
-	done
+	@dune build $(TARGETS) $(OPTS) -w
 
 .PHONY: clean doc all bench install uninstall remove reinstall enable_log disable_log bin test

@@ -2,7 +2,6 @@
 (** {1 Propositional Literal} *)
 
 open Mc2_core
-open Solver_types
 
 module Fmt = CCFormat
 

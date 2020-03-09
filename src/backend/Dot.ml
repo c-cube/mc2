@@ -5,7 +5,6 @@ Copyright 2014 Simon Cruanes
 *)
 
 open Mc2_core
-open Solver_types
 
 (** Output interface for the backend *)
 module type S = Backend_intf.S
@@ -79,7 +78,7 @@ module Make(A : Arg with type atom := atom
     Fmt.string out s
 
   let print_clause fmt c =
-    let v = c.c_atoms in
+    let v = Clause.atoms c in
     if Array.length v = 0 then (
       Format.fprintf fmt "⊥"
     ) else (

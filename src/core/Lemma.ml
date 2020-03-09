@@ -12,3 +12,10 @@ let[@inline] pp out (l:t) = match l with
 
 let tauto = Lemma_bool_tauto
 let[@inline] make view tc: t = Lemma_custom {view;tc}
+
+module TC = struct
+  type t = tc_lemma
+
+  let make ~pp () : t = { tcl_pp=pp }
+
+end

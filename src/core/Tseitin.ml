@@ -15,120 +15,119 @@ module type Arg = Tseitin_intf.Arg
 module type S = Tseitin_intf.S
 
 module Make (F : Tseitin_intf.Arg) = struct
-  type combinator = And | Or | Imply | Not
+  type combinator = And | Or | Not
 
   type atom = F.t
+  type id = int
 
   (* main formula type *)
-  type t =
+  type t = {
+    id: id;
+    view: view;
+  }
+
+  and view =
     | True
     | Lit of atom
     | Comb of combinator * t list
 
-  let rec pp fmt phi = match phi with
-    | True -> Format.fprintf fmt "true"
-    | Lit a -> F.pp fmt a
+  let[@inline] view t = t.view
+
+  let rec pp out f = match f.view with
+    | True -> Format.fprintf out "true"
+    | Lit a -> F.pp out a
     | Comb (Not, [f]) ->
-      Format.fprintf fmt "(@[<hv1>not %a@])" pp f
-    | Comb (And, l) -> Format.fprintf fmt "(@[<hv>and %a@])" (Util.pp_list pp) l
-    | Comb (Or, l) ->  Format.fprintf fmt "(@[<hv>or %a@])" (Util.pp_list pp) l
-    | Comb (Imply, [f1; f2]) ->
-      Format.fprintf fmt "(@[<hv1>=>@ %a@ %a)" pp f1 pp f2
+      Format.fprintf out "(@[<hv1>not %a@])" pp f
+    | Comb (And, l) -> Format.fprintf out "(@[<hv>and %a@])" (Util.pp_list pp) l
+    | Comb (Or, l) ->  Format.fprintf out "(@[<hv>or %a@])" (Util.pp_list pp) l
     | _ -> assert false
 
-  let[@inline] make comb l = Comb (comb, l)
-  let[@inline] atom p = Lit p
-  let true_ = True
-  let false_ = Comb(Not, [True])
+  let mk_ =
+    let n = ref 0 in
+    fun view -> incr n; {view; id= !n}
 
-  let rec flatten comb acc = function
-    | [] -> acc
-    | (Comb (c, l)) :: r when c = comb ->
-      flatten comb (List.rev_append l acc) r
-    | a :: r ->
-      flatten comb (a :: acc) r
+  let[@inline] make comb l = mk_ (Comb (comb, l))
+  let[@inline] atom p = mk_ (Lit p)
+  let true_ = mk_ True
+  let false_ = mk_ @@ Comb(Not, [true_])
 
-  (* unordered filter map *)
-  let rec rev_filter_map f acc = function
-    | [] -> acc
-    | a :: r ->
-      begin match f a with
-        | None -> rev_filter_map f acc r
-        | Some b -> rev_filter_map f (b :: acc) r
-      end
+  let flatten comb l =
+    List.fold_left
+      (fun acc f -> match f.view with
+         | Comb (c,l) when c = comb -> List.rev_append l acc
+         | _ -> f :: acc)
+      [] l
 
-  let remove_true l =
-    let aux = function
-      | True -> None
-      | f -> Some f
-    in
-    rev_filter_map aux [] l
+  (* unordered filter *)
+  let rev_filter f l =
+    let rec aux acc = function
+      | [] -> acc
+      | a :: tl ->
+        aux (if f a then a::acc else acc) tl
+    in aux [] l
 
-  let remove_false l =
-    let aux = function
-      | Comb(Not, [True]) -> None
-      | f -> Some f
-    in
-    rev_filter_map aux [] l
+  let[@inline] is_true = function {view=True;_} -> true | _ -> false
+  let[@inline] is_false = function {view=Comb(Not, [{view=True;_}]);_} -> true | _ -> false
 
-  let[@inline] not_ f = make Not [f]
-
-  let is_true = function True -> true | _ -> false
-  let is_false = function (Comb(Not, [True])) -> true | _ -> false
+  let remove_true l = rev_filter (fun x -> not (is_true x)) l
+  let remove_false l = rev_filter (fun x -> not (is_false x)) l
 
   let and_ l =
-    let l' = remove_true (flatten And [] l) in
+    let l' = remove_true @@ flatten And l in
     if List.exists is_false l' then (
       false_
-    ) else match l' with
-      | [] -> true_
-      | [a] -> a
-      | _ -> make And l'
+    ) else (
+      match l' with
+        | [] -> true_
+        | [a] -> a
+        | _ -> make And l'
+    )
 
   let or_ l =
-    let l' = remove_false (flatten Or [] l) in
+    let l' = remove_false @@ flatten Or l in
     if List.exists is_true l' then (
       true_
-    ) else match l' with
-      | [] -> false_
-      | [a] -> a
-      | _ -> Comb (Or, l')
+    ) else (
+      match l' with
+        | [] -> false_
+        | [a] -> a
+        | _ -> make Or l'
+    )
 
-  let imply f1 f2 = make Imply [f1; f2]
+  let rec not_ f = match f.view with
+    | Comb (Not, [g]) -> g
+    | Comb (Not, _) -> assert false
+    | Lit a -> atom (F.neg a)
+    | Comb (And, l) -> or_ @@ List.rev_map not_ l
+    | Comb (Or, l) -> and_ @@ List.rev_map not_ l
+    | _ -> make Not [f]
+
+  let imply f1 f2 = or_ [not_ f1; f2]
   let equiv f1 f2 = and_ [imply f1 f2; imply f2 f1]
   let xor f1 f2 = or_ [ and_ [ not_ f1; f2 ]; and_ [ f1; not_ f2 ] ]
 
-  (* simplify formula *)
-  let[@inline] (%%) f g x = f (g x)
+  let imply_l a b = or_ (b :: List.rev_map not_ a)
 
-  (* simplify *)
-  let rec sform f k = match f with
-    | True | Comb (Not, [True]) -> k f
-    | Comb (Not, [Lit a]) -> k (Lit (F.neg a))
-    | Comb (Not, [Comb (Not, [f])]) -> sform f k
-    | Comb (Not, [Comb (Or, l)]) -> sform_list_not [] l (k %% and_)
-    | Comb (Not, [Comb (And, l)]) -> sform_list_not [] l (k %% or_)
-    | Comb (And, l) -> sform_list [] l (k %% and_)
-    | Comb (Or, l) -> sform_list [] l (k %% or_)
-    | Comb (Imply, [f1; f2]) ->
-      sform (not_ f1) (fun f1' -> sform f2 (fun f2' -> k (or_ [f1'; f2'])))
-    | Comb (Not, [Comb (Imply, [f1; f2])]) ->
-      sform f1 (fun f1' -> sform (not_ f2) (fun f2' -> k (and_ [f1';f2'])))
-    | Comb ((Imply | Not), _) -> assert false
-    | Lit _ -> k f
-  and sform_list acc l k = match l with
-    | [] -> k acc
-    | f :: tail ->
-      sform f (fun f' -> sform_list (f'::acc) tail k)
-  and sform_list_not acc l k = match l with
-    | [] -> k acc
-    | f :: tail ->
-      sform (not_ f) (fun f' -> sform_list_not (f'::acc) tail k)
+  let[@inline] equal a b = a.id = b.id
+  let[@inline] hash a = CCHash.int a.id
 
-  let[@inline] ( @@ ) l1 l2 = List.rev_append l1 l2
+  (* table of formulas *)
+  module Tbl = CCHashtbl.Make(struct
+      type nonrec t = t
+      let equal = equal
+      let hash = hash
+    end)
+
+  type cnf_res =
+    | R_atom of atom
+    | R_and of atom list
+    | R_or of atom list
+    | R_true
+    | R_false
 
   type state = {
     fresh: unit -> atom;
+    tbl_and: cnf_res Tbl.t; (* caching *)
     mutable acc_or : (atom * atom list) list;
     mutable acc_and : (atom * atom list) list;
     mutable proxies : atom list;
@@ -137,63 +136,74 @@ module Make (F : Tseitin_intf.Arg) = struct
   (* build a clause by flattening (if sub-formulas have the
      same combinator) and_ proxy-ing sub-formulas that have the
      opposite operator. *)
-  let cnf_under_and (st:state) (f:t) : combinator option * atom list =
-    let rec aux f = match f with
-      | Lit a -> None, [a]
-      | Comb (Not, [Lit a]) -> None, [F.neg a]
+  let cnf_under_and (st:state) (f:t) : atom list option =
+    let rec aux f : cnf_res = match f.view with
+      | Lit a -> R_atom a
+      | True -> R_true
+      | Comb (Not, [{view=True;_}]) -> R_false
+      | Comb (Not, [{view=Lit a;_}]) -> R_atom (F.neg a)
+      | Comb ((And | Or), _) ->
+        begin try Tbl.find st.tbl_and f
+          with Not_found ->
+            let res = aux_noncached f in
+            Tbl.add st.tbl_and f res;
+            res
+        end
+      | _ ->
+        Log.debugf 1(fun k->k"(@[cnf.bad-formula@ %a@])" pp f);
+        assert false
+    and aux_noncached f : cnf_res =
+      match f.view with
       | Comb (And, l) ->
         List.fold_left
-          (fun (_, acc) f ->
-             match aux f with
-               | _, [] -> assert false
-               | _, [a] -> Some And, a :: acc
-               | Some And, l ->
-                 Some And, l @@ acc
-               (* let proxy = mk_proxy () in *)
-               (* acc_and := (proxy, l) :: !acc_and; *)
-               (* proxy :: acc *)
-               | Some Or, l ->
-                 let proxy = st.fresh() in
-                 st.acc_or <- (proxy, l) :: st.acc_or;
-                 Some And, proxy :: acc
-               | None, l -> Some And, l @@ acc
-               | _ -> assert false)
-          (None, []) l
+          (fun acc f ->
+             match acc, aux f with
+             | R_false, _ | _, R_false -> R_false
+             | R_and acc, R_true -> R_and acc
+             | R_and acc, R_atom a -> R_and (a::acc)
+             | R_and acc, R_and l -> R_and (List.rev_append l acc)
+             | R_and acc, R_or l ->
+               let proxy = st.fresh() in
+               st.acc_or <- (proxy, l) :: st.acc_or;
+               R_and (proxy :: acc)
+             | _ -> assert false)
+          (R_and []) l
       | Comb (Or, l) ->
         List.fold_left
-          (fun (_, acc) f ->
-             match aux f with
-               | _, [] -> assert false
-               | _, [a] -> Some Or, a :: acc
-               | Some Or, l ->
-                 Some Or, l @@ acc
-               (* let proxy = mk_proxy () in *)
-               (* acc_or := (proxy, l) :: !acc_or; *)
-               (* proxy :: acc *)
-               | Some And, l ->
-                 let proxy = st.fresh() in
-                 st.acc_and <- (proxy, l) :: st.acc_and;
-                 Some Or, proxy :: acc
-               | None, l -> Some Or, l @@ acc
-               | _ -> assert false)
-          (None, []) l
+          (fun acc f ->
+             match acc, aux f with
+             | R_true, _ | _, R_true -> R_true
+             | R_or acc, R_false -> R_or acc
+             | R_or acc, R_atom a -> R_or (a::acc)
+             | R_or acc, R_or l -> R_or (List.rev_append l acc)
+             | R_or acc, R_and l ->
+               let proxy = st.fresh() in
+               st.acc_and <- (proxy, l) :: st.acc_and;
+               R_or (proxy :: acc)
+             | _ -> assert false)
+          (R_or []) l
       | _ -> assert false
     in
-    aux f
+    match aux f with
+    | R_atom a -> Some [a]
+    | R_or l -> Some l
+    | R_false -> Some [] (* empty clause *)
+    | R_true -> None (* trivial clause *)
+    | _ -> assert false
 
-  let cnf ?(simplify=true) ~fresh (f:t) : atom list list =
+  let cnf ?simplify:_ ~fresh (f:t) : atom list list =
     let st = {
       fresh;
+      tbl_and = Tbl.create 16;
       acc_or=[];
       acc_and=[];
       proxies=[];
     } in
-    let f = if simplify then sform f CCFun.id else f in
-    let acc = match f with
+    let acc = match f.view with
       | True -> []
-      | Comb(Not, [True]) -> [[]]
-      | Comb (And, l) -> List.rev_map (fun f -> snd(cnf_under_and st f)) l
-      | _ -> [snd (cnf_under_and st f)]
+      | Comb (Not, [{view=True;_}]) -> [[]]
+      | Comb (And, l) -> CCList.filter_map (cnf_under_and st) l
+      | _ -> CCOpt.to_list @@ cnf_under_and st f
     in
     (* encode clauses that make proxies in !acc_and equivalent to
        their clause *)
@@ -219,8 +229,8 @@ module Make (F : Tseitin_intf.Arg) = struct
            st.proxies <- p :: st.proxies;
            (* add clause [p => l1 | l2 | ... | ln], and_ add clauses
               [l1 => p], [l2 => p], etc. *)
-           let acc = List.fold_left (fun acc a -> [p; F.neg a]::acc)
-               acc l in
+           let acc =
+             List.fold_left (fun acc a -> [p; F.neg a]::acc) acc l in
            (F.neg p :: l) :: acc)
         acc st.acc_or
     in

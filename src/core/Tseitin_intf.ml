@@ -33,15 +33,24 @@ module type S = sig
   type atom
   (** The type of atomic formulas. *)
 
-  type combinator = And | Or | Imply | Not
+  type combinator = And | Or | Not
 
-  type t = private
+  type id
+
+  type t = private {
+    id: id;
+    view: view;
+  }
+
+  and view =
     | True
     | Lit of atom
     | Comb of combinator * t list
     (** The type of arbitrary boolean formulas. Arbitrary boolean formulas
         can be built using functions in this module, and then converted
         to a CNF, which is a list of clauses that only use atomic formulas. *)
+
+  val view : t -> view
 
   val true_ : t
   (** The [true] formula, i.e a formula that is always satisfied. *)
@@ -66,6 +75,8 @@ module type S = sig
 
   val imply : t -> t -> t
   (** [imply p q] creates the boolean formula "[p] implies [q]". *)
+
+  val imply_l : t list -> t -> t
 
   val equiv : t -> t -> t
   (** [equiv p q] creates the boolena formula "[p] is equivalent to [q]". *)

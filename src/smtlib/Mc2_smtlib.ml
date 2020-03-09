@@ -2,9 +2,9 @@
 (** {1 Process Statements} *)
 
 open Mc2_core
-open Solver_types
 
 module Fmt = CCFormat
+module Ast = Ast
 module A = Ast
 module E = CCResult
 module Reg = Service.Registry
@@ -12,6 +12,9 @@ module F = Mc2_propositional.F
 module RLE = Mc2_lra.LE
 
 type 'a or_error = ('a, string) CCResult.t
+
+let parse = Ast.parse
+let parse_stdin = Ast.parse_stdin
 
 (** {2 Conversion into {!Term.t}} *)
 
@@ -51,11 +54,16 @@ let[@inline] ret_f f = F f
 let[@inline] ret_rat t = Rat t
 let[@inline] ret_any t = if Term.is_bool t then F (F.atom (Term.Bool.pa t)) else T t
 
+let pp_tof out = function
+  | T t -> Fmt.fprintf out "(@[T %a@])" Term.pp t
+  | F f -> Fmt.fprintf out "(@[F %a@])" F.pp f
+  | Rat lre -> Fmt.fprintf out "(@[RLE %a@])" RLE.pp_no_paren lre
+
 let conv_ty (reg:Reg.t) (ty:A.Ty.t) : Type.t =
   let mk_ty = Reg.find_exn reg Mc2_unin_sort.k_make in
   (* convert a type *)
   let rec aux_ty (ty:A.Ty.t) : Type.t = match ty with
-    | A.Ty.Bool -> Type.bool
+    | A.Ty.Ty_bool -> Type.bool
     | A.Ty.Rat -> Reg.find_exn reg Mc2_lra.k_rat
     | A.Ty.Atomic (id, args) -> mk_ty id (List.map aux_ty args)
     | A.Ty.Arrow _ ->
@@ -101,7 +109,11 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
     | T t, Rat u | Rat u, T t -> mk_lra_eq (RLE.singleton1 t) u |> F.atom
     | Rat t, Rat u -> mk_lra_eq t u |> F.atom
     | F t, F u -> F.equiv t u
-    | _ -> assert false
+    | F t, T u -> F.equiv t (F.atom @@ Term.Bool.pa u)
+    | T t, F u -> F.equiv (F.atom @@ Term.Bool.pa t) u
+    | _ ->
+      Log.debugf 1 (fun k->k "eq %a %a" pp_tof t pp_tof u);
+      assert false
   in
   (* convert term *)
   let rec aux (subst:term_or_form Subst.t) (t:A.term) : term_or_form =
@@ -146,6 +158,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         aux subst u
       | A.Op (A.And, l) -> F.and_ (List.map (aux_form subst) l) |> ret_f
       | A.Op (A.Or, l) -> F.or_ (List.map (aux_form subst) l) |> ret_f
+      | A.Op (A.Xor, [a;b]) -> F.xor (aux_form subst a)(aux_form subst b) |> ret_f
+      | A.Op (A.Xor, _) -> assert false
       | A.Op (A.Imply, l) ->
         let rec curry_imply_ = function
           | [] -> assert false
@@ -169,8 +183,8 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
         |> List.map (fun (t,u) -> mk_neq t u |> F.atom)
         |> F.and_ |> ret_f
       | A.Not f -> F.not_ (aux_form subst f) |> ret_f
-      | A.Bool true -> ret_f F.true_
-      | A.Bool false -> ret_f F.false_
+      | A.Bool_term true -> ret_f F.true_
+      | A.Bool_term false -> ret_f F.false_
       | A.Num_q n -> Mc2_lra.LE.const n |> ret_rat
       | A.Num_z n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
       | A.Arith (op, l) ->
@@ -244,7 +258,7 @@ let conv_bool_term (reg:Reg.t) (t:A.term): atom list list =
   and aux_t subst (t:A.term) : term = match aux subst t with
     | T t -> t
     | Rat e -> mk_lra_expr e
-    | F (F.Lit a) when Atom.is_pos a -> a.a_term
+    | F {F.view=F.Lit a;_} when Atom.is_pos a -> Atom.term a
     | F f ->
       (* name the sub-formula and add CNF *)
       let placeholder_id = mk_sub_form() in
@@ -283,7 +297,9 @@ let check_model state : bool =
   let check_clause c =
     Log.debugf 15
       (fun k -> k "(@[check.clause@ %a@])" Clause.debug_atoms c);
-    let ok = List.exists (Solver.Sat_state.eval state) c in
+    let ok =
+      List.exists (fun t -> Solver.Sat_state.eval_opt state t = Some true) c
+    in
     if not ok then (
       Log.debugf 0
         (fun k->k "(@[check.fail:@ clause %a@ not satisfied in model@])" Clause.debug_atoms c);

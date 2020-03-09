@@ -2,7 +2,6 @@
 (** {1 Propositional Literal} *)
 
 open Mc2_core
-open Solver_types
 
 module F : Tseitin.S with type atom := atom
 (** Formulas *)

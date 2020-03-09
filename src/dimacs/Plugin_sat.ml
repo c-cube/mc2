@@ -2,7 +2,6 @@
 (** {1 Trivial plugin for SAT} *)
 
 open Mc2_core
-open Solver_types
 
 let name = "sat"
 let k_atom = Service.Key.make "sat.atom"

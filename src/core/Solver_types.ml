@@ -78,7 +78,7 @@ and term = {
   (** bitfield for storing various info *)
   mutable t_var: var;
   (** The "generalized variable" part, for assignments. *)
-  mutable t_watches : term Vec.t lazy_t; (** terms that watch this term *)
+  mutable t_watches : term Vec.t; (** terms that watch this term *)
   mutable t_assign: term_assignment; (** current assignment *)
 }
 (** Main term representation. A {!term}, contains almost all information
@@ -277,7 +277,8 @@ and tc_lemma = {
 
 and actions = {
   act_push_clause : clause -> unit;
-  (** push a new clause *)
+  (** push a new clause. This clause is added to the solver and will
+      not be backtracked. *)
   act_level : unit -> level;
   (** access current decision level *)
   act_propagate_bool_eval : term -> bool -> subs:term list -> unit;
@@ -324,36 +325,6 @@ let tct_default : tc_term = {
   tct_delete=(fun _ -> ());
   tct_subterms=(fun _ _ -> ());
   tct_eval=(fun _ -> Eval_unknown);
-}
-
-let dummy_tct : tc_term = tct_default
-
-let rec dummy_term : term = {
-  t_id= ~-1;
-  t_tc=dummy_tct;
-  t_idx= ~-1;
-  t_view=Dummy;
-  t_ty=Bool;
-  t_fields= Term_fields.empty;
-  t_weight= -1.;
-  t_var=Var_none;
-  t_watches=lazy (Vec.make_empty dummy_term);
-  t_assign=TA_none;
-}
-
-let dummy_clause : clause = {
-  c_name = -1;
-  c_tag = None;
-  c_atoms = [| |];
-  c_activity = -1.;
-  c_fields = Clause_fields.empty;
-  c_premise = Hyp;
-}
-
-let dummy_atom : atom = {
-  a_id= -1;
-  a_term=dummy_term;
-  a_watched=Vec.make_empty dummy_clause;
 }
 
 type bool_term = term (** Alias for boolean terms *)

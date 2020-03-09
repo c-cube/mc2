@@ -5,8 +5,8 @@
    http://smtlib.cs.uiowa.edu/logics-all.shtml#QF_LRA *)
 
 open Mc2_core
-open Solver_types
 
+(* FIXME: carry state instead *)
 let _ = Random.self_init ();
 
 module LE = Linexp
@@ -14,6 +14,7 @@ open LE.Infix
 
 let name = "lra"
 
+(* TODO: put this in some config instead *)
 let lra_alt = ref 0
 
 let set_lra_alt b = Log.debugf 10 (fun k->k "lra_alt %i" b); lra_alt := b
@@ -124,17 +125,17 @@ let[@inline] eval_le (e:LE.t) : (num * term list) option =
         | _ -> None)
 
 let tc_value =
-  let tcv_pp out = function
+  let pp out = function
     | V_rat q -> Q.pp_print out q
     | _ -> assert false
-  and tcv_equal a b = match a, b with
+  and equal a b = match a, b with
     | V_rat a, V_rat b -> Q.equal a b
     | _ -> false
-  and tcv_hash = function
+  and hash = function
     | V_rat r -> LE.hash_q r
     | _ -> assert false
   in
-  {tcv_pp; tcv_hash; tcv_equal}
+  Value.TC.make ~pp ~equal ~hash ()
 
 let[@inline] mk_val (n:num) : value = Value.make tc_value (V_rat n)
 
@@ -244,14 +245,14 @@ let eval (t:term) =
 
   | _ -> assert false
 
-let tc_lemma : tc_lemma = {
-  tcl_pp=(fun out l -> match l with
+let tc_lemma : tc_lemma =
+  Lemma.TC.make
+    ~pp:(fun out l -> match l with
       | Lemma_lra -> Fmt.string out "lra"
       | Lemma_relu -> Fmt.string out "relu"
       | Lemma_lra_prop -> Fmt.string out "lra_prop"
-      | _ -> assert false
-    );
-}
+      | _ -> assert false)
+    ()
 
 let lemma_lra = Lemma.make Lemma_lra tc_lemma
 let lemma_relu = Lemma.make Lemma_relu tc_lemma
@@ -300,7 +301,13 @@ let build
           (* directly evaluate *)
           if eval_bool_const op n then true_ else false_
         | None ->
-          let e = LE.simplify e in
+          (* simplify: if e is [n·x op 0], then rewrite into [sign(n)·x op 0] *)
+          let e = match LE.as_singleton e with
+            | None -> e
+            | Some (n,t) ->
+              let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
+              LE.singleton n t
+          in
           let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
           let ans = T.make view Type.bool
           in Term.set_weight ans ((Term.weight ans) -. 1e30); ans
@@ -546,17 +553,39 @@ let build
             ->
             assert (not low.strict);
             assert (not up.strict);
-            let reason_neq =
+            let reason_neq, expr_neq =
               CCList.find_map
-                (fun (n,_,r) -> if Q.equal low.num n then Some r else None)
+                (fun (n,e,r) -> if Q.equal low.num n then Some (r,e) else None)
                 l |> CCOpt.get_exn
+            in
+            Log.debugf 30
+              (fun k->k
+                  "(@[<hv>lra.raise_conflict.tight-bound@ \
+                   @[:term %a@]@ @[low: %a@]@ @[up: %a@]@ @[eq: %a@]@ \
+                   expr-low %a@ expr-up %a@ expr-neq: %a@])"
+                  Term.pp t pp_bound s.low pp_bound s.up pp_eq s.eq
+                  LE.pp low.expr LE.pp up.expr LE.pp expr_neq);
+            (* conflict is:
+               [low <= t & t <= up & t != neq ===> (low < neq \/ neq < up)] *)
+            let case1 =
+              mk_pred Lt0 (LE.diff low.expr expr_neq)
+            and case2 =
+              mk_pred Lt0 (LE.diff expr_neq up.expr)
             in
             (* conflict should be:
                [low <= t & t <= up & low=up => t = neq]. *)
+            (* FIXME
             raise_conflict acts
               ~sign:false ~op:Eq0 ~pivot:t
               ~expr_up_bound:up.expr ~expr_low_bound:low.expr
               ~reasons:[atomic_reason up.reason; atomic_reason low.reason; reason_neq] ()
+            *)
+            let c =
+              Term.Bool.pa case1 :: Term.Bool.pa case2 ::
+              List.rev_map Atom.neg
+              [atomic_reason low.reason; atomic_reason up.reason; reason_neq]
+            in
+            Actions.raise_conflict acts c lemma_lra
           | _ -> ()
         end
       | _ -> assert false
@@ -936,8 +965,8 @@ let build
       end
 
     (* decision, according to current constraints *)
-    let decide _ (t:term) : value = match t.t_var with
-      | Var_semantic {v_decide_state=State r as st; _} ->
+    let decide _ (t:term) : value = match Term.decide_state_exn t with
+      | State r as st ->
         let n =
           if can_be_eq t r.last_val then r.last_val
           else find_val t

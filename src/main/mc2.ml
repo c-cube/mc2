@@ -10,7 +10,6 @@ open CCResult.Infix
 module E = CCResult
 module Fmt = CCFormat
 module Ast = Mc2_smtlib.Ast
-module Process_smtlib = Mc2_smtlib.Process
 
 type 'a or_error = ('a, string) E.t
 
@@ -74,25 +73,26 @@ let input_file = fun s -> file := s
 
 let usage = "Usage : main [options] <file>"
 let argspec = Arg.align [
-    "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " enable stack traces";
-    "-cnf", Arg.Set p_cnf, " prints the cnf used.";
-    "-check", Arg.Set check, " build, check and print the proof (if output is set), if unsat";
-    "-no-check", Arg.Clear check, " inverse of -check";
-    "-gc", Arg.Set gc, " enable garbage collection";
-    "-no-gc", Arg.Clear gc, " disable garbage collection";
-    "-restarts", Arg.Set restarts, " enable restarts";
-    "-no-restarts", Arg.Clear restarts, " disable restarts";
-    "-dot", Arg.Set_string p_dot_proof, " if provided, print the dot proof in the given file";
-    "-stat", Arg.Set p_stat, " print statistics";
-    "-model", Arg.Set p_model, " print model";
-    "-no-model", Arg.Clear p_model, " do not print model";
-    "-gc-stat", Arg.Set p_gc_stat, " outputs statistics about the GC";
+    "--bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " enable stack traces";
+    "--cnf", Arg.Set p_cnf, " prints the cnf used.";
+    "--check", Arg.Set check, " build, check and print the proof (if output is set), if unsat";
+    "--no-check", Arg.Clear check, " inverse of -check";
+    "--gc", Arg.Set gc, " enable garbage collection";
+    "--no-gc", Arg.Clear gc, " disable garbage collection";
+    "--restarts", Arg.Set restarts, " enable restarts";
+    "--no-restarts", Arg.Clear restarts, " disable restarts";
+    "--dot", Arg.Set_string p_dot_proof, "<file> if provided, print the dot proof in the given file";
+    "--stat", Arg.Set p_stat, " print statistics";
+    "--model", Arg.Set p_model, " print model";
+    "--no-model", Arg.Clear p_model, " do not print model";
+    "--gc-stat", Arg.Set p_gc_stat, " outputs statistics about the GC";
     "-p", Arg.Set p_progress, " print progress bar";
-    "-no-p", Arg.Clear p_progress, " no progress bar";
-    "-size", Arg.String (int_arg size_limit), " <s>[kMGT] sets the size limit for the sat solver";
-    "-time", Arg.String (int_arg time_limit), " <t>[smhd] sets the time limit for the sat solver";
-    "-v", Arg.Int Log.set_debug, "<lvl> sets the debug verbose level";
-    "-lra-alt", Arg.Int Mc2_lra.set_lra_alt, "<int> activates variants of eq analysis in LRA";
+    "--no-p", Arg.Clear p_progress, " no progress bar";
+    "--lra-alt", Arg.Int Mc2_lra.set_lra_alt, "<int> activates variants of eq analysis in LRA";
+    "--size", Arg.String (int_arg size_limit), "<s>[kMGT] sets the size limit for the sat solver";
+    "--time", Arg.String (int_arg time_limit), "<t>[smhd] sets the time limit for the sat solver";
+    "-t", Arg.String (int_arg time_limit), " same as --time";
+    "-d", Arg.Int Log.set_debug, "<lvl> sets the debug verbose level";
   ]
 
 type syntax =
@@ -116,7 +116,7 @@ let main () =
   let solver =
     let plugins = match syn with
       | Dimacs ->
-        [ Mc2_dimacs.Plugin_sat.plugin;
+        [ Mc2_dimacs.plugin;
         ]
       | Smtlib ->
         [ Mc2_propositional.plugin;
@@ -138,7 +138,7 @@ let main () =
         try
           E.fold_l
             (fun () ->
-               Process_smtlib.process_stmt
+               Mc2_smtlib.process_stmt
                  ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
                  ~time:!time_limit ~memory:!size_limit
                  ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
@@ -148,8 +148,8 @@ let main () =
           E.return()
       end
     | Dimacs ->
-      Mc2_dimacs.Process.parse (Solver.services solver) !file >>= fun pb ->
-      Mc2_dimacs.Process.process
+      Mc2_dimacs.parse (Solver.services solver) !file >>= fun pb ->
+      Mc2_dimacs.process
         ~pp_model:!p_model ~gc:!gc ?dot_proof ~restarts:!restarts ~check:!check
         ~time:!time_limit ~memory:!size_limit ~progress:!p_progress
         solver pb

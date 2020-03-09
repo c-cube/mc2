@@ -1,11 +1,10 @@
-
 (* This file is free software. See file "license" for more details. *)
 
 (** {1 Preprocessing AST} *)
 
 open Mc2_core
 
-module Loc = Locations
+module Loc = Smtlib_utils.V_2_6.Loc
 module Fmt = CCFormat
 
 type 'a or_error = ('a, string) CCResult.t
@@ -44,12 +43,12 @@ end
 
 module Ty = struct
   type t =
-    | Bool
+    | Ty_bool
     | Rat
     | Atomic of ID.t * t list
     | Arrow of t * t
 
-  let bool = Bool
+  let bool = Ty_bool
   let rat = Rat
   let app id l = Atomic (id,l)
   let const id = app id []
@@ -57,7 +56,7 @@ module Ty = struct
   let arrow_l = List.fold_right arrow
 
   let to_int_ = function
-    | Bool -> 0
+    | Ty_bool -> 0
     | Atomic _ -> 1
     | Arrow _ -> 2
     | Rat -> 3
@@ -65,13 +64,13 @@ module Ty = struct
   let (<?>) = CCOrd.(<?>)
 
   let rec compare a b = match a, b with
-    | Bool, Bool
+    | Ty_bool, Ty_bool
     | Rat, Rat -> 0
     | Atomic (f1,l1), Atomic (f2,l2) ->
       CCOrd.Infix.( ID.compare f1 f2 <?> (CCOrd.list compare, l1, l2))
     | Arrow (a1,a2), Arrow (b1,b2) ->
       compare a1 b1 <?> (compare, a2,b2)
-    | Bool, _
+    | Ty_bool, _
     | Atomic _, _
     | Arrow _, _
     | Rat, _
@@ -89,7 +88,7 @@ module Ty = struct
     aux [] ty
 
   let rec pp out t = match t with
-    | Bool -> Fmt.string out "Bool"
+    | Ty_bool -> Fmt.string out "Bool"
     | Rat -> Fmt.string out "Real"
     | Atomic (id,[]) -> ID.pp out id
     | Atomic (id,l) -> Fmt.fprintf out "(@[%a@ %a@])" ID.pp id (Util.pp_list pp) l
@@ -122,6 +121,7 @@ type op =
   | And
   | Or
   | Imply
+  | Xor
   | Eq
   | Distinct
 
@@ -160,7 +160,7 @@ and term_cell =
   | Let of var * term * term
   | Not of term
   | Op of op * term list
-  | Bool of bool
+  | Bool_term of bool
 
 and select = {
   select_name: ID.t lazy_t;
@@ -205,6 +205,7 @@ let pp_binder out = function
 let pp_op out = function
   | And -> Fmt.string out "and"
   | Or -> Fmt.string out "or"
+  | Xor -> Fmt.string out "xor"
   | Imply -> Fmt.string out "=>"
   | Eq -> Fmt.string out "="
   | Distinct -> Fmt.string out "distinct"
@@ -237,7 +238,7 @@ let pp_term =
       in
       Fmt.fprintf out "(@[<hv2>match %a@ %a@])"
         pp u (Util.pp_list pp_case) (ID.Map.to_list m)
-    | Bool b -> Fmt.fprintf out "%B" b
+    | Bool_term b -> Fmt.fprintf out "%B" b
     | Not t -> Fmt.fprintf out "(@[<1>not@ %a@])" pp t
     | Op (o,l) -> Fmt.fprintf out "(@[<hv1>%a@ %a@])" pp_op o (Util.pp_list pp) l
     | Bind (b,v,u) ->
@@ -280,14 +281,14 @@ let rec app_ty_ ty l : Ty.t = match ty, l with
       Ty.ill_typed "expected `@[%a@]`,@ got `@[%a : %a@]`"
         Ty.pp ty_a pp_term a Ty.pp a.ty
     )
-  | (Ty.Bool | Ty.Rat | Ty.Atomic _), a::_ ->
+  | (Ty.Ty_bool | Ty.Rat | Ty.Atomic _), a::_ ->
     Ty.ill_typed "cannot apply ty `@[%a@]`@ to `@[%a@]`" Ty.pp ty pp_term a
 
 let[@inline] mk_ term ty = {term; ty}
 let[@inline] ty t = t.ty
 
-let true_ = mk_ (Bool true) Ty.bool
-let false_ = mk_ (Bool false) Ty.bool
+let true_ = mk_ (Bool_term true) Ty.bool
+let false_ = mk_ (Bool_term false) Ty.bool
 
 let var v = mk_ (Var v) (Var.ty v)
 
@@ -307,7 +308,7 @@ let app f l = match f.term, l with
 let app_a f a = app f (Array.to_list a)
 
 let if_ a b c =
-  if a.ty <> Ty.Bool
+  if a.ty <> Ty.Ty_bool
   then Ty.ill_typed "if: test  must have type bool, not `@[%a@]`" Ty.pp a.ty;
   if not (Ty.equal b.ty c.ty)
   then Ty.ill_typed
@@ -436,7 +437,10 @@ let imply_l = mk_bool_op Imply
 
 let and_ a b = and_l [a;b]
 let or_ a b = or_l [a;b]
-let imply a b = imply_l [a;b]
+let imply a b = match b.term with
+  | Op (Imply, l) -> imply_l (a::l) (* flatten *)
+  | _ -> imply_l [a;b]
+let xor a b = mk_bool_op Xor [a;b]
 
 let not_ t =
   check_bool_ t;
@@ -494,7 +498,7 @@ module Ctx = struct
     names: ID.t StrTbl.t;
     kinds: kind ID.Tbl.t;
     data: (ID.t * Ty.t) list ID.Tbl.t; (* data -> cstors *)
-    mutable loc: Locations.t option; (* current loc *)
+    mutable loc: Loc.t option; (* current loc *)
   }
 
   let create () : t = {
@@ -559,23 +563,23 @@ module Ctx = struct
 
   let pp out t =
     Format.fprintf out "ctx {@[%a@]}"
-      (ID.Tbl.pp ID.pp pp_kind) t.kinds
+      Fmt.(seq ~sep:(return "@ ") @@ pair ID.pp pp_kind) (ID.Tbl.to_seq t.kinds)
 end
 
-let error_loc ctx : string = Fmt.sprintf "at %a: " Locations.pp_opt (Ctx.loc ctx)
+let error_loc ctx : string = Fmt.sprintf "at %a: " Loc.pp_opt (Ctx.loc ctx)
 let errorf_ctx ctx msg =
-  errorf ("at %a:@ " ^^ msg) Locations.pp_opt (Ctx.loc ctx)
+  errorf ("at %a:@ " ^^ msg) Loc.pp_opt (Ctx.loc ctx)
 
 let find_id_ ctx (s:string): ID.t =
   try StrTbl.find ctx.Ctx.names s
   with Not_found -> errorf_ctx ctx "name `%s` not in scope" s
 
-module A = Parse_ast
+module A = Smtlib_utils.V_2_6.Ast
 
 let rec conv_ty ctx (t:A.ty) =
   try conv_ty_aux ctx t
   with Ill_typed msg ->
-    Ty.ill_typed "at %a:@ %s" Locations.pp_opt (Ctx.loc ctx) msg
+    Ty.ill_typed "at %a:@ %s" Loc.pp_opt (Ctx.loc ctx) msg
 
 and conv_ty_aux ctx t = match t with
   | A.Ty_bool -> Ty.bool, Ctx.K_ty Ctx.K_bool
@@ -602,7 +606,7 @@ let is_num s =
 let rec conv_term ctx (t:A.term) : term =
   try conv_term_aux ctx t
   with Ill_typed msg ->
-    Ty.ill_typed "at %a:@ %s" Locations.pp_opt (Ctx.loc ctx) msg
+    Ty.ill_typed "at %a:@ %s" Loc.pp_opt (Ctx.loc ctx) msg
 
 and conv_term_aux ctx t : term = match t with
   | A.True -> true_
@@ -680,10 +684,8 @@ and conv_term_aux ctx t : term = match t with
     let a = conv_term ctx a in
     let b = conv_term ctx b in
     imply a b
-  | A.Xor (a,b) ->
-    let a = conv_term ctx a in
-    let b = conv_term ctx b in
-    or_ (and_ a (not_ b)) (and_ (not_ a) b)
+  | A.Is_a _ ->
+    assert false (* TODO *)
   | A.Match (_lhs, _l) ->
     assert false
   (* FIXME
@@ -757,6 +759,7 @@ and conv_term_aux ctx t : term = match t with
      in
      match_ lhs cases
   *)
+  | A.App ("xor", [a;b]) -> xor (conv_term ctx a) (conv_term ctx b)
   | A.App (s, args) ->
     let id = find_id_ ctx s in
     let args = List.map (conv_term ctx) args in
@@ -794,7 +797,7 @@ and conv_term_aux ctx t : term = match t with
       | A.Minus -> Ty.rat, Minus
       | A.Mult -> Ty.rat, Mult
       | A.Div -> Ty.rat, Div
-      | A.ReLU -> Ty.bool, ReLU
+      (*  TODO: parse this?      | A.ReLU -> Ty.bool, ReLU *)
     in
     arith ty op l
   | A.Cast (t, ty_expect) ->
@@ -804,6 +807,7 @@ and conv_term_aux ctx t : term = match t with
       Ty.ill_typed "term `%a`@ should have type `%a`" pp_term t Ty.pp ty_expect
     );
     t
+  | A.Attr (t,_) -> conv_term ctx t
 
 let find_file_ name ~dir : string option =
   Log.debugf 2 (fun k->k "search A.%sA. in A.%sA." name dir);
@@ -843,8 +847,8 @@ let rec conv_statement ctx (s:A.statement): statement list =
 
 and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view stmt with
   | A.Stmt_set_logic s -> [SetLogic s]
+  | A.Stmt_set_info (a,b) -> [SetInfo [a;b]]
   | A.Stmt_set_option l -> [SetOption l]
-  | A.Stmt_set_info l -> [SetInfo l]
   | A.Stmt_exit -> [Exit]
   | A.Stmt_decl_sort (s,n) ->
     let id = Ctx.add_id ctx s (Ctx.K_ty Ctx.K_uninterpreted) in
@@ -853,8 +857,8 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     let f, ty = conv_fun_decl ctx fr in
     let id = Ctx.add_id ctx f (Ctx.K_fun ty) in
     [Decl (id, ty)]
-  | A.Stmt_data ([],_l) ->
-    assert false
+  | A.Stmt_data _ ->
+    Util.errorf "unsupported: datatypes in@ %a" A.pp_stmt stmt
   (* FIXME
      (* first, read and declare each datatype (it can occur in the other
      datatypes' construtors) *)
@@ -900,8 +904,6 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
      in
      [Data l]
   *)
-  | A.Stmt_data _ ->
-    errorf_ctx ctx "not implemented: parametric datatypes" A.pp_stmt stmt
   | A.Stmt_funs_rec _defs ->
     errorf_ctx ctx "not implemented: definitions" A.pp_stmt stmt
   (* FIXME
@@ -945,21 +947,27 @@ and conv_statement_aux ctx (stmt:A.statement) : statement list = match A.view st
     let t = conv_term ctx t in
     check_bool_ t;
     [Assert t]
-  | A.Stmt_assert_not ([], t) ->
-    let vars, t = unfold_binder Forall (conv_term ctx t) in
-    let g = not_ t in (* negate *)
-    [Goal (vars, g)]
-  | A.Stmt_assert_not (_::_, _) ->
-    errorf_ctx ctx "cannot convert polymorphic goal@ `@[%a@]`"
-      A.pp_stmt stmt
-  | A.Stmt_lemma _ ->
-    errorf_ctx ctx "smbc does not know how to handle `lemma` statements"
   | A.Stmt_check_sat -> [CheckSat]
+  | A.Stmt_check_sat_assuming _
+  | A.Stmt_get_assertions 
+  | A.Stmt_get_option _
+  | A.Stmt_get_info _
+  | A.Stmt_get_model
+  | A.Stmt_get_proof
+  | A.Stmt_get_unsat_core
+  | A.Stmt_get_unsat_assumptions
+  | A.Stmt_get_assignment
+  | A.Stmt_reset
+  | A.Stmt_reset_assertions
+  | A.Stmt_push _
+  | A.Stmt_pop _
+  | A.Stmt_get_value _
+    -> errorf_ctx ctx "not implemented"
 
 let parse_chan_exn ?(filename="<no name>") ic =
   let lexbuf = Lexing.from_channel ic in
   Loc.set_file lexbuf filename;
-  Parser.parse_list Lexer.token lexbuf
+  Smtlib_utils.V_2_6.(Parser.parse_list Lexer.token) lexbuf
 
 let parse_chan ?filename ic =
   try Result.Ok (parse_chan_exn ?filename ic)

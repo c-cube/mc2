@@ -41,13 +41,13 @@ let[@inline] services t = S.services t
 let pp_all t lvl status =
   Log.debugf lvl
     (fun k -> k
-        "@[<v>%s - Full resume:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,\
+        "@[<v>%s - Full summary:@,@[<hov 2>Trail:@\n%a@]@,@[<hov 2>Temp:@\n%a@]@,\
          @[<hov 2>Hyps:@\n%a@]@,@[<hov 2>Lemmas:@\n%a@]@,@]@."
         status
-        (Vec.print ~sep:"" Term.pp) (S.trail t)
-        (Vec.print ~sep:"" Clause.debug) (S.temp t)
-        (Vec.print ~sep:"" Clause.debug) (S.hyps t)
-        (Vec.print ~sep:"" Clause.debug) (S.history t))
+        (Vec.pp ~sep:"" Term.pp) (S.trail t)
+        (Vec.pp ~sep:"" Clause.debug) (S.temp t)
+        (Vec.pp ~sep:"" Clause.debug) (S.hyps t)
+        (Vec.pp ~sep:"" Clause.debug) (S.history t))
 
 (* Wrappers around internal functions*)
 let assume = S.assume
@@ -73,8 +73,9 @@ module Sat_state = struct
 
   let iter_trail (St_sat s) f = Vec.iter f (S.trail s)
 
-  let eval (St_sat _s) t = S.eval t
-  let eval_level (St_sat _s) t = S.eval_level t
+  let[@inline] eval (St_sat _s) a = S.eval a
+  let[@inline] eval_opt (St_sat _s) a = try Some (S.eval a) with UndecidedLit _ -> None
+  let[@inline] eval_level (St_sat _s) a = S.eval_level a
   let model (St_sat s) = S.model s
 
   let check_model (s:t) : bool =

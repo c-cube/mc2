@@ -264,4 +264,5 @@ module Term_allocator(T : TERM_ALLOC_OPS) : TERM_ALLOC
 
 module Tbl : CCHashtbl.S with type key = term
 module Map : CCMap.S with type key = term
+module Set : CCSet.S with type elt = term
 

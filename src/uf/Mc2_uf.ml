@@ -2,7 +2,6 @@
 (** {1 Uninterpreted Functions and Constants} *)
 
 open Mc2_core
-open Solver_types
 
 module Fmt = CCFormat
 
@@ -68,8 +67,9 @@ let build p_id Plugin.S_nil : Plugin.t =
       | Congruence_bool -> Fmt.string out "congruence_bool"
       | _ -> assert false
 
-    let lemma_congruence_semantic = Lemma.make Congruence_semantic {tcl_pp}
-    let lemma_congruence_bool = Lemma.make Congruence_bool {tcl_pp}
+    let tc_l = Lemma.TC.make ~pp:tcl_pp ()
+    let lemma_congruence_semantic = Lemma.make Congruence_semantic tc_l
+    let lemma_congruence_bool = Lemma.make Congruence_bool tc_l
 
     (* build [{ a1.(i)≠a2.(i) | i}], removing trivial ones *)
     let mk_neq_ a1 a2 : atom list =
@@ -158,16 +158,6 @@ let build p_id Plugin.S_nil : Plugin.t =
 
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512
-
-    (* remove from [l] terms of level >= [lvl] *)
-    let remove_higher_lvl lvl (l:e_reason list) : e_reason list =
-      let rec aux acc l = match l with
-        | [] -> acc
-        | r :: tail ->
-          let acc = if r.e_level >= lvl then acc else r :: acc in
-          aux acc tail
-      in
-      aux [] l
 
     (* check that [t], which should have fully assigned arguments,
        is consistent with the signature table *)

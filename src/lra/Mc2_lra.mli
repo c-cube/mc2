@@ -2,7 +2,6 @@
 (** {1 Linear Rational Arithmetic} *)
 
 open Mc2_core
-open Solver_types
 
 type num = Q.t
 

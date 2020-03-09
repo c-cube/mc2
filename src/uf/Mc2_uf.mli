@@ -2,7 +2,6 @@
 (** {1 Uninterpreted Functions and Constants} *)
 
 open Mc2_core
-open Solver_types
 
 val k_app : (ID.t -> term list -> term) Service.Key.t
 (** Service for applying a constant to some arguments.
