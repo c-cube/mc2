@@ -188,10 +188,10 @@ let pp_state out = function
       pp_bound s.low pp_bound s.up pp_eq s.eq
   | _ -> assert false
 
-let[@inline] subterms (t:term_view) : term Sequence.t = match t with
-  | Const _ -> Sequence.empty
+let[@inline] subterms (t:term_view) : term Iter.t = match t with
+  | Const _ -> Iter.empty
   | Pred {expr=e;_} -> LE.terms e
-  | ReLU {x=e1;y=e2;_} -> Sequence.append (LE.terms e1) (LE.terms e2)
+  | ReLU {x=e1;y=e2;_} -> Iter.append (LE.terms e1) (LE.terms e2)
   | _ -> assert false
 
 let pp_op out = function
@@ -775,7 +775,7 @@ let build
           | None ->
             (* term not assigned, means all subterms are. We can evaluate *)
             assert (t == u);
-            assert (LE.terms p.expr |> Sequence.for_all Term.has_some_value);
+            assert (LE.terms p.expr |> Iter.for_all Term.has_some_value);
             begin match eval_le p.expr with
               | None -> assert false
               | Some (n,subs) ->

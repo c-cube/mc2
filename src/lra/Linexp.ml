@@ -139,7 +139,7 @@ let flatten ~(f:term -> t option) (e:t) : t =
     e.terms (const e.const)
 
 let[@inline] terms (e:t) = TM.keys e.terms
-let[@inline] terms_l (e:t) = TM.keys e.terms |> Sequence.to_rev_list
+let[@inline] terms_l (e:t) = TM.keys e.terms |> Iter.to_rev_list
 
 let[@inline] as_const (e:t) =
   if TM.is_empty e.terms then Some e.const

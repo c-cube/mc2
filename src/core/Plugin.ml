@@ -32,7 +32,7 @@ module type S = sig
   (** Last call before answering "sat". If the current trail is not
       theory-satisfiable, the plugin {b MUST} give a conflict here. *)
 
-  val iter_terms : term Sequence.t
+  val iter_terms : term Iter.t
   (** Iterate on all terms known to the plugin. Used for
       checking all variables to assign, and for
       garbage collection. *)

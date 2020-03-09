@@ -35,7 +35,7 @@ val add_plugin : t -> Plugin.Factory.t -> Plugin.t
 *)
 
 
-val plugins : t -> Plugin.t Sequence.t
+val plugins : t -> Plugin.t Iter.t
 
 val get_plugin : t -> plugin_id -> Plugin.t
 (** Get the plugin from its ID *)
@@ -52,7 +52,7 @@ val get_service_exn : t -> 'a Service.Key.t -> 'a
 val actions : t -> actions
 (** Actions available to plugins *)
 
-val iter_terms : t -> term Sequence.t
+val iter_terms : t -> term Iter.t
 (** Iterate on all terms known to plugins.
     Used for checking all variables to assign, and for garbage collection. *)
 

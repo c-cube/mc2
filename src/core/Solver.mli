@@ -24,7 +24,7 @@ type t
 val create : plugins:Plugin.Factory.t list -> unit -> t
 (** Create a new solver with the given plugins *)
 
-val plugins : t -> Plugin.t Sequence.t
+val plugins : t -> Plugin.t Iter.t
 (** Obtain the current plugins *)
 
 val services : t -> Service.Registry.t
@@ -98,7 +98,7 @@ module Sat_state : sig
       that can potentially be backtracked.
       @raise UndecidedLit if the literal is not decided *)
 
-  val iter_trail : t -> term Sequence.t
+  val iter_trail : t -> term Iter.t
   (** Iterate through the formulas and terms in order of decision/propagation
       (starting from the first propagation, to the last propagation). *)
 

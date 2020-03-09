@@ -65,7 +65,7 @@ val flatten : f:(term -> t option) -> t -> t
 (** [flatten f e] traverses all terms, and if they are themselves mapped
     into expressions by [f], replaces them by the corresponding expr *)
 
-val terms : t -> term Sequence.t
+val terms : t -> term Iter.t
 val terms_l : t -> term list
 
 val as_const : t -> num option

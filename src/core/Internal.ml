@@ -229,11 +229,11 @@ let[@inline] is_unsat t = match t.unsat_conflict with
   | None -> false
 
 (* iterate on all active terms *)
-let[@inline] iter_terms (env:t) : term Sequence.t =
+let[@inline] iter_terms (env:t) : term Iter.t =
   CCVector.to_seq env.plugins
-  |> Sequence.flat_map
+  |> Iter.flat_map
     (fun (module P : Plugin.S) -> P.iter_terms)
-  |> Sequence.filter Term.has_var
+  |> Iter.filter Term.has_var
 
 let[@inline] term_init (env:t) (t:term) : unit =
   t.t_tc.tct_init (actions env) t

@@ -37,6 +37,6 @@ module Registry : sig
   (** Find a service by its key
       @raise Util.Error if the key is not found *)
 
-  val to_seq : t -> any Sequence.t
+  val to_seq : t -> any Iter.t
   (** all registered services *)
 end

@@ -62,7 +62,7 @@ let tc_lemma =
   in
   { tcl_pp }
 
-let[@inline] c_list_as_seq (tbl:reason Value.Tbl.t) : (value * reason) Sequence.t =
+let[@inline] c_list_as_seq (tbl:reason Value.Tbl.t) : (value * reason) Iter.t =
   Value.Tbl.to_seq tbl
 
 let pp_v_reason_eq out (v,rn): unit =
@@ -357,10 +357,10 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         (* is [i] forbidden by [l]? *)
         let[@inline] forbidden v = Value.Tbl.mem tbl v in
         let v =
-          Sequence.(0 -- max_int)
-          |> Sequence.map (fun i -> V.mk i)
-          |> Sequence.filter (fun v -> not (forbidden v))
-          |> Sequence.head_exn
+          Iter.(0 -- max_int)
+          |> Iter.map (fun i -> V.mk i)
+          |> Iter.filter (fun v -> not (forbidden v))
+          |> Iter.head_exn
         in
         v
 
