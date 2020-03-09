@@ -16,21 +16,6 @@ let[@inline] swap_arr a i j =
     a.(j) <- tmp;
   )
 
-exception Error of string
-
-let err_ksprintf ~f fmt =
-  let buf = Buffer.create 32 in
-  let out = Format.formatter_of_buffer buf in
-  CCFormat.set_color_tag_handling out;
-  Format.fprintf out "@[<2>@{<Red>error:@}@ ";
-  Format.kfprintf
-    (fun _ -> Format.fprintf out "@]@?"; f (Buffer.contents buf))
-    out fmt
-
-let err_sprintf fmt = err_ksprintf ~f:CCFun.id fmt
-let errorf msg = err_ksprintf ~f:(fun e -> raise (Error e)) msg
-let error msg = errorf "%s" msg
-
 let setup_gc () =
   Gc.set {
     (Gc.get()) with
@@ -39,9 +24,5 @@ let setup_gc () =
     Gc.minor_heap_size = 500_000; (* ×8 to obtain bytes on 64 bits -->  *)
   }
 
-let () = Printexc.register_printer
-    (function
-      | Error msg -> Some msg
-      | _ -> None)
-
 module Int_map = CCMap.Make(CCInt)
+module Str_map = CCMap.Make(String)

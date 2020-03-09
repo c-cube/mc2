@@ -246,7 +246,7 @@ let build p_id Plugin.S_nil : Plugin.t =
         (fun k->k "(@[uf.decl %a@ (@[%a@])@ %a@])"
             ID.pp id (Util.pp_list Type.pp) ty_args Type.pp ty_ret);
       if ID.Tbl.mem ty_decls_ id then (
-        Util.errorf "%s: symbol `%a` already declared" name ID.pp id;
+        Error.errorf "%s: symbol `%a` already declared" name ID.pp id;
       );
       ID.Tbl.add ty_decls_ id (ty_args, ty_ret)
 
@@ -254,13 +254,13 @@ let build p_id Plugin.S_nil : Plugin.t =
     let app_ty (f:ID.t) (l:term list) : Type.t =
       begin match ID.Tbl.get ty_decls_ f with
         | Some (args,_) when List.length args <> List.length l->
-          Util.errorf "uf: type mismatch:@ `%a` needs %d arguments@ :got (@[%a@])"
+          Error.errorf "uf: type mismatch:@ `%a` needs %d arguments@ :got (@[%a@])"
             ID.pp f (List.length args) (Util.pp_list Term.pp) l
         | Some (ty_args,ty_ret) ->
           List.iter2
             (fun ty_arg arg ->
                if not (Type.equal ty_arg (Term.ty arg)) then (
-                 Util.errorf
+                 Error.errorf
                    "uf: type mismatch:@ cannot apply `%a`@ :to (@[%a@])@ \
                     expected %a,@ got %a"
                    ID.pp f (Util.pp_list Term.pp) l Type.pp ty_arg Term.pp arg;
@@ -268,7 +268,7 @@ let build p_id Plugin.S_nil : Plugin.t =
             ty_args l;
           ty_ret
         | None ->
-          Util.errorf "uf: unknown function symbol `%a`" ID.pp f
+          Error.errorf "uf: unknown function symbol `%a`" ID.pp f
       end
 
     (* constant builder *)

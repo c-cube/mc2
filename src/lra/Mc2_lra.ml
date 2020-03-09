@@ -74,7 +74,7 @@ let debug_reason out = function
 
 let atomic_reason : (reason -> atom) = function
   | Atom a -> a
-  | _ -> Util.errorf "This ReLU analysis case is not handled yet."
+  | _ -> Error.errorf "This ReLU analysis case is not handled yet."
 
 type bound =
   | B_some of {strict:bool; num: num; expr: LE.t; reason:reason}
@@ -786,10 +786,10 @@ let build
           | Eval_into (V_false,_), Some V_false -> ()
           | Eval_into (V_false,subs), Some V_true
           | Eval_into (V_true,subs), Some V_false ->
-            Util.errorf "inconsistency in lra: %a@ :subs (@[%a@])"
+            Error.errorf "inconsistency in lra: %a@ :subs (@[%a@])"
               Term.debug t (Util.pp_list Term.debug) subs
           | Eval_unknown, _ ->
-            Util.errorf "inconsistency in lra: %a@ does-not-eval"
+            Error.errorf "inconsistency in lra: %a@ does-not-eval"
               Term.debug t
           | Eval_into _, _ -> assert false (* non boolean! *)
         end
@@ -821,7 +821,7 @@ let build
         end
       | ReLU r ->
         begin match Term.value t with
-          | None -> Util.errorf "All the ReLU are supposed true"
+          | None -> Error.errorf "All the ReLU are supposed true"
           | Some V_true ->
             assert (t != u);
             let x = LE.singleton_term r.x and y = LE.singleton_term r.y in
@@ -844,7 +844,7 @@ let build
                 (Log.debugf 20 (fun k->k "Propagate Relu 3 %a" Term.debug t);
                  add_low acts ~strict:false x vy ~expr:r.y ~reason:(ReLU_prop_apply_4_or_5 t)
                 )          (* let add_up acts ~strict t num ~expr ~reason *)
-          | Some V_false -> Util.errorf "All the ReLU are supposed true"
+          | Some V_false -> Error.errorf "All the ReLU are supposed true"
           | _ -> assert false
         end
       | _ -> assert false

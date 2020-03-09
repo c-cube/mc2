@@ -25,14 +25,14 @@ prelude:
   | P CNF LIT LIT { () }
   | error
     {
-      Util.errorf "expected prelude %a" pp_pos ($startpos,$endpos)
+      Error.errorf "expected prelude %a" pp_pos ($startpos,$endpos)
     }
 
 clauses:
   | l=clause* { l }
   | error
     {
-      Util.errorf "expected list of clauses %a"
+      Error.errorf "expected list of clauses %a"
         pp_pos ($startpos,$endpos)
     }
 

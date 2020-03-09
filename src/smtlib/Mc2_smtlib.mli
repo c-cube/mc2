@@ -7,30 +7,32 @@
 
 open Mc2_core
 
+module PA = Smtlib_utils.V_2_6.Ast
+module Typecheck = Typecheck
+
 type 'a or_error = ('a, string) CCResult.t
 
-module Ast = Ast
+module Make(ARG : sig
+    val solver : Solver.t
+  end)
+  : sig
+  val parse : string -> PA.statement list or_error
 
-val parse : string -> Ast.statement list or_error
+  val parse_stdin : unit -> PA.statement list or_error
 
-val parse_stdin : unit -> Ast.statement list or_error
+  val typecheck : PA.statement list -> Statement.t list or_error
 
-val conv_bool_term : Service.Registry.t -> Ast.term -> atom list list
-(** Convert a boolean term into CNF *)
-
-val process_stmt :
-  ?gc:bool ->
-  ?restarts:bool ->
-  ?pp_cnf:bool ->
-  ?dot_proof:string ->
-  ?pp_model:bool ->
-  ?check:bool ->
-  ?time:float ->
-  ?memory:float ->
-  ?progress:bool ->
-  Solver.t ->
-  Ast.statement ->
-  unit or_error
-(** Process the given statement.
-    @raise Incorrect_model if model is not correct
-*)
+  val process_stmt :
+    ?gc:bool ->
+    ?restarts:bool ->
+    ?pp_cnf:bool ->
+    ?dot_proof:string ->
+    ?pp_model:bool ->
+    ?check:bool ->
+    ?time:float ->
+    ?memory:float ->
+    ?progress:bool ->
+    Statement.t ->
+    unit or_error
+  (** Process the given statement. *)
+end

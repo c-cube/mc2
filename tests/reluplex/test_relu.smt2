@@ -8,6 +8,7 @@
 ;; (assert (> x z))
 ;; (assert (> z y))
 
+(declare-fun relu (Real Real) Bool)
 
 ;; Declare the neuron variables
 (declare-fun n_0_0 () Real)

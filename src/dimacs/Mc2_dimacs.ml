@@ -73,7 +73,7 @@ let process ?gc ?restarts ?dot_proof
         );
         if check then (
           if not (check_model pb st) then (
-            Util.errorf "invalid model"
+            Error.errorf "invalid model"
           )
         );
         let t3 = Sys.time () -. t2 in

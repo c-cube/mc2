@@ -95,10 +95,10 @@ end = struct
              with
                | [a] -> a
                | [] ->
-                 Util.errorf "(@[proof.expand.pivot_missing@ %a@])"
+                 Error.errorf "(@[proof.expand.pivot_missing@ %a@])"
                    Clause.debug c
                | pivots ->
-                 Util.errorf "(@[proof.expand.multiple_pivots@ %a@ :pivots %a@])"
+                 Error.errorf "(@[proof.expand.multiple_pivots@ %a@ :pivots %a@])"
                    Clause.debug c Clause.debug_atoms pivots
            in
            Array.iter Atom.mark c.c_atoms; (* add atoms to result *)
@@ -126,10 +126,10 @@ end = struct
         let absurd = find_absurd c in
         mk_node conclusion (Simplify {init=c; duplicates; absurd})
       | P_raw_steps [] ->
-        Util.errorf "proof: resolution error (no premise)@ %a@ :premise %a"
+        Error.errorf "proof: resolution error (no premise)@ %a@ :premise %a"
           Clause.debug conclusion Premise.pp conclusion.c_premise
       | P_raw_steps [_] ->
-        Util.errorf "proof: resolution error (wrong hyperres)@ %a@ :premise %a"
+        Error.errorf "proof: resolution error (wrong hyperres)@ %a@ :premise %a"
           Clause.debug conclusion Premise.pp conclusion.c_premise
       | P_raw_steps ((c::r) as l) ->
         Log.debugf 30 (fun k->k"(@[<hv>proof.expanding.raw@ %a@])"
@@ -182,7 +182,7 @@ end = struct
           c'
         )
       | _ ->
-        Util.errorf "(@[proof.analyze.cannot_prove_atom@ %a@])" Atom.debug a
+        Error.errorf "(@[proof.analyze.cannot_prove_atom@ %a@])" Atom.debug a
     end
 
   let prove_unsat (conflict:clause) : clause =
@@ -348,7 +348,7 @@ end = struct
                   if Term.Set.mem t st.killed then st
                   else if Term.equal pivot t then (
                     if not (Atom.Set.mem (Atom.neg a) st.cur) then (
-                      Util.errorf
+                      Error.errorf
                         "(@[<hv>proof.check_hyper_res.pivot_not_found@ \
                          :pivot %a@ :c1 %a@ :c2 %a@])"
                         Term.debug pivot pp_a_set st.cur Clause.debug c2
@@ -366,7 +366,7 @@ end = struct
     (* compare lists of atoms, ignoring order and duplicates *)
     let check_same_set ~ctx ~expect:c d =
       if not (Atom.Set.equal c d) then (
-        Util.errorf
+        Error.errorf
           "(@[<hv>proof.check.distinct_clauses@ :ctx %s@ \
            :c1(expect) %a@ :c2(got) %a@ :c1\\c2 %a@ :c2\\c1 %a@])"
           ctx pp_a_set c pp_a_set d
@@ -386,7 +386,7 @@ end = struct
         let dups' = find_duplicates s.init in
         if not (Atom.Set.equal
               (Atom.Set.of_list s.duplicates) (Atom.Set.of_list dups')) then (
-          Util.errorf
+          Error.errorf
             "(@[<hv>proof.check.invalid_simplify_step@ :from %a@ :to %a@ :dups1 %a@ :dups2 %a@])"
             Clause.debug s.init Clause.debug concl Clause.debug_atoms s.duplicates
             Clause.debug_atoms dups'
@@ -394,7 +394,7 @@ end = struct
         begin match CCList.find_pred (fun a -> not (Atom.is_absurd a)) s.absurd with
           | None -> ()
           | Some a ->
-            Util.errorf
+            Error.errorf
               "(@[<hv>proof.check.invalid_simplify_step@ :in %a@ :not-absurd %a@])"
               Clause.debug s.init Atom.debug a
         end;
@@ -409,7 +409,7 @@ end = struct
         Atom.Set.iter
           (fun a ->
              if Atom.Set.mem (Atom.neg a) st.cur then (
-               Util.errorf
+               Error.errorf
                  "(@[<hv>proof.check_hyper_res.clause_is_tautology@ \
                   :clause %a@])"
                  pp_a_set st.cur

@@ -141,7 +141,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       Log.debugf 3
         (fun k->k "(@[unin_sort.@{<yellow>declare-sort@} %a@ :arity %d@])" ID.pp id arity);
       if ID.Tbl.mem tbl_ id then (
-        Util.errorf "sort %a already declared" ID.pp id;
+        Error.errorf "sort %a already declared" ID.pp id;
       );
       ID.Tbl.add tbl_ id arity
 
@@ -160,12 +160,12 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     (* make an equality literal *)
     let mk_eq (t:term) (u:term): term =
       if not (is_unin_sort (Term.ty t)) then (
-        Util.errorf
+        Error.errorf
           "unin_sort.eq:@ expected term of an uninterpreted sort,@ got %a"
           Term.debug t
       );
       if not (Type.equal (Term.ty t) (Term.ty u)) then (
-        Util.errorf
+        Error.errorf
           "unin_sort.eq:@ terms should have same type,@ got %a@ and %a"
           Term.debug t Term.debug u
       );
@@ -390,10 +390,10 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
         | Some ar when ar=List.length args ->
           Ty_alloc.make (Unin {id;args})
         | Some ar ->
-          Util.errorf "wrong arity for sort %a:@ need %d args,@ got (@[%a@])"
+          Error.errorf "wrong arity for sort %a:@ need %d args,@ got (@[%a@])"
             ID.pp id ar (Util.pp_list Type.pp) args
         | None ->
-          Util.errorf "no uninterpreted sort for %a" ID.pp id
+          Error.errorf "no uninterpreted sort for %a" ID.pp id
       end
 
     let () =

@@ -341,3 +341,45 @@ type assignment_view =
 
 type 'a or_conflict = ('a, clause) CCResult.t
 (** Either an ['a], or a conflict clause *)
+
+(* TODO: datatypes, in a plugin
+type data = {
+  data_id: ID.t;
+  data_cstors: cstor ID.Map.t lazy_t;
+  data_as_ty: ty lazy_t;
+}
+
+and cstor = {
+  cstor_id: ID.t;
+  cstor_is_a: ID.t;
+  mutable cstor_arity: int;
+  cstor_args: select list lazy_t;
+  cstor_ty_as_data: data;
+  cstor_ty: ty lazy_t;
+}
+
+and select = {
+  select_id: ID.t;
+  select_cstor: cstor;
+  select_ty: ty lazy_t;
+  select_i: int;
+}
+   *)
+
+type bound_var = ID.t * ty
+
+(** Function definition *)
+type definition = ID.t * bound_var list * ty * term
+
+type statement =
+  | Stmt_set_logic of string
+  | Stmt_set_option of string list
+  | Stmt_set_info of string * string
+  (* | Stmt_data of data list *)
+  | Stmt_ty_decl of ID.t * int (* new atomic cstor *)
+  | Stmt_decl of ID.t * ty list * ty
+  | Stmt_define of definition list
+  | Stmt_assert_clauses of atom list list
+  | Stmt_check_sat
+  | Stmt_exit
+

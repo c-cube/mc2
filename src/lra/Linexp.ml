@@ -119,14 +119,15 @@ let pp_no_paren out (e:t) : unit =
 let[@inline] pp out e = Fmt.fprintf out "(@[%a@])" pp_no_paren e
 
 let singleton_term (e:t) : term =
-  if not (TM.is_empty e.terms) then
+  if not (TM.is_empty e.terms) then (
     let t, _ = TM.choose e.terms in
     if equal e @@ singleton1 t then
       t
     else
-      Util.errorf "LE is supposed to be only one term but is %a" pp e
-  else
-    Util.errorf "LE is supposed to be only one term but is %a" pp e
+      Error.errorf "LE is supposed to be only one term but is %a" pp e
+  ) else (
+    Error.errorf "LE is supposed to be only one term but is %a" pp e
+  )
 
 let flatten ~(f:term -> t option) (e:t) : t =
   TM.fold

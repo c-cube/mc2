@@ -190,7 +190,7 @@ let[@inline] err_undecided_lit t = raise (UndecidedLit t)
 let() = Printexc.register_printer
     (function
       | UndecidedLit t ->
-        Some (Util.err_sprintf "undecided_lit: %a" Term.debug t)
+        Some (Error.err_sprintf "undecided_lit: %a" Term.debug t)
       | Out_of_space -> Some "Unknown"
       | Out_of_time -> Some "Timeout"
       | _ -> None)
@@ -206,7 +206,7 @@ let add_plugin (env:t) (fcty:Plugin.Factory.t) : Plugin.t =
       | Plugin.K_cons (k, tail) ->
         begin match get_service env k with
           | None ->
-            Util.errorf "could not find service `%s`" (Service.Key.name k)
+            Error.errorf "could not find service `%s`" (Service.Key.name k)
           | Some serv ->
             Plugin.S_cons (k, serv, find_services tail)
         end
@@ -241,7 +241,7 @@ let[@inline] term_init (env:t) (t:term) : unit =
    This is the function exposed to users and therefore it performs some checks. *)
 let[@unrolled 1] rec add_term (env:t) (t:term): unit =
   if Term.is_deleted t then (
-    Util.errorf "(@[trying to add deleted term@ `%a`@])" Term.debug t
+    Error.errorf "(@[trying to add deleted term@ `%a`@])" Term.debug t
   ) else if Term.is_added t then (
     assert (Term.has_var t);
   ) else (
@@ -609,7 +609,7 @@ let simpl_reason_level_0 : reason -> reason = function
           Bcp c'
         )
       | _ ->
-        Util.errorf
+        Error.errorf
           "(@[simpl_reason_level_0.fail@ :simp-atoms %a@ :bcp-from %a@])"
           Clause.debug_atoms l Clause.debug cl
     end
@@ -619,7 +619,7 @@ let simpl_reason_level_0 : reason -> reason = function
    Wrapper function for adding a new propagated formula. *)
 let enqueue_bool (env:t) (a:atom) ~level:level (reason:reason) : unit =
   if Atom.is_false a then (
-    Util.errorf "(@[solver.enqueue_bool.atom_is_false@ %a@])" Atom.debug a
+    Error.errorf "(@[solver.enqueue_bool.atom_is_false@ %a@])" Atom.debug a
   ) else if Atom.is_true a then (
     Log.debugf 15 (fun k->k "(@[solver.enqueue_bool.already_true@ %a@])" Atom.debug a);
   ) else (

@@ -9,7 +9,6 @@ open CCResult.Infix
 
 module E = CCResult
 module Fmt = CCFormat
-module Ast = Mc2_smtlib.Ast
 
 type 'a or_error = ('a, string) E.t
 
@@ -73,7 +72,7 @@ let input_file = fun s -> file := s
 
 let usage = "Usage : main [options] <file>"
 let argspec = Arg.align [
-    "--bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " enable stack traces";
+    "-bt", Arg.Unit (fun () -> Printexc.record_backtrace true), " enable stack traces";
     "--cnf", Arg.Set p_cnf, " prints the cnf used.";
     "--check", Arg.Set check, " build, check and print the proof (if output is set), if unsat";
     "--no-check", Arg.Clear check, " inverse of -check";
@@ -128,21 +127,23 @@ let main () =
     Solver.create ~plugins ()
   in
   let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
+  let module Process = Mc2_smtlib.Make(struct let solver = solver end) in
   let res = match syn with
     | Smtlib ->
       (* parse pb *)
-      Mc2_smtlib.Ast.parse !file >>= fun input ->
+      Process.parse !file >>= fun input ->
+      Process.typecheck input >>= fun input ->
       (* TODO: parse list of plugins on CLI *)
       (* process statements *)
       begin
         try
           E.fold_l
-            (fun () ->
-               Mc2_smtlib.process_stmt
+            (fun () st ->
+               Process.process_stmt
                  ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
                  ~time:!time_limit ~memory:!size_limit
                  ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
-                 solver)
+                 st)
             () input
         with Exit ->
           E.return()
@@ -167,7 +168,7 @@ let () = match main() with
   | E.Error msg ->
     print_endline msg;
     exit 1
-  | exception Util.Error msg ->
+  | exception Error.Error msg ->
     print_endline msg;
     exit 1
   | exception Solver.Out_of_time ->
@@ -176,9 +177,3 @@ let () = match main() with
   | exception Solver.Out_of_space ->
     Format.printf "Spaceout@.";
     exit 3
-  | exception Ast.Ill_typed msg ->
-    let b = Printexc.get_backtrace () in
-    Format.fprintf Format.std_formatter "typing error\n%s@." msg;
-    if Printexc.backtrace_status () then
-      Format.fprintf Format.std_formatter "%s@." b
-

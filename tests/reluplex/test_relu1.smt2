@@ -1,3 +1,6 @@
+
+; expect: unsat
+
 (set-logic QF_LRA)
 
 ;; Declare the neuron variables

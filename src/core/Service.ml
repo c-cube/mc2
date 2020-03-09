@@ -41,7 +41,7 @@ module Registry = struct
 
   let register (r:t) (key:'a Key.t) (v:'a) : unit =
     if M.Tbl.mem r.tbl key.Key.key then (
-      Util.errorf "service `%s` already registered" key.Key.key_name;
+      Error.errorf "service `%s` already registered" key.Key.key_name;
     );
     Log.debugf 5 (fun k->k "register service `%s`" key.Key.key_name);
     M.Tbl.add r.tbl key.Key.key v;
@@ -51,6 +51,6 @@ module Registry = struct
   let[@inline] to_seq (r:t) = Iter.of_list r.lst
   let[@inline] find_exn r k = match find r k with
     | Some v -> v
-    | None -> Util.errorf "could not find service `%s`" (Key.name k)
+    | None -> Error.errorf "could not find service `%s`" (Key.name k)
 end
 

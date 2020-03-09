@@ -20,6 +20,9 @@ module Plugin = Plugin
 module Tseitin = Tseitin
 module ID = ID
 module Lemma = Lemma
+module Statement = Statement
+module Bound_var = Bound_var
+module Error = Error
 
 (**/**)
 module Util = Util
@@ -150,3 +153,5 @@ type check_res = Solver_types.check_res =
   (** The current set of assumptions is *NOT* satisfiable, and here is a
       theory tautology (with its proof), for which every literal is false
       under the current assumptions. *)
+
+type statement = Statement.t
