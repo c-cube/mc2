@@ -23,7 +23,7 @@ let report_error l  =
   Format.eprintf
     "Error in file %s, line %d, column %d %s@."
     pos.pos_fname pos.pos_lnum o
-    l.lex_buffer
+    (Bytes.unsafe_to_string l.lex_buffer)
 
 let lex_file fname f =
   let chan = match fname with
