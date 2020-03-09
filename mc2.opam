@@ -1,36 +1,28 @@
-opam-version: "1.2"
+opam-version: "2.0"
 name: "mc2"
-license: "Apache"
 version: "dev"
-author: ["Sylvain Conchon" "Alain Mebsout" "Stephane Lecuyer" "Simon Cruanes" "Guillaume Bury"]
-maintainer: ["simon.cruanes@inria.fr"]
-build: [
-    [make "build-install"]
+maintainer: "simon.cruanes.2007@m4x.org"
+synopsis: "A mcsat-based SMT solver in pure OCaml"
+authors: [
+  "Simon Cruanes"
+  "Guillaume Bury"
 ]
-build-doc: [
-    [make "doc"]
-]
-build-test: [
-  [make "test"]
-]
-install: [
-    [make "install"]
-]
-remove: [
-    [make "uninstall"]
-]
+license: "Apache"
+tags: ["sat" "smt" "mcsat"]
+homepage: "https://github.com/c-cube/mc2"
+bug-reports: "https://github.com/c-cube/mc2/issues/"
 depends: [
+  "ocaml" {>= "4.03.0"}
   "zarith"
   "menhir"
-  "containers"
-  "sequence"
+  "containers" { >= "2.6" }
+  "iter"
   "dune" {build & >= "1.0"}
+  "odoc" {with-doc}
 ]
-available: [
-  ocaml-version >= "4.03.0"
+build: [
+  ["dune" "build" "@install" "-p" name "-j" jobs]
+  ["dune" "runtest" "-p" name "-j" jobs] {with-test}
+  ["dune" "build" "@doc" "-p" name "-j" jobs] {with-doc}
 ]
-tags: [ "sat" "smt" ]
-homepage: "https://github.com/c-cube/mc2"
-dev-repo: "https://github.com/c-cube/mc2.git"
-bug-reports: "https://github.com/c-cube/mc2/issues/"
 
