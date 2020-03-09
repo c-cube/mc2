@@ -225,7 +225,6 @@ module Make(ARG : sig
     (* polymorphic equality *)
     let mk_app = SReg.find_exn reg Mc2_uf.k_app in
     let mk_const = SReg.find_exn reg Mc2_uf.k_const in
-    let side_clauses : atom list list ref = ref [] in
     let conv_const v =
       begin match Subst.find subst v with
         | Some t -> t
@@ -270,7 +269,8 @@ module Make(ARG : sig
               F.imply (F.not_ a) (mk_eq_t_tf placeholder c);
             ]
         in
-        side_clauses := List.rev_append (mk_cnf form) !side_clauses;
+        let cs = mk_cnf form in
+        side_clauses := List.rev_append cs !side_clauses;
         ret_any placeholder
       | PA.Let (bs,body) ->
         (* convert all bindings in the same surrounding [subst],
@@ -526,7 +526,9 @@ module Make(ARG : sig
       (* TODO: handle non recursive definitions *)
       errorf_ctx "unsupported definition: %a" PA.pp_stmt stmt
     | PA.Stmt_assert t ->
+      Log.debugf 50 (fun k->k ">>> conv assert %a" PA.pp_term t);
       let cs = conv_bool_term t in
+      Log.debugf 60 (fun k->k ">>> assert clauses %a" Fmt.(Dump.(list @@ list @@ Atom.pp)) cs);
       [Stmt.Stmt_assert_clauses cs]
     | PA.Stmt_check_sat -> [Stmt.Stmt_check_sat]
     | PA.Stmt_check_sat_assuming _

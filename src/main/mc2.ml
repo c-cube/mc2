@@ -127,10 +127,10 @@ let main () =
     Solver.create ~plugins ()
   in
   let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
-  let module Process = Mc2_smtlib.Make(struct let solver = solver end) in
   let res = match syn with
     | Smtlib ->
       (* parse pb *)
+      let module Process = Mc2_smtlib.Make(struct let solver = solver end) in
       Process.parse !file >>= fun input ->
       Process.typecheck input >>= fun input ->
       (* TODO: parse list of plugins on CLI *)
