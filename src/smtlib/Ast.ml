@@ -559,7 +559,7 @@ module Ctx = struct
 
   let pp out t =
     Format.fprintf out "ctx {@[%a@]}"
-      (ID.Tbl.print ID.pp pp_kind) t.kinds
+      (ID.Tbl.pp ID.pp pp_kind) t.kinds
 end
 
 let error_loc ctx : string = Fmt.sprintf "at %a: " Locations.pp_opt (Ctx.loc ctx)
