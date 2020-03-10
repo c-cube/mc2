@@ -32,6 +32,7 @@ module Make(ARG : sig
     ?time:float ->
     ?memory:float ->
     ?progress:bool ->
+    ?switch:Util.Switch.t ->
     Statement.t ->
     unit or_error
   (** Process the given statement. *)

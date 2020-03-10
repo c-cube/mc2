@@ -102,6 +102,15 @@ let syntax_of_file file =
   if CCString.suffix ~suf:".cnf" file then Dimacs
   else Smtlib
 
+(* Limits alarm *)
+let check_limits ~switch () =
+  let t = Sys.time () in
+  let heap_size = (Gc.quick_stat ()).Gc.heap_words in
+  let s = float heap_size *. float Sys.word_size /. 8. in
+  if t > !time_limit || s > !size_limit then (
+    Util.Switch.activate switch;
+  )
+
 let main () =
   CCFormat.set_color_default true;
   (* Administrative duties *)
@@ -110,8 +119,10 @@ let main () =
     Arg.usage argspec usage;
     exit 2
   );
+  let switch = Util.Switch.create() in
   let syn = syntax_of_file !file in
-  Util.setup_gc();
+  Util.setup_gc ();
+  let gc_alarm = Gc.create_alarm (check_limits ~switch) in
   let solver =
     let plugins = match syn with
       | Dimacs ->
@@ -140,7 +151,7 @@ let main () =
           E.fold_l
             (fun () st ->
                Process.process_stmt
-                 ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf
+                 ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf ~switch
                  ~time:!time_limit ~memory:!size_limit
                  ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
                  st)
@@ -152,7 +163,7 @@ let main () =
       Mc2_dimacs.parse (Solver.services solver) !file >>= fun pb ->
       Mc2_dimacs.process
         ~pp_model:!p_model ~gc:!gc ?dot_proof ~restarts:!restarts ~check:!check
-        ~time:!time_limit ~memory:!size_limit ~progress:!p_progress
+        ~time:!time_limit ~memory:!size_limit ~progress:!p_progress ~switch
         solver pb
   in
   if !p_stat then (
@@ -161,6 +172,7 @@ let main () =
   if !p_gc_stat then (
     Printf.printf "(gc_stats\n%t)\n" Gc.print_stat;
   );
+  Gc.delete_alarm gc_alarm;
   res
 
 let () = match main() with

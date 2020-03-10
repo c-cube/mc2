@@ -34,6 +34,7 @@ val process :
   ?time:float ->
   ?memory:float ->
   ?progress:bool ->
+  ?switch:Util.Switch.t ->
   Solver.t ->
   atom list list ->
   unit or_error

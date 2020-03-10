@@ -24,5 +24,13 @@ let setup_gc () =
     Gc.minor_heap_size = 500_000; (* ×8 to obtain bytes on 64 bits -->  *)
   }
 
+module Switch = struct
+  type t = bool ref
+  let create() = ref false
+  let[@inline] activate self = self := true
+  let[@inline] activated self = !self
+  let activated_opt = function None -> false | Some s -> activated s
+end
+
 module Int_map = CCMap.Make(CCInt)
 module Str_map = CCMap.Make(String)

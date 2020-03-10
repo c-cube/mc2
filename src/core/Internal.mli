@@ -62,6 +62,7 @@ val solve :
   ?time:float ->
   ?memory:float ->
   ?progress:bool ->
+  ?switch:Util.Switch.t ->
   t ->
   unit
 (** Try and solves the current set of assumptions.

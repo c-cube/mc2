@@ -51,10 +51,12 @@ module Make(ARG : sig
   (* call the solver to check-sat *)
   let solve
       ?gc ?restarts ?dot_proof
-      ?(pp_model=false) ?(check=false) ?time ?memory ?progress
+      ?(pp_model=false) ?(check=false) ?time ?memory ?progress ?switch
       ~assumptions s : unit =
     let t1 = Sys.time() in
-    let res = Solver.solve ?gc ?restarts ?time ?memory ?progress s ~assumptions in
+    let res =
+      Solver.solve ?gc ?restarts ?time ?memory ?progress ?switch
+        s ~assumptions in
     let t2 = Sys.time () in
     begin match res with
       | Solver.Sat state ->
@@ -95,7 +97,7 @@ module Make(ARG : sig
   (* process a single statement *)
   let process_stmt
       ?gc ?restarts ?(pp_cnf=false) ?dot_proof ?pp_model ?check
-      ?time ?memory ?progress
+      ?time ?memory ?progress ?switch
       (stmt:Statement.t) : unit or_error =
     Log.debugf 5
       (fun k->k "(@[<2>process statement@ %a@])" Statement.pp stmt);
@@ -112,7 +114,8 @@ module Make(ARG : sig
         Log.debug 1 "exit";
         raise Exit
       | Stmt_check_sat ->
-        solve ?gc ?restarts ?dot_proof ?check ?pp_model ?time ?memory ?progress
+        solve ?gc ?restarts ?dot_proof ?check ?pp_model ?time
+          ?memory ?progress ?switch
           solver ~assumptions:[];
         E.return()
       | Stmt_ty_decl _ -> E.return ()

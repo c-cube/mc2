@@ -1592,7 +1592,7 @@ let pp_progress (env:t) : unit =
 
 (* do some amount of search, until the number of conflicts or clause learnt
    reaches the given parameters *)
-let search (env:t) ~gc ~time ~memory ~progress n_of_conflicts : unit =
+let search (env:t) ~gc ~time ~memory ~progress ?switch n_of_conflicts : unit =
   Log.debugf 5
     (fun k->k "(@[@{<yellow>solver.search@}@ :nconflicts %d@])" n_of_conflicts);
   let conflictC = ref 0 in
@@ -1621,6 +1621,7 @@ let search (env:t) ~gc ~time ~memory ~progress n_of_conflicts : unit =
         (* if decision_level() = 0 then simplify (); *)
 
         (* check time/memory limits every 2^k rounds *)
+        if Util.Switch.activated_opt switch then raise Out_of_time;
         if env.conflicts = ((env.conflicts lsr 10) lsl 10) then (
           if progress then pp_progress env;
           check_limits ~time ~memory ();
@@ -1704,6 +1705,7 @@ let solve
     ?(time=max_float)
     ?(memory=max_float)
     ?(progress=false)
+    ?switch
     (env:t)
   : unit =
   Log.debugf 2 (fun k->k"@{<Green>#### Solve@}");
@@ -1716,9 +1718,11 @@ let solve
     ref (CCFloat.max 50. ((to_float (nb_clauses env)) *. env.learntsize_factor))
   in
   let rec loop () =
-    begin match
+    if Util.Switch.activated_opt switch then raise Out_of_time
+    else (
+      match
         let nconf = if restarts then to_int !n_of_conflicts else max_int in
-        search env ~gc ~time ~memory ~progress nconf
+        search env ~gc ~time ~memory ~progress ?switch nconf
       with
       | () -> ()
       | exception Restart ->
@@ -1738,7 +1742,7 @@ let solve
         env.learntsize_inc <- 1. +. (env.learntsize_inc -. 1.) /. 1.3 ;
         loop()
       | exception Sat -> check_sat ()
-    end
+    )
   and check_sat () =
     assert (fully_propagated env);
     begin match final_check env with

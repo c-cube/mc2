@@ -11,5 +11,13 @@ val swap_arr : 'a array -> int -> int -> unit
 val setup_gc : unit -> unit
 (** Change parameters of the GC *)
 
+module Switch : sig
+  type t
+  val create : unit -> t
+  val activate : t -> unit
+  val activated : t -> bool
+  val activated_opt : t option -> bool
+end
+
 module Int_map : CCMap.S with type key = int
 module Str_map : CCMap.S with type key = string

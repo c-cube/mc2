@@ -135,6 +135,7 @@ val solve :
   ?memory:float ->
   ?progress:bool ->
   ?assumptions:atom list ->
+  ?switch:Util.Switch.t ->
   t ->
   res
 (** Try and solves the current set of assumptions. *)

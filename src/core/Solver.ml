@@ -108,12 +108,12 @@ type res =
   | Unsat of Unsat_state.t (** Returned when the solver reaches UNSAT *)
 (** Result type for the solver *)
 
-let solve ?gc ?restarts ?time ?memory ?(progress=false) ?(assumptions=[]) (s:t): res =
+let solve ?gc ?restarts ?time ?memory ?(progress=false) ?(assumptions=[]) ?switch (s:t): res =
   try
     S.pop s;
     S.push s;
     S.local s assumptions;
-    S.solve ?gc ?restarts ?time ?memory ~progress s;
+    S.solve ?gc ?restarts ?time ?memory ~progress ?switch s;
     if progress then S.clear_progress();
     pp_all s 99 "SAT";
     Sat (St_sat s)
