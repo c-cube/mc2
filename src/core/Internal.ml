@@ -1622,7 +1622,7 @@ let search (env:t) ~gc ~time ~memory ~progress ?switch n_of_conflicts : unit =
 
         (* check time/memory limits every 2^k rounds *)
         if Util.Switch.activated_opt switch then raise Out_of_time;
-        if env.conflicts = ((env.conflicts lsr 10) lsl 10) then (
+        if env.conflicts = ((env.conflicts lsr 8) lsl 8) then (
           if progress then pp_progress env;
           check_limits ~time ~memory ();
 
@@ -1712,6 +1712,9 @@ let solve
   if is_unsat env then (
     raise Unsat;
   );
+  let _alarm_progress =
+    if progress then Some (Gc.create_alarm (fun () -> pp_progress env)) else None
+  in
   (* initial limits for conflicts and learnt clauses *)
   let n_of_conflicts = ref (to_float env.restart_first) in
   let n_of_learnts =
@@ -1756,7 +1759,9 @@ let solve
         loop() (* need to propagate *)
     end
   in
-  loop()
+  CCFun.finally
+    ~h:(fun () -> CCOpt.iter Gc.delete_alarm _alarm_progress)
+    ~f:loop
 
 let assume env ?tag (cnf:atom list list) =
   List.iter
