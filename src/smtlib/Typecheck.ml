@@ -172,7 +172,6 @@ module Make(ARG : sig
 
   let mk_const = SReg.find_exn reg Mc2_uf.k_const
   let mk_lra_pred = SReg.find_exn reg Mc2_lra.k_make_pred
-  let mk_lra_relu = SReg.find_exn reg Mc2_lra.k_make_relu [@@warning "-26"]
   let mk_lra_eq t u = mk_lra_pred Mc2_lra.Eq0 (RLE.diff t u) |> Term.Bool.pa
   let[@inline] mk_eq_ t u = Term.mk_eq t u
   let mk_eq t u = Term.Bool.pa (mk_eq_ t u)
