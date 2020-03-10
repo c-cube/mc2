@@ -8,8 +8,7 @@
 (declare-fun n_1_0 () Real)
 (declare-fun n_2_0 () Real)
 
-(define-fun relu ((x Real)) Real
-  (ite (>= x 0) x 0))
+;(define-fun relu ((x Real)) Real (ite (>= x 0) x 0))
 
 ;; Bound input ranges
 

@@ -27,17 +27,26 @@ module Make(ARG : sig
   let reg = Solver.services solver
   let decl = Solver.get_service_exn solver Mc2_uf.k_decl
 
+  module BV = Bound_var
+
+  type fun_def = {
+    f_id: ID.t;
+    f_args: BV.t list;
+    f_body: Term.t;
+  }
+
   module Ctx = struct
     type t = {
       tys: (ID.t * Type.t) StrTbl.t;
       terms: ID.t StrTbl.t;
-      (* TODO: definitions *)
+      defs: fun_def StrTbl.t;
       mutable loc: Loc.t option; (* current loc *)
     }
 
     let t : t = {
       terms=StrTbl.create 64;
       tys=StrTbl.create 64;
+      defs=StrTbl.create 64;
       loc=None;
     }
 
@@ -429,6 +438,29 @@ module Make(ARG : sig
     let args = List.map conv_ty f.PA.fun_args in
     let ret = conv_ty f.PA.fun_ret in
     f.PA.fun_name, args, ret
+
+  let conv_fun_def ctx f_decl body : string * fun_def =
+    if f_decl.PA.fun_ty_vars <> [] then (
+      errorf_ctx ctx "cannot convert polymorphic function@ %a"
+        (PA.pp_fun_decl PA.pp_typed_var) f_decl;
+    );
+    (* TODO: bind variables *)
+    let subst, args =
+      CCList.fold_map
+        (fun subst v ->
+           let bv = BV.
+      conv_vars ctx f_decl.PA.fun_args in
+    let ty =
+        (List.map snd args)
+        (conv_ty_fst ctx f_decl.PA.fun_ret)
+    in
+    (* delayed body, for we need to declare the functions in the recursive block first *)
+    let conv_body() =
+      Ctx.with_vars ctx args
+        (fun args ->
+           A.fun_l args (conv_term ctx body))
+    in
+    f_decl.PA.fun_name, ty, conv_body
 
   (* FIXME: fun defs
   let conv_fun_def ctx f_decl body : string * Ty.t * (unit -> T.t) =
