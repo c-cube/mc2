@@ -242,6 +242,7 @@ module Make(ARG : sig
     in
     begin match t with
       | PA.Const v -> conv_const v
+      | PA.App ("xor", [a;b]) -> F.xor (conv_form subst a) (conv_form subst b) |> ret_f
       | PA.App (f, []) -> conv_const f
       | PA.App (f, l) ->
         let l = List.map (conv_term_ subst) l in
