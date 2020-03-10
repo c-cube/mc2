@@ -29,24 +29,25 @@ module Make(ARG : sig
 
   module BV = Bound_var
 
-  type fun_def = {
-    f_id: ID.t;
-    f_args: BV.t list;
-    f_body: Term.t;
-  }
+  type term_or_form =
+    | T of term
+    | F of F.t
+    | Rat of RLE.t (* rational linear expression *)
 
   module Ctx = struct
     type t = {
       tys: (ID.t * Type.t) StrTbl.t;
       terms: ID.t StrTbl.t;
-      defs: fun_def StrTbl.t;
+      def_funs: (PA.typed_var list * PA.term) StrTbl.t; (* defined functions *)
+      def_consts: term_or_form StrTbl.t; (* defined constants *)
       mutable loc: Loc.t option; (* current loc *)
     }
 
     let t : t = {
       terms=StrTbl.create 64;
       tys=StrTbl.create 64;
-      defs=StrTbl.create 64;
+      def_funs=StrTbl.create 64;
+      def_consts=StrTbl.create 32;
       loc=None;
     }
 
@@ -60,6 +61,9 @@ module Make(ARG : sig
     let add_ty_ (s:string) (id:ID.t) (ty:Ty.t) : unit =
       StrTbl.replace t.tys s (id,ty);
       ()
+
+    let add_def_const s rhs : unit = StrTbl.add t.def_consts s rhs
+    let add_def_fun s vars rhs : unit = StrTbl.add t.def_funs s (vars,rhs)
 
     let find_ty (s:string) : ty =
       match StrTbl.get t.tys s with
@@ -125,11 +129,6 @@ module Make(ARG : sig
   let mk_lra_id =
     let n = ref 0 in
     fun () -> ID.makef "lra_%d" (CCRef.incr_then_get n)
-
-  type term_or_form =
-    | T of term
-    | F of F.t
-    | Rat of RLE.t (* rational linear expression *)
 
   let[@inline] ret_t t = T t
   let[@inline] ret_f f = F f
@@ -236,10 +235,14 @@ module Make(ARG : sig
             | `Z n -> Mc2_lra.LE.const (Q.of_bigint n) |> ret_rat
           end
         | _ ->
-          match Ctx.find_term_fun v with
-          | f -> mk_app f [] |> ret_any
+          (* look for definitions *)
+          match StrTbl.find Ctx.t.Ctx.def_consts v with
+          | rhs -> rhs
           | exception Not_found ->
-            Error.errorf "variable %S not bound" v
+            match Ctx.find_term_fun v with
+            | f -> mk_app f [] |> ret_any
+            | exception Not_found ->
+              Error.errorf "variable %S not bound" v
         end
     in
     begin match t with
@@ -247,9 +250,23 @@ module Make(ARG : sig
       | PA.App ("xor", [a;b]) -> F.xor (conv_form subst a) (conv_form subst b) |> ret_f
       | PA.App (f, []) -> conv_const f
       | PA.App (f, l) ->
-        let l = List.map (conv_term_ subst) l in
-        let id = Ctx.find_term_fun f in
-        mk_app id l |> ret_any
+        (* see if it's a defined function *)
+        begin match StrTbl.find Ctx.t.Ctx.def_funs f with
+          | (vars,rhs) ->
+            (* TODO: also check types *)
+            if List.length vars <> List.length l then (
+              errorf_ctx "invalid function call to %s" f
+            );
+            let l = List.map (conv_term_or_form subst) l in
+            let subst =
+              List.fold_left2 (fun s (v,_) t -> Subst.add s v t) Subst.empty vars l
+            in
+            conv_term_or_form subst rhs
+          | exception Not_found ->
+            let id = Ctx.find_term_fun f in
+            let l = List.map (conv_term_ subst) l in
+            mk_app id l |> ret_any
+        end
       | PA.If (a,b,c) ->
         let a = conv_form subst a in
         let b = conv_term_or_form subst b in
@@ -439,56 +456,6 @@ module Make(ARG : sig
     let ret = conv_ty f.PA.fun_ret in
     f.PA.fun_name, args, ret
 
-  let conv_fun_def ctx f_decl body : string * fun_def =
-    if f_decl.PA.fun_ty_vars <> [] then (
-      errorf_ctx ctx "cannot convert polymorphic function@ %a"
-        (PA.pp_fun_decl PA.pp_typed_var) f_decl;
-    );
-    (* TODO: bind variables *)
-    let subst, args =
-      CCList.fold_map
-        (fun subst v ->
-           let bv = BV.
-      conv_vars ctx f_decl.PA.fun_args in
-    let ty =
-        (List.map snd args)
-        (conv_ty_fst ctx f_decl.PA.fun_ret)
-    in
-    (* delayed body, for we need to declare the functions in the recursive block first *)
-    let conv_body() =
-      Ctx.with_vars ctx args
-        (fun args ->
-           A.fun_l args (conv_term ctx body))
-    in
-    f_decl.PA.fun_name, ty, conv_body
-
-  (* FIXME: fun defs
-  let conv_fun_def ctx f_decl body : string * Ty.t * (unit -> T.t) =
-    if f_decl.PA.fun_ty_vars <> [] then (
-      errorf_ctx ctx "cannot convert polymorphic function@ %a"
-        (PA.pp_fun_decl PA.pp_typed_var) f_decl;
-    );
-    let args = conv_vars ctx f_decl.PA.fun_args in
-    let ty =
-        (List.map snd args)
-        (conv_ty_fst ctx f_decl.PA.fun_ret)
-    in
-    (* delayed body, for we need to declare the functions in the recursive block first *)
-    let conv_body() =
-      Ctx.with_vars ctx args
-        (fun args ->
-           A.fun_l args (conv_term ctx body))
-    in
-    f_decl.PA.fun_name, ty, conv_body
-
-  let conv_fun_defs ctx decls bodies : A.definition list =
-    let l = List.map2 (conv_fun_def ctx) decls bodies in
-    let ids = List.map (fun (f,ty,_) -> Ctx.add_id ctx f (Ctx.K_fun ty)) l in
-    let defs = List.map2 (fun id (_,ty,body) -> id, ty, body()) ids l in
-    (* parse id,ty and declare them before parsing the function bodies *)
-    defs
-     *)
-
   let conv_term t = conv_term_ Subst.empty t
 
   let rec conv_statement (s:PA.statement): Stmt.t list =
@@ -536,19 +503,18 @@ module Make(ARG : sig
       [A.Define defs]
            *)
     | PA.Stmt_fun_def
-        {PA.fr_decl={PA.fun_ty_vars=[]; fun_args=[]; fun_name; fun_ret}; fr_body} ->
-      (* turn [def f : ret := body] into [decl f : ret; assert f=body] *)
-      let ret = conv_ty fun_ret in
-      let id = ID.make fun_name in
-      decl id [] ret;
-      Ctx.add_term_fun_ fun_name id;
-      let eq_def = conv_bool_term @@ PA.eq (PA.const fun_name) fr_body in
-      [ Stmt.Stmt_decl (id,[],ret);
-        Stmt.Stmt_assert_clauses eq_def;
-      ]
-    | PA.Stmt_fun_rec _
-    | PA.Stmt_fun_def _ ->
-      (* TODO: handle non recursive definitions *)
+        {PA.fr_decl={PA.fun_ty_vars=[]; fun_args=[]; fun_name; fun_ret=_}; fr_body} ->
+      (* substitute on the fly *)
+      let rhs = conv_term_or_form Subst.empty fr_body in
+      Ctx.add_def_const fun_name rhs;
+      []
+    | PA.Stmt_fun_def
+        {PA.fr_decl={PA.fun_ty_vars=[]; fun_args; fun_name; fun_ret=_}; fr_body} ->
+      (* will substitute on the fly *)
+      Ctx.add_def_fun fun_name fun_args fr_body;
+      []
+    | PA.Stmt_fun_def _
+    | PA.Stmt_fun_rec _ ->
       errorf_ctx "unsupported definition: %a" PA.pp_stmt stmt
     | PA.Stmt_assert t ->
       Log.debugf 50 (fun k->k ">>> conv assert %a" PA.pp_term t);
