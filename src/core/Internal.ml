@@ -178,7 +178,7 @@ let[@inline] decision_level env = Vec.size env.decision_levels
 let[@inline] base_level env = Vec.size env.user_levels
 
 let[@inline] services env = env.services
-let[@inline] plugins env = CCVector.to_seq env.plugins
+let[@inline] plugins env = CCVector.to_iter env.plugins
 let[@inline] get_service env (k:_ Service.Key.t) =
   Service.Registry.find env.services k
 
@@ -229,7 +229,7 @@ let[@inline] is_unsat t = match t.unsat_conflict with
 
 (* iterate on all active terms *)
 let[@inline] iter_terms (env:t) : term Iter.t =
-  CCVector.to_seq env.plugins
+  CCVector.to_iter env.plugins
   |> Iter.flat_map
     (fun (module P : Plugin.S) -> P.iter_terms)
   |> Iter.filter Term.has_var

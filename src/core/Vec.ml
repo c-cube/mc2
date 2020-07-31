@@ -90,12 +90,12 @@ let[@inline] iteri f t =
     f i (Array.unsafe_get t.data i)
   done
 
-let[@inline] to_seq a k = iter k a
+let[@inline] to_iter a k = iter k a
 
-let exists p t = Iter.exists p @@ to_seq t
-let for_all p t = Iter.for_all p @@ to_seq t
-let fold f acc a = Iter.fold f acc @@ to_seq a
-let to_list a = Iter.to_list @@ to_seq a
+let exists p t = Iter.exists p @@ to_iter t
+let for_all p t = Iter.for_all p @@ to_iter t
+let fold f acc a = Iter.fold f acc @@ to_iter a
+let to_list a = Iter.to_list @@ to_iter a
 let to_array a = Array.sub a.data 0 a.sz
 
 let of_list l : _ t =

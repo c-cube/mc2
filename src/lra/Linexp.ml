@@ -41,7 +41,7 @@ let[@inline] hash_q (n:Q.t) : int =
 
 let[@inline] hash (e:t) : int =
   let hash_pair (t,n) = CCHash.combine3 11 (Term.hash t) (hash_q n) in
-  CCHash.combine3 42 (hash_q e.const) (CCHash.seq hash_pair @@ TM.to_seq e.terms)
+  CCHash.combine3 42 (hash_q e.const) (CCHash.seq hash_pair @@ TM.to_iter e.terms)
 
 let[@inline] const n : t = {const=n; terms=TM.empty }
 let[@inline] is_const n : bool = TM.is_empty n.terms
@@ -113,7 +113,7 @@ let pp_no_paren out (e:t) : unit =
       else Fmt.fprintf out "%a·%a" Q.pp_print n Term.pp t
     in
     Fmt.fprintf out "%a%a"
-      (Util.pp_seq ~sep: " + " pp_pair) (TM.to_seq e.terms) pp_const e
+      (Util.pp_seq ~sep: " + " pp_pair) (TM.to_iter e.terms) pp_const e
   )
 
 let[@inline] pp out e = Fmt.fprintf out "(@[%a@])" pp_no_paren e

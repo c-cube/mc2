@@ -62,7 +62,7 @@ let tc_lemma =
   Lemma.TC.make ~pp ()
 
 let[@inline] c_list_as_seq (tbl:reason Value.Tbl.t) : (value * reason) Iter.t =
-  Value.Tbl.to_seq tbl
+  Value.Tbl.to_iter tbl
 
 let pp_v_reason_eq out (v,rn): unit =
   Fmt.fprintf out "(@[eq:v %a@ :lvl %d@ :other %a@ :eqn %a@])"

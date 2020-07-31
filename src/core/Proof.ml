@@ -321,11 +321,11 @@ module Check : sig
   val check : t -> unit
 end = struct
   let[@inline] set_of_c (c:clause): Atom.Set.t =
-    Iter.of_array c.c_atoms |> Atom.Set.of_seq
+    Iter.of_array c.c_atoms |> Atom.Set.of_iter
 
   let pp_a_set out (a:Atom.Set.t) : unit =
     Fmt.fprintf out "(@[<v>%a@])"
-      (Util.pp_seq ~sep:" ∨ " Atom.debug) (Atom.Set.to_seq a)
+      (Util.pp_seq ~sep:" ∨ " Atom.debug) (Atom.Set.to_iter a)
 
   (* state for one hyper{resolution,paramodulation} step *)
   type state = {
