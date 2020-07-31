@@ -21,7 +21,7 @@
 (dir
   (path $cur_dir)
   (pattern ".*\\.(smt2|cnf)")
-  (expect (try (run smtlib-read-status) (run z3))))
+  (expect (try (run smtlib-read-status) (run z3) (const unknown))))
 
 (task
   (name mc2-local-test)
