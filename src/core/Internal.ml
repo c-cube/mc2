@@ -1599,7 +1599,7 @@ let search (env:t) ~gc ~time ~memory ~progress ?switch n_of_conflicts : unit =
   env.starts <- env.starts + 1;
   while true do
     Log.debugf 50
-      (fun k->k "(@[cur-heap@ %a@])" (Util.pp_seq Term.pp) @@ H.to_iter env.term_heap);
+      (fun k->k "(@[cur-heap@ %a@])" (Util.pp_iter Term.pp) @@ H.to_iter env.term_heap);
     begin match propagate env with
       | Some confl -> (* Conflict *)
         incr conflictC;

@@ -73,7 +73,7 @@ let process ?gc ?restarts ?dot_proof
             Fmt.fprintf out "(@[%a %B@])" Term.pp t (Term.Bool.is_true t)
           in
           Format.printf "(@[<hv1>model@ %a@])@."
-            (Util.pp_seq pp_t) (Solver.Sat_state.iter_trail st)
+            (Util.pp_iter pp_t) (Solver.Sat_state.iter_trail st)
         );
         if check then (
           if not (check_model pb st) then (

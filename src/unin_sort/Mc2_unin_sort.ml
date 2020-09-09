@@ -78,7 +78,7 @@ let pp_c_list out (c_l:unit_constraints) = match c_l with
     Fmt.fprintf out "%a" pp_v_reason_eq(value,reason)
   | C_diseq {tbl} ->
     Fmt.fprintf out "{@[<hv>%a@]}"
-      (Util.pp_seq pp_v_reason_neq) (c_list_as_seq tbl)
+      (Util.pp_iter pp_v_reason_neq) (c_list_as_seq tbl)
 
 (* values for uninterpreted sorts *)
 module V = struct

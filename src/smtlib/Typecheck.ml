@@ -70,11 +70,6 @@ module Make(ARG : sig
   let ill_typed fmt =
     errorf_ctx ("ill-typed: " ^^ fmt)
 
-  let check_bool_ t : unit =
-    if not (Ty.equal (T.ty t) Ty.bool) then (
-      ill_typed "expected bool, got `@[%a : %a@]`" T.pp t Ty.pp (T.ty t)
-    )
-
   (* parse a type *)
   let conv_ty (t:PA.ty) : Ty.t = match t with
     | PA.Ty_bool -> Ty.bool
@@ -96,14 +91,12 @@ module Make(ARG : sig
     type 'a t = 'a M.t
     let empty = M.empty
     let mem subst v = M.mem v subst
-    let pp pp_x out = M.pp ~arrow:"→" Fmt.string pp_x out
     let add subst v t =
       if mem subst v then (
         Error.errorf "%a already bound" Fmt.string v;
       );
       M.add v t subst
     let find subst v = M.get v subst
-    let find_exn subst v = M.find v subst
   end
 
   let is_num s =

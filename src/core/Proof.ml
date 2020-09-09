@@ -325,7 +325,7 @@ end = struct
 
   let pp_a_set out (a:Atom.Set.t) : unit =
     Fmt.fprintf out "(@[<v>%a@])"
-      (Util.pp_seq ~sep:" ∨ " Atom.debug) (Atom.Set.to_iter a)
+      (Util.pp_iter ~sep:" ∨ " Atom.debug) (Atom.Set.to_iter a)
 
   (* state for one hyper{resolution,paramodulation} step *)
   type state = {
