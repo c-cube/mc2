@@ -21,6 +21,9 @@ depends: [
   "dune" { >= "1.11" }
   "odoc" {with-doc}
 ]
+pin-depends: [
+  ["msat.dev" "git+https://github.com/Gbury/mSAT.git#8eb32fa9abdb30665db7030c4861fe2229c0f671"]
+]
 build: [
   ["dune" "build" "@install" "-p" name "-j" jobs]
   ["dune" "runtest" "-p" name "-j" jobs] {with-test}
