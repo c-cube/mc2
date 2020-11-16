@@ -85,6 +85,16 @@ $(TESTTOOL)-full: snapshots
 	  --summary snapshots/full-$(DATE).txt \
 	  --csv snapshots/full-$(DATE).csv --task mc2-local-test $$home/workspace/smtlib/
 
+$(TESTTOOL)-QF_LRA:
+	$(TESTTOOL) run -c tests/benchpress.sexp -t $(TIMEOUT) \
+	  --progress -p mc2-dev -p z3 tests/QF_LRA
+$(TESTTOOL)-QF_UF:
+	$(TESTTOOL) run -c tests/benchpress.sexp -t $(TIMEOUT) \
+	  --progress -p mc2-dev -p z3 tests/QF_UF
+$(TESTTOOL)-QF_UFLRA:
+	$(TESTTOOL) run -c tests/benchpress.sexp -t $(TIMEOUT) \
+	  --progress -p mc2-dev -p z3 tests/QF_UFLRA
+
 reinstall: uninstall install
 
 ocp-indent:
