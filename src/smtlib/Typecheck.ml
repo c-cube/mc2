@@ -221,7 +221,7 @@ module Make(ARG : sig
       assert false
 
   (* convert term *)
-  let rec conv_term_or_form (subst:term_or_form Subst.t) (t:PA.term) : term_or_form =
+  let rec conv_t_or_f_ (subst:term_or_form Subst.t) (t:PA.term) : term_or_form =
     (* polymorphic equality *)
     let mk_app = SReg.find_exn reg Mc2_uf.k_app in
     let mk_const = SReg.find_exn reg Mc2_uf.k_const in
@@ -257,11 +257,11 @@ module Make(ARG : sig
             if List.length vars <> List.length l then (
               errorf_ctx "invalid function call to %s" f
             );
-            let l = List.map (conv_term_or_form subst) l in
+            let l = List.map (conv_t_or_f_ subst) l in
             let subst =
               List.fold_left2 (fun s (v,_) t -> Subst.add s v t) Subst.empty vars l
             in
-            conv_term_or_form subst rhs
+            conv_t_or_f_ subst rhs
           | exception Not_found ->
             let id = Ctx.find_term_fun f in
             let l = List.map (conv_term_ subst) l in
@@ -269,8 +269,8 @@ module Make(ARG : sig
         end
       | PA.If (a,b,c) ->
         let a = conv_form subst a in
-        let b = conv_term_or_form subst b in
-        let c = conv_term_or_form subst c in
+        let b = conv_t_or_f_ subst b in
+        let c = conv_t_or_f_ subst c in
         let ty_b = match b with
           | F _ -> Type.bool
           | T t -> Term.ty t
@@ -296,17 +296,17 @@ module Make(ARG : sig
            then convert [body] with all bindings active *)
         let subst =
           List.fold_left
-            (fun subst' (v,t) -> Subst.add subst' v (conv_term_or_form subst t))
+            (fun subst' (v,t) -> Subst.add subst' v (conv_t_or_f_ subst t))
             subst bs
         in
-        conv_term_or_form subst body
+        conv_t_or_f_ subst body
       | PA.And l -> F.and_ (List.map (conv_form subst) l) |> ret_f
       | PA.Or l -> F.or_ (List.map (conv_form subst) l) |> ret_f
       | PA.Imply (a,b) ->
         ret_f @@ F.imply (conv_form subst a) (conv_form subst b)
       | PA.Eq (a,b) ->
-        let a = conv_term_or_form subst a in
-        let b = conv_term_or_form subst b in
+        let a = conv_t_or_f_ subst a in
+        let b = conv_t_or_f_ subst b in
         mk_eq_tf_tf a b |> ret_f
       | PA.Distinct l ->
         (* TODO: more efficient "distinct"? *)
@@ -375,7 +375,7 @@ module Make(ARG : sig
           | (PA.Minus | PA.Div | PA.Mult), ([] | [_]) ->
             Error.errorf "ill-formed arith expr:@ %a@ (binary operator)" PA.pp_term t
         end
-      | PA.Attr (t,_) -> conv_term_or_form subst t
+      | PA.Attr (t,_) -> conv_t_or_f_ subst t
       | PA.Cast (t, ty_expect) ->
         let t = conv_term_ subst t in
         let ty_expect = conv_ty ty_expect in
@@ -396,7 +396,7 @@ module Make(ARG : sig
 
   (* expect a term *)
   and conv_term_ subst (t:PA.term) : term =
-    match conv_term_or_form subst t with
+    match conv_t_or_f_ subst t with
     | T t -> t
     | Rat e -> mk_lra_expr e
     | F {F.view=F.Lit a;_} when Atom.is_pos a -> Atom.term a
@@ -428,23 +428,32 @@ module Make(ARG : sig
     F.cnf ~fresh f
 
   (* convert formula *)
-  and conv_form subst (t:PA.term): F.t = match conv_term_or_form subst t with
+  and conv_form subst (t:PA.term): F.t = match conv_t_or_f_ subst t with
     | T t -> F.atom (Term.Bool.pa t)
     | F f -> f
     | Rat _ -> Error.errorf "expected proposition,@ got %a" PA.pp_term t
 
   (* expect a rational expr *)
   and conv_rat subst (t:PA.term) : RLE.t =
-    match conv_term_or_form subst t with
+    match conv_t_or_f_ subst t with
     | Rat e -> e
     | T t -> RLE.singleton1 t
     | F _ -> assert false
 
-  let conv_bool_term (t:PA.term): atom list list =
+  let wrap_side_ (f:unit -> 'a) : atom list list * 'a =
     assert (!side_clauses = []);
-    let cs = conv_form Subst.empty t |> mk_cnf in
+    let x = f() in
     let side = !side_clauses in
     side_clauses := [];
+    side, x
+
+  let conv_term_or_form (t:PA.term) =
+    wrap_side_ (fun () -> conv_t_or_f_ Subst.empty t)
+
+  let conv_bool_term (t:PA.term): atom list list =
+    let side, cs =
+      wrap_side_ (fun () -> conv_form Subst.empty t |> mk_cnf)
+    in
     List.rev_append side cs
 
   let conv_fun_decl f : string * Ty.t list * Ty.t =
@@ -505,9 +514,9 @@ module Make(ARG : sig
     | PA.Stmt_fun_def
         {PA.fr_decl={PA.fun_ty_vars=[]; fun_args=[]; fun_name; fun_ret=_}; fr_body} ->
       (* substitute on the fly *)
-      let rhs = conv_term_or_form Subst.empty fr_body in
+      let cs, rhs = conv_term_or_form fr_body in
       Ctx.add_def_const fun_name rhs;
-      []
+      if cs=[] then [] else [Stmt.Stmt_assert_clauses cs] (* side conditions *)
     | PA.Stmt_fun_def
         {PA.fr_decl={PA.fun_ty_vars=[]; fun_args; fun_name; fun_ret=_}; fr_body} ->
       (* will substitute on the fly *)
