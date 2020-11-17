@@ -6,8 +6,9 @@ Copyright 2014 Simon Cruanes
 
 (** mSAT core
 
-    This is the core of msat, containing the code doing the actual solving.
-    This module is based on mini-sat, and as such the solver heavily uses mutation,
+    This is the core of mc2, containing the code doing the actual solving.
+    This module is based on msat, itself based on mini-sat,
+    and as such the solver heavily uses mutation,
     which makes using it direclty kinda tricky (some exceptions can be raised
     at surprising times, mutating is dangerous for maintaining invariants, etc...).
 *)
