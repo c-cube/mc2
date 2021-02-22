@@ -1,4 +1,4 @@
-# MC2  [![Build Status](https://travis-ci.org/c-cube/mc2.svg?branch=master)](https://travis-ci.org/c-cube/mc2)
+# MC2  [![build](https://github.com/c-cube/mc2/actions/workflows/main.yml/badge.svg)](https://github.com/c-cube/mc2/actions/workflows/main.yml)
 
 MC² ("Model Constructing Modular Contraption") is a modular SMT solver
 in OCaml, based on the MCSat calculus.
