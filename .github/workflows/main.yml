@@ -11,7 +11,7 @@ jobs:
         ocaml-version: [ '4.08.0' ]
     steps:
     - uses: actions/checkout@master
-    - uses: avsm/setup-ocaml@master
+    - uses: ocaml/setup-ocaml@master
       with:
         ocaml-version: ${{ matrix.ocaml-version }}
     - run: opam pin -n .
