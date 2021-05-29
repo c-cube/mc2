@@ -1,0 +1,1 @@
+mc2 is an experimental mcSAT based SMT solver implemented in OCaml
