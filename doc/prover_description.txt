@@ -1,0 +1,14 @@
+
+mc2 is an experimental mcSAT-based SMT solver implemented in OCaml.
+It implements most of the techniques described in de Moura and Jovanović
+[VMCAI'13], in around 7 thousands lines of code (not including dependencies).
+EUF is supported via congruence lemmas; LRA is based on a conflict-driven
+Fourier-Motzkin solver. Boolean formulas are turned into clauses during preprocessing,
+using the Tseitin encoding; the core solver handles clauses like a regular SAT
+solver, as the code was originally derived from
+[msat](https://github.com/Gbury/mSAT), itself derived from Alt-Ergo Zero.
+However most of the code was modified or rewritten by Simon Cruanes while
+working at Veridis at Loria, Nancy, France; and later in his own free time.
+
+mc2 can be found at https://github.com/c-cube/mc2 and is free software under
+the Apache license.
