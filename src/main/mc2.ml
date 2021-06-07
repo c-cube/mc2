@@ -22,6 +22,7 @@ let time_limit = ref 300.
 let size_limit = ref 1000_000_000.
 let restarts = ref true
 let gc = ref true
+let smtcomp = ref false
 let p_stat = ref false
 let p_gc_stat = ref false
 let p_progress = ref false
@@ -88,6 +89,7 @@ let argspec = Arg.align [
     "-p", Arg.Set p_progress, " print progress bar";
     "--no-p", Arg.Clear p_progress, " no progress bar";
     "--lra-alt", Arg.Int Mc2_lra.set_lra_alt, "<int> activates variants of eq analysis in LRA";
+    "--smtcomp", Arg.Set smtcomp, " smt-comp mode";
     "--size", Arg.String (int_arg size_limit), "<s>[kMGT] sets the size limit for the sat solver";
     "--time", Arg.String (int_arg time_limit), "<t>[smhd] sets the time limit for the sat solver";
     "-t", Arg.String (int_arg time_limit), " same as --time";
@@ -115,6 +117,12 @@ let main () =
   CCFormat.set_color_default true;
   (* Administrative duties *)
   Arg.parse argspec input_file usage;
+  if !smtcomp then (
+    p_progress := false;
+    Fmt.set_color_default false;
+    Log.set_debug 0;
+    Log.set_debug_out Format.err_formatter;
+  );
   if !file = "" then (
     Arg.usage argspec usage;
     exit 2
@@ -151,6 +159,7 @@ let main () =
           E.fold_l
             (fun () st ->
                Process.process_stmt
+                 ~smtcomp:!smtcomp
                  ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf ~switch
                  ~time:!time_limit ~memory:!size_limit
                  ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress

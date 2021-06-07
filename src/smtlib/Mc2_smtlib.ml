@@ -51,7 +51,8 @@ module Make(ARG : sig
   (* call the solver to check-sat *)
   let solve
       ?gc ?restarts ?dot_proof
-      ?(pp_model=false) ?(check=false) ?time ?memory ?progress ?switch
+      ?(pp_model=false) ?(check=false) ?time ?memory
+      ?progress ~smtcomp ?switch
       ~assumptions s : unit =
     let t1 = Sys.time() in
     let res =
@@ -74,7 +75,11 @@ module Make(ARG : sig
           )
         );
         let t3 = Sys.time () -. t2 in
-        Format.printf "Sat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
+        if smtcomp then (
+          Format.printf "sat@."
+        ) else (
+          Format.printf "Sat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
+        )
       | Solver.Unsat state ->
         if check then (
           let p = Solver.Unsat_state.get_proof state in
@@ -91,23 +96,31 @@ module Make(ARG : sig
           end
         );
         let t3 = Sys.time () -. t2 in
-        Format.printf "Unsat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
+        if smtcomp then (
+          Format.printf "unsat@."
+        ) else (
+          Format.printf "Unsat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
+        )
     end
 
   (* process a single statement *)
   let process_stmt
       ?gc ?restarts ?(pp_cnf=false) ?dot_proof ?pp_model ?check
-      ?time ?memory ?progress ?switch
+      ?time ?memory ?progress ?(smtcomp=false) ?switch
       (stmt:Statement.t) : unit or_error =
     Log.debugf 5
       (fun k->k "(@[<2>process statement@ %a@])" Statement.pp stmt);
     begin match stmt with
       | Stmt_set_logic ("QF_UF"|"QF_LRA"|"QF_UFLRA") -> E.return ()
       | Stmt_set_logic s ->
-        Log.debugf 0 (fun k->k "warning: unknown logic `%s`" s);
+        if not smtcomp then (
+          Log.debugf 0 (fun k->k "warning: unknown logic `%s`" s);
+        );
         E.return ()
       | Stmt_set_option l ->
-        Log.debugf 0 (fun k->k "warning: unknown option `%a`" (Util.pp_list Fmt.string) l);
+        if not smtcomp then (
+          Log.debugf 0 (fun k->k "warning: unknown option `%a`" (Util.pp_list Fmt.string) l);
+        );
         E.return ()
       | Stmt_set_info _ -> E.return ()
       | Stmt_exit ->
@@ -115,7 +128,7 @@ module Make(ARG : sig
         raise Exit
       | Stmt_check_sat ->
         solve ?gc ?restarts ?dot_proof ?check ?pp_model ?time
-          ?memory ?progress ?switch
+          ?memory ?progress ?switch ~smtcomp
           solver ~assumptions:[];
         E.return()
       | Stmt_ty_decl _ -> E.return ()
