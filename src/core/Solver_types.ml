@@ -17,6 +17,7 @@
 module Term_fields = BitField.Make(struct end)
 module Clause_fields = BitField.Make(struct end)
 
+module Option = Util.Option
 module Fmt = CCFormat
 module Int_map = Util.Int_map
 

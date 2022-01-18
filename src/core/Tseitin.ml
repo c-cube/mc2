@@ -203,7 +203,7 @@ module Make (F : Tseitin_intf.Arg) = struct
       | True -> []
       | Comb (Not, [{view=True;_}]) -> [[]]
       | Comb (And, l) -> CCList.filter_map (cnf_under_and st) l
-      | _ -> CCOpt.to_list @@ cnf_under_and st f
+      | _ -> Option.to_list @@ cnf_under_and st f
     in
     (* encode clauses that make proxies in !acc_and equivalent to
        their clause *)

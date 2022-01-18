@@ -6,46 +6,17 @@
 J ?= 3
 TIMEOUT ?= 30
 TARGETS ?= @install
-OPTS ?= -j $(J)
+OPTS ?= -j $(J) --profile=release
 
 TIME=10s
 
 all: build test
 
-testperf: build
-	./src/tests/reluplex/make_relu_example.py > /tmp/test.smt2
-	./src/tests/reluplex/match_relu.py /tmp/test.smt2 > /tmp/test_with_relu.smt2
-	time yices-smt2 /tmp/test.smt2
-	# - ./mc2 -stat /tmp/test.smt2 -time $(TIME)
-	# - ./mc2 -stat /tmp/test.smt2 -lra-alt=1 -time $(TIME)
-	# - ./mc2 -stat /tmp/test.smt2 -lra-alt=2 -time $(TIME)
-	# - ./mc2 -stat /tmp/test.smt2 -lra-alt=3 -time $(TIME)
-	# - ./mc2 -stat /tmp/test.smt2 -lra-alt=4 -time $(TIME)
-	# - ./mc2 -stat /tmp/test_with_relu.smt2 -time $(TIME)
-	# - ./mc2 -stat /tmp/test_with_relu.smt2 -lra-alt=1 -time $(TIME)
-	# - ./mc2 -stat /tmp/test_with_relu.smt2 -lra-alt=2 -time $(TIME)
-	# - ./mc2 -stat /tmp/test_with_relu.smt2 -lra-alt=3 -time $(TIME)
-	# - ./mc2 -stat /tmp/test_with_relu.smt2 -lra-alt=4 -time $(TIME)
-	# - ./mc2 -stat /tmp/test_with_relu.smt2 -lra-alt=5 -time $(TIME)
-	- ./mc2 -stat /tmp/test_with_relu.smt2 -lra-alt=6 # -time $(TIME)
-
-testrelu: build
-	./mc2 src/tests/reluplex/test_relu.smt2 -v 100
-
-testrelu0: build
-	./mc2 src/tests/reluplex/test_relu.smt2 -v 0
-
 build:
-	@dune build $(TARGETS) $(OPTS) --profile=release
+	@dune build $(TARGETS) $(OPTS)
 
 build-install:
 	@dune build @install -p mc2
-
-enable_log:
-	@cd src/core; ln -sf log_real.ml log.ml
-
-disable_log:
-	@cd src/core; ln -sf log_dummy.ml log.ml
 
 clean:
 	@dune clean
@@ -107,7 +78,8 @@ reindent: ocp-indent
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 echo "reindenting: "
 	@find src '(' -name '*.ml' -or -name '*.mli' ')' -print0 | xargs -0 ocp-indent -i
 
+WATCH?=$(TARGETS)
 watch:
-	@dune build $(TARGETS) $(OPTS) -w
+	@dune build $(WATCH) $(OPTS) -w
 
 .PHONY: clean doc all bench install uninstall remove reinstall enable_log disable_log bin test

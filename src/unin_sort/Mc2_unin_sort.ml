@@ -83,7 +83,6 @@ let pp_c_list out (c_l:unit_constraints) = match c_l with
 (* values for uninterpreted sorts *)
 module V = struct
   let[@inline] get_v = function V_unin i -> i | _ -> assert false
-  let[@inline] get (v:value): int = get_v (Value.view v)
   let[@inline] tcv_pp out v = Fmt.fprintf out "$v_%d" (get_v v)
   let[@inline] tcv_hash v = CCHash.int (get_v v)
   let[@inline] tcv_equal v1 v2 = match v1, v2 with

@@ -152,9 +152,6 @@ let build p_id Plugin.S_nil : Plugin.t =
 
     let pp_reason out {e_level=lvl;e_term=t} =
       Fmt.fprintf out "%a[at %d]" Term.debug t lvl
-    let pp_entry out (e:tbl_entry) =
-      Fmt.fprintf out "(@[<hv>entry@ :sig %a@ :val %a@ :reason (@[%a@])@])"
-        pp_sig e.e_sig Value.pp e.e_value pp_reason e.e_reason
 
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512

@@ -347,7 +347,7 @@ module Make(ARG : sig
             mk_lra_expr e |> ret_t
           | PA.Mult, _::_::_ ->
             let coeffs, terms =
-              CCList.partition_map
+              CCList.partition_filter_map
                 (fun t -> match RLE.as_const t with
                    | None -> `Right t
                    | Some c -> `Left c)

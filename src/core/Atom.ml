@@ -26,7 +26,7 @@ let[@inline] abs (a:t) : t = match a.a_term.t_var with
 
 let[@inline] value (a:t): value option =
   if is_pos a then Term.value a.a_term
-  else CCOpt.map Value.bool_neg (Term.value a.a_term)
+  else Option.map Value.bool_neg (Term.value a.a_term)
 
 let[@inline] is_true (a:t): bool =
   if is_pos a

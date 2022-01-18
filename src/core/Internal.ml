@@ -162,10 +162,6 @@ let[@inline] get_plugin (env:t) (p_id:plugin_id) : Plugin.t =
     Log.debugf error (fun k->k "cannot find plugin %d" p_id);
     assert false
 
-let[@inline] plugin_of_term (env:t) (t:term) : Plugin.t =
-  get_plugin env (Term.plugin_id t)
-
-let[@inline] plugins t = t.plugins
 let[@inline] actions t = Lazy.force t.actions
 
 (* Misc functions *)
@@ -769,13 +765,6 @@ let[@inline] put_high_level_atoms_first (arr:atom array) : unit =
 let[@inline] level_subs (l:term list) : level =
   List.fold_left (fun l t -> max l (Term.level t)) 0 l
 
-(* find how the atom can be false, either by assignment or by evaluation *)
-let[@inline] atom_as_false (a:atom) : (reason * level) option =
-  if Atom.is_false a then Some (Term.reason_exn a.a_term, Atom.level a)
-  else match Atom.eval a with
-    | Eval_into (V_false, subs) -> Some (Eval subs, level_subs subs)
-    | _ -> None
-
 (** {2 Conflict Analysis} *)
 
 (* Conflict analysis for MCSat, looking for the last UIP
@@ -785,8 +774,6 @@ let[@inline] atom_as_false (a:atom) : (reason * level) option =
 
 module Conflict = struct
   type t = clause
-
-  let[@inline] pp out (c:t) = Clause.debug out c
 
   let[@inline] level (c:t) : level =
     Array.fold_left
@@ -1760,7 +1747,7 @@ let solve
     end
   in
   CCFun.finally
-    ~h:(fun () -> CCOpt.iter Gc.delete_alarm _alarm_progress)
+    ~h:(fun () -> Option.iter Gc.delete_alarm _alarm_progress)
     ~f:loop
 
 let assume env ?tag (cnf:atom list list) =

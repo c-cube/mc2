@@ -21,3 +21,5 @@ end
 
 module Int_map : CCMap.S with type key = int
 module Str_map : CCMap.S with type key = string
+
+module Option = CCOpt

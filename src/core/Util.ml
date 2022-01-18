@@ -34,3 +34,5 @@ end
 
 module Int_map = CCMap.Make(CCInt)
 module Str_map = CCMap.Make(String)
+
+module Option = CCOpt

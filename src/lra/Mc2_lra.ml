@@ -5,9 +5,7 @@
    http://smtlib.cs.uiowa.edu/logics-all.shtml#QF_LRA *)
 
 open Mc2_core
-
-(* FIXME: carry state instead *)
-let _ = Random.self_init ();
+open Mc2_core.Util
 
 module LE = Linexp
 open LE.Infix
@@ -328,7 +326,7 @@ let build
             let reason_neq, expr_neq =
               CCList.find_map
                 (fun (n,e,r) -> if Q.equal low.num n then Some (r,e) else None)
-                l |> CCOpt.get_exn
+                l |> Option.get_exn_or "reason neq"
             in
             Log.debugf 30
               (fun k->k
