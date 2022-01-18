@@ -1,21 +1,30 @@
 name: build
-on: [push]
+on:
+  push:
+  pull_request:
+    branches:
+      - master
 jobs:
   run:
     name: Build
-    runs-on: ${{ matrix.operating-system }}
     strategy:
       matrix:
-        #operating-system: [macos-latest, ubuntu-latest, windows-latest]
-        operating-system: [ubuntu-latest]
-        ocaml-version: [ '4.08.0' ]
+        os:
+          - ubuntu-latest
+          #- windows-latest
+          #- macos-latest
+        ocaml-compiler:
+          - 4.03.x
+          - 4.12.x
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@master
-    - uses: ocaml/setup-ocaml@master
+    - uses: actions/checkout@v2
+    - uses: ocaml/setup-ocaml@v2
       with:
-        ocaml-version: ${{ matrix.ocaml-version }}
+        ocaml-compiler: ${{ matrix.ocaml-compiler }}
     - run: opam pin -n .
     - run: opam depext -yt mc2
     - run: opam install -t . --deps-only
     - run: opam exec -- dune build
     - run: opam exec -- dune runtest
+      if: ${{ matrix.os == 'ubuntu-latest'}}
