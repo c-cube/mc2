@@ -45,7 +45,6 @@ type term_view +=
   | Pred of {
       op: op;
       expr: LE.t;
-      mutable watches: Term.Watch2.t; (* can sometimes propagate *)
     } (** Arithmetic constraint *)
 
 (* reason of bound *)
@@ -102,6 +101,16 @@ let[@inline] eval_le (e:LE.t) : (num * term list) option =
     ~f:(fun t -> match Term.value t with
         | Some (V_value {view=V_rat n;_}) -> Some n
         | _ -> None)
+
+let find_uniq_unassigned (e:LE.t) : term option =
+  match
+    LE.terms e
+    |> Iter.filter (fun t -> not (Term.has_some_value t))
+    |> Iter.take 2
+    |> Iter.to_list
+  with
+  | [t] -> Some t
+  | _ -> None
 
 let tc_value =
   let pp out = function
@@ -255,7 +264,7 @@ let build
               let n = if Q.sign n >= 0 then Q.one else Q.minus_one in
               LE.singleton n t
           in
-          let view = Pred {op; expr=e; watches=Term.Watch2.dummy} in
+          let view = Pred {op; expr=e; } in
           let ans = T.make view Type.bool
           in Term.set_weight ans ((Term.weight ans) -. 1e30); ans
       end
@@ -524,48 +533,33 @@ let build
         | C_neq -> add_neq acts t num ~expr ~reason:(atomic_reason reason)
       end
 
-    (* [t] should evaluate or propagate. Add constraint to its state or
-            propagate *)
-    let check_consistent _acts (t:term) : unit = match Term.view t with
-      | Const _ -> ()
-      | Pred _ ->
-        (* check consistency *)
-        begin match eval t, Term.value t with
-          | Eval_into (V_true,_), Some V_true
-          | Eval_into (V_false,_), Some V_false -> ()
-          | Eval_into (V_false,subs), Some V_true
-          | Eval_into (V_true,subs), Some V_false ->
-            Error.errorf "inconsistency in lra: %a@ :subs (@[%a@])"
-              Term.debug t (Util.pp_list Term.debug) subs
-          | Eval_unknown, _ ->
-            Error.errorf "inconsistency in lra: %a@ does-not-eval"
-              Term.debug t
-          | Eval_into _, _ -> assert false (* non boolean! *)
-        end
-      | _ -> assert false
-
-    (* [u] is [t] or one of its subterms. All the other watches are up-to-date,
-       so we can add a constraint or even propagate [t] *)
-    let check_or_propagate acts (t:term) ~(u:term) : unit = match Term.view t with
+    (* Call when a term watched by [t] is updated (possibly [t] itself),
+       so we can evaluate [t], propagate it, or do nothing. *)
+    let on_updated (t:term) acts (_:term) : unit = match Term.view t with
       | Const _ -> ()
       | Pred p ->
         begin match Term.value t with
           | None ->
-            (* term not assigned, means all subterms are. We can evaluate *)
-            assert (t == u);
-            assert (LE.terms p.expr |> Iter.for_all Term.has_some_value);
             begin match eval_le p.expr with
-              | None -> assert false
+              | None -> ()
               | Some (n,subs) ->
                 let v = eval_bool_const p.op n in
                 Actions.propagate_bool_eval acts t v ~subs
             end
           | Some V_true ->
-            assert (t != u);
-            add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.pa t) true
+            begin match find_uniq_unassigned p.expr with
+              | Some u ->
+                assert (t != u);
+                add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.pa t) true
+              | None -> ()
+            end
           | Some V_false ->
-            assert (t != u);
-            add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
+            begin match find_uniq_unassigned p.expr with
+              | Some u ->
+                assert (t != u);
+                add_unit_constr acts p.op p.expr u ~reason:(Term.Bool.na t) false
+              | None -> ()
+            end
           | Some _ -> assert false
         end
       | _ -> assert false
@@ -574,20 +568,11 @@ let build
     let init acts t : unit = match Term.view t with
       | Const _ -> ()
       | Pred p ->
-        let watches = Term.Watch2.make (t :: LE.terms_l p.expr) in
-        p.watches <- watches;
-        Term.Watch2.init p.watches t
-          ~on_unit:(fun u -> check_or_propagate acts t ~u)
-          ~on_all_set:(fun () -> check_consistent acts t)
-      | _ -> assert false
-
-    let update_watches acts t ~watch : watch_res =
-      match Term.view t with
-      | Pred p ->
-        Term.Watch2.update p.watches t ~watch
-          ~on_unit:(fun u -> check_or_propagate acts t ~u)
-          ~on_all_set:(fun () -> check_consistent acts t)
-      | Const _ -> assert false
+        let watch_sub u : unit =
+          Term.add_watch_permanent u ~watcher:(on_updated t)
+        in
+        watch_sub t;
+        Iter.iter watch_sub (LE.terms p.expr);
       | _ -> assert false
 
     let mk_eq t u = mk_pred Eq0 (LE.singleton1 t -.. LE.singleton1 u)
@@ -676,7 +661,7 @@ let build
 
     let () =
       Term.TC.lazy_complete tc_t
-        ~init ~update_watches ~subterms ~eval ~pp:pp_term;
+        ~init ~subterms ~eval ~pp:pp_term;
       Type.TC.lazy_complete tc_ty
         ~pp:pp_ty ~decide ~eq:mk_eq ~mk_state;
       ()

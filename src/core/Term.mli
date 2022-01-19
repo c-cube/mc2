@@ -83,9 +83,13 @@ val field_clear : Term_fields.field -> t -> unit
 val has_var : t -> bool (** is there a variable for the term? *)
 val setup_var : t -> unit (** create a variable for the term *)
 
-val add_watch : t -> t -> unit
-(** [add_watch t u] adds [u] to the list of watches of [t]. [u] will be
-    notified whenever [t] is assigned *)
+val add_watch : t -> watcher:watcher -> unit
+(** [add_watch t ~watcher:w] adds [w] to the list of watches of [t].
+    [w] will be called whenever [t] is assigned *)
+
+val add_watch_permanent : t -> watcher:(actions -> t -> unit) -> unit
+
+val notify_watchers : t -> actions -> unit
 
 (** {2 Bool terms} *)
 
@@ -107,78 +111,6 @@ module Bool : sig
 
   val is_true : t -> bool
   val is_false : t -> bool
-end
-
-(** {2 1-term Watch Scheme} *)
-
-module Watch1 : sig
-  type t
-
-  val dummy : t
-  val make : term list -> t
-  val make_a : term array -> t (** owns the array *)
-  val iter : t -> term Iter.t (** current watch(es) *)
-
-  val init :
-    t ->
-    term ->
-    on_all_set:(unit -> unit) ->
-    unit
-  (** [init w t ~on_all_set] initializes [w] (the watchlist) for
-      term [t], by finding an unassigned term in the watchlist and
-      registering [t] to it.
-      If all terms are set, then it watches the one with the highest level
-      and call [on_all_set ()]
-  *)
-
-  val update :
-    t ->
-    term ->
-    watch:term ->
-    on_all_set:(unit -> unit) ->
-    watch_res
-    (** [update w t ~watch ~on_all_set] updates [w] after [watch]
-        has been assigned. It looks for another term in [w] for [t] to watch.
-        If all terms are set, then it calls [on_all_set ()]
-    *)
-end
-
-(** {2 2-terms Watch Scheme} *)
-
-module Watch2 : sig
-  type t
-
-  val dummy : t
-  val make : term list -> t
-  val make_a : term array -> t (** owns the array *)
-  val iter : t -> term Iter.t (** current watch(es) *)
-
-  val init :
-    t ->
-    term ->
-    on_unit:(term -> unit) ->
-    on_all_set:(unit -> unit) ->
-    unit
-  (** [init w t ~on_all_set] initializes [w] (the watchlist) for
-      term [t], by finding an unassigned term in the watchlist and
-      registering [t] to it.
-      If exactly one term [u] is not set, then it calls [on_unit u].
-      If all terms are set, then it watches the one with the highest level
-      and call [on_all_set ()]
-  *)
-
-  val update :
-    t ->
-    term ->
-    watch:term ->
-    on_unit:(term -> unit) ->
-    on_all_set:(unit -> unit) ->
-    watch_res
-    (** [update w t ~watch ~on_all_set] updates [w] after [watch]
-        has been assigned. It looks for another term in [w] for [t] to watch.
-        If exactly one term [u] is not set, then it calls [on_unit u].
-        If all terms are set, then it calls [on_all_set ()]
-    *)
 end
 
 (** {2 Assignment view} *)
@@ -207,7 +139,6 @@ module TC : sig
   (** Make a new typeclass, directly *)
   val make :
     ?init:(actions -> term -> unit) ->
-    ?update_watches:(actions -> term -> watch:term -> watch_res) ->
     ?delete:(term -> unit) ->
     ?subterms:(term_view -> (term->unit) -> unit) ->
     ?eval:(term -> eval_res) ->
@@ -230,7 +161,6 @@ module TC : sig
 
   val lazy_complete :
     ?init:(actions -> term -> unit) ->
-    ?update_watches:(actions -> term -> watch:term -> watch_res) ->
     ?delete:(term -> unit) ->
     ?subterms:(term_view -> (term->unit) -> unit) ->
     ?eval:(term -> eval_res) ->

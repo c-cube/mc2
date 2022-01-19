@@ -79,7 +79,7 @@ and term = {
   (** bitfield for storing various info *)
   mutable t_var: var;
   (** The "generalized variable" part, for assignments. *)
-  mutable t_watches : term Vec.t; (** terms that watch this term *)
+  mutable t_watches : watcher Vec.t; (** terms that watch this term *)
   mutable t_assign: term_assignment; (** current assignment *)
 }
 (** Main term representation. A {!term}, contains almost all information
@@ -95,13 +95,13 @@ and term = {
     solver, meaning that they need to be assigned a value in the model.
 *)
 
+and watcher = (actions -> term -> watch_res)
+(** [w acts t] means [t] was assigned, so we update some internal state
+    and return whether [w] should still watch [t]. *)
+
 and tc_term = {
   tct_pp : term_view CCFormat.printer; (** print views of this plugin *)
   tct_init: actions -> term -> unit; (** called when term is added *)
-  tct_update_watches: actions -> term -> watch:term -> watch_res;
-  (** [update_watches acts t ~watch] means [watch] was assigned,
-      and is watched by [t], so we update [t] and return
-      whether [t] should still watch [watch]. *)
   tct_delete: term -> unit;
   (** called when term is deleted *)
   tct_subterms: term_view -> term Iter.t; (** iterate on immediate subterms *)
@@ -263,7 +263,6 @@ type term_view += Dummy
 let tct_default : tc_term = {
   tct_pp=(fun _ _ -> assert false);
   tct_init=(fun _ _ -> ());
-  tct_update_watches=(fun _ _ ~watch:_ -> Watch_keep);
   tct_delete=(fun _ -> ());
   tct_subterms=(fun _ _ -> ());
   tct_eval=(fun _ -> Eval_unknown);

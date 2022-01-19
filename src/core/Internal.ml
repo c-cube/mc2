@@ -1220,33 +1220,10 @@ let propagate_atom (self:t) (a:atom) : unit =
     end
   done
 
-(* [t] is watching [watch], which has been assigned *)
-let[@inline] propagate_in_watching_term (env:t) (t:term) ~watch =
-  t.t_tc.tct_update_watches (actions env) t ~watch
-
-(* propagate in every term that watches [t] *)
-let propagate_term_real (env:t) (t:term) watched: unit =
-  let i = ref 0 in
-  while !i < Vec.size watched do
-    let u = Vec.get watched !i in
-    assert (Term.is_added u);
-    if Term.is_deleted u
-    then Vec.fast_remove watched !i
-    else begin match propagate_in_watching_term env u ~watch:t with
-      | Watch_keep -> incr i
-      | Watch_remove ->
-        Vec.fast_remove watched !i;
-        (* remove [u] from terms watching [t];
-           inspect [!i] again since it's now another term *)
-    end
-  done
-
 (* propagate term by notifying all watchers. This is the fast path
    in case there are no watchers. *)
 let[@inline] propagate_term (self:t) (t:term) : unit =
-  if Vec.size t.t_watches > 0 then (
-    propagate_term_real self t t.t_watches
-  )
+  Term.notify_watchers t (actions self)
 
 (* some terms were decided/propagated. Now we
    need to inform the plugins about these assignments, so they can do their job.

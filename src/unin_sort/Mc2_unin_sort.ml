@@ -305,7 +305,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       end
 
     (* check if term now evaluates, or if it becomes a unit constraint *)
-    let update_watches acts (eqn:term) ~watch:_ = match Term.view eqn with
+    let on_update (eqn:term) acts (_:term) = match Term.view eqn with
       | Eq (a,b) ->
         begin match Term.value eqn, Term.value a, Term.value b with
           | Some V_true, Some value, None ->
@@ -332,9 +332,10 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
     (* [a=b] watches [a,b, a=b] *)
     let init _ (t:term) = match Term.view t with
       | Eq (a,b) ->
-        Term.add_watch a t;
-        Term.add_watch b t;
-        Term.add_watch t t;
+        let watcher = on_update t in
+        Term.add_watch a ~watcher;
+        Term.add_watch b ~watcher;
+        Term.add_watch t ~watcher;
       | _ -> assert false
 
     (* find a value that is authorized by the list of constraints *)
@@ -386,8 +387,7 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
       end
 
     let () =
-      Term.TC.lazy_complete
-        ~pp ~subterms ~update_watches ~init ~eval tc;
+      Term.TC.lazy_complete ~pp ~subterms ~init ~eval tc;
       Type.TC.lazy_complete ~pp:pp_ty ~decide ~mk_state ~eq:mk_eq ty_tc;
       ()
 

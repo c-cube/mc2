@@ -19,7 +19,6 @@ type term_view +=
       id: ID.t;
       ty: Type.t;
       args: term array;
-      mutable watches: Term.Watch1.t; (* 1-watch on [arg_1,…,arg_n,f(args)] *)
     }
 
 let build p_id Plugin.S_nil : Plugin.t =
@@ -143,13 +142,21 @@ let build p_id Plugin.S_nil : Plugin.t =
     (* big signature table *)
     let tbl_ : tbl_entry Sig_tbl.t = Sig_tbl.create 512
 
+    exception E_arg_not_assigned
+
     (* check that [t], which should have fully assigned arguments,
        is consistent with the signature table *)
-    let check_sig (acts:Actions.t) (t:term): unit =
-      let v = Term.value_exn t in
-      begin match Term.view t with
-        | App {id;args;_} ->
-          let sigtr = { sig_head=id; sig_args=Array.map Term.value_exn args } in
+    let check_sig (acts:Actions.t) (t:term) : unit =
+      try
+        match Term.value t, Term.view t with
+        | None, _ -> ()
+        | Some v, App {id;args;_} ->
+          let get_val t = match Term.value t with
+            | None -> raise_notrace E_arg_not_assigned
+            | Some v -> v
+          in
+          let sig_args = Array.map get_val args in
+          let sigtr = { sig_head=id; sig_args } in
           Log.debugf 15
             (fun k->k "(@[uf.check_sig@ :sig %a@ :term %a@])" pp_sig sigtr Term.debug t);
           begin match Sig_tbl.get tbl_ sigtr with
@@ -197,26 +204,19 @@ let build p_id Plugin.S_nil : Plugin.t =
               )
           end
         | _ -> assert false
-      end
+      with E_arg_not_assigned ->
+        ()
 
     let init acts t = match Term.view t with
       | Const _ -> ()
-      | App ({args;_} as r) ->
-        (* watch all arguments, plus term itself *)
-        let watches =
-          Term.Watch1.make_a
-            (CCArray.init (Array.length args+1)
-               (fun i-> if i=0 then t else args.(i-1)))
+      | App {args;_} ->
+        let watcher acts _ =
+          check_sig acts t;
+          Watch_keep
         in
-        r.watches <- watches;
-        Term.Watch1.init watches t ~on_all_set:(fun () -> check_sig acts t)
-      | _ -> assert false
-
-    let update_watches acts t ~watch = match Term.view t with
-      | Const _ -> assert false (* no watches *)
-      | App {watches;_} ->
-        Term.Watch1.update watches t ~watch
-          ~on_all_set:(fun () -> check_sig acts t)
+        (* watch all arguments, plus term itself *)
+        Term.add_watch t ~watcher;
+        Array.iter (Term.add_watch ~watcher) args;
       | _ -> assert false
 
     let check_if_sat _ = Sat
@@ -267,11 +267,10 @@ let build p_id Plugin.S_nil : Plugin.t =
         (* proper application *)
         let ty = app_ty id l in
         let args = Array.of_list l in
-        let watches = Term.Watch1.dummy in
-        T_alloc.make (App {id;ty;args;watches}) ty
+        T_alloc.make (App {id;ty;args}) ty
 
     let () =
-      Term.TC.lazy_complete tc ~pp ~update_watches ~init ~subterms
+      Term.TC.lazy_complete tc ~pp ~init ~subterms
 
     let provided_services =
       [ Service.Any (k_app, app);

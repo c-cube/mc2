@@ -167,8 +167,20 @@ let[@inline] setup_var t =
     assert (has_var t);
   )
 
-let[@inline] add_watch (t:t) (u:t) : unit =
-  Vec.push t.t_watches u
+let[@inline] add_watch (t:t) ~watcher:w : unit = Vec.push t.t_watches w
+let[@inline] add_watch_permanent t ~watcher:w : unit =
+  let watcher acts t = w acts t; Watch_keep in
+  add_watch t ~watcher
+
+let notify_watchers (self:t) acts : unit =
+  let ws = self.t_watches in
+  let i = ref 0 in
+  while !i < Vec.size ws do
+    let w = Vec.get ws !i in
+    match w acts self with
+    | Watch_keep -> incr i
+    | Watch_remove -> Vec.fast_remove self.t_watches !i
+  done
 
 let marked t = Term_fields.get field_t_seen t.t_fields
 let mark t = t.t_fields <- Term_fields.set field_t_seen true t.t_fields
@@ -227,104 +239,6 @@ let debug out t : unit =
   debug_no_val out t;
   pp_val out t.t_assign
 
-(* find a term in [w] that is not assigned, or otherwise,
-       the one with highest level
-       @return index of term to watch, and [true] if all are assigned *)
-let rec find_watch_ w i highest : int * bool =
-  if i=Array.length w then highest, true
-  else if has_some_value w.(i) then (
-    let highest =
-      if level w.(i) > level w.(highest) then i else highest
-    in
-    find_watch_ w (i+1) highest
-  ) else i, false
-
-module Watch1 = struct
-  type t = term array
-  let dummy = [||]
-  let make = Array.of_list
-  let[@inline] make_a a : t = a
-  let[@inline] iter w k = if Array.length w>0 then k w.(0)
-
-  let init w t ~on_all_set : unit =
-    let i, all_set = find_watch_ w 0 0 in
-    (* put watch first *)
-    Util.swap_arr w i 0;
-    add_watch w.(0) t;
-    if all_set then (
-      on_all_set ();
-    );
-    ()
-
-  let update w t ~watch ~on_all_set : watch_res =
-    (* find another watch. If none is present, keep the
-       current one and call [on_all_set]. *)
-    assert (w.(0) == watch);
-    let i, all_set = find_watch_ w 0 0 in
-    if all_set then (
-      on_all_set ();
-      Watch_keep (* just keep current watch *)
-    ) else (
-      (* use [i] as the watch *)
-      assert (i>0);
-      Util.swap_arr w i 0;
-      add_watch w.(0) t;
-      Watch_remove
-    )
-end
-
-module Watch2 = struct
-  type t = term array
-  let dummy = [||]
-  let make = Array.of_list
-  let[@inline] make_a a : t = a
-
-  let[@inline] iter w k =
-    if Array.length w>0 then (
-      k w.(0);
-      if Array.length w>1 then k w.(1)
-    )
-
-  let[@inline] init w t ~on_unit ~on_all_set : unit =
-    let i0, all_set0 = find_watch_ w 0 0 in
-    Util.swap_arr w i0 0;
-    let i1, all_set1 = find_watch_ w 1 0 in
-    Util.swap_arr w i1 1;
-    add_watch w.(0) t;
-    add_watch w.(1) t;
-    assert (if all_set0 then all_set1 else true);
-    if all_set0 then (
-      on_all_set ()
-    ) else if all_set1 then (
-      assert (not (has_some_value w.(0)));
-      on_unit w.(0);
-    );
-    ()
-
-  let update w t ~watch ~on_unit ~on_all_set : watch_res =
-    (* find another watch. If none is present, keep the
-       current ones and call [on_unit] or [on_all_set]. *)
-    if w.(0) == watch then (
-      (* ensure that if there is only one watch, it's the first *)
-      Util.swap_arr w 0 1;
-    ) else assert (w.(1) == watch);
-    let i, all_set1 = find_watch_ w 1 0 in
-    if all_set1 then (
-      if has_some_value w.(0) then (
-        on_all_set ();
-      ) else (
-        on_unit w.(0);
-      );
-      Watch_keep (* just keep current watch *)
-    ) else (
-      (* use [i] as the second watch *)
-      assert (i>1);
-      Util.swap_arr w i 1;
-      add_watch w.(1) t;
-      Watch_remove
-    )
-end
-
 (** {2 Typeclass} *)
 
 module TC = struct
@@ -332,14 +246,12 @@ module TC = struct
 
   let make
       ?(init=fun _ _ -> ())
-      ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
       ?(delete=fun _ -> ())
       ?(subterms=fun _ _ -> ())
       ?(eval=fun _ -> Eval_unknown)
       ~pp
       () : t =
     { tct_init=init;
-      tct_update_watches=update_watches;
       tct_delete=delete;
       tct_subterms=subterms;
       tct_pp=pp;
@@ -372,7 +284,6 @@ module TC = struct
 
   let lazy_complete
       ?(init=fun _ _ -> ())
-      ?(update_watches=fun _ _ ~watch:_ -> Watch_keep)
       ?(delete=fun _ -> ())
       ?(subterms=fun _ _ -> ())
       ?(eval=fun _ -> Eval_unknown)
@@ -383,7 +294,6 @@ module TC = struct
       | None ->
         let tc = {
           tct_init=init;
-          tct_update_watches=update_watches;
           tct_delete=delete;
           tct_subterms=subterms;
           tct_pp=pp;
