@@ -18,7 +18,6 @@ module Make(ARG : sig
   let parse_stdin () = Smtlib_utils.V_2_6.parse_chan ~filename:"<stdin>" stdin
 
   module TC = Typecheck.Make(ARG)
-  module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
 
   (** {2 Processing Statements} *)
 
@@ -81,25 +80,10 @@ module Make(ARG : sig
           Format.printf "Sat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
         )
       | Solver.Unsat state ->
-        if check then (
-          let p = Solver.Unsat_state.get_proof state in
-          Proof.check p;
-          begin match dot_proof with
-            | None ->  ()
-            | Some file ->
-              CCIO.with_out file
-                (fun oc ->
-                   Log.debugf 1 (fun k->k "write proof into `%s`" file);
-                   let fmt = Format.formatter_of_out_channel oc in
-                   Dot.print fmt p;
-                   Format.pp_print_flush fmt (); flush oc)
-          end
-        );
-        let t3 = Sys.time () -. t2 in
         if smtcomp then (
           Format.printf "unsat@."
         ) else (
-          Format.printf "Unsat (%.3f/%.3f/%.3f)@." t1 (t2-.t1) t3;
+          Format.printf "Unsat (%.3f/%.3f)@." t1 (t2-.t1);
         )
     end
 

@@ -27,8 +27,6 @@ let p_stat = ref false
 let p_gc_stat = ref false
 let p_progress = ref false
 
-module Dot = Mc2_backend.Dot.Make(Mc2_backend.Dot.Default)
-
 let hyps = ref []
 
 let check_model state =

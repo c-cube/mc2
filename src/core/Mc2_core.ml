@@ -13,13 +13,11 @@ module Value = Value
 module Actions = Actions
 module Builtins = Builtins
 module Clause = Clause
-module Proof = Proof
 module Solver = Solver
 module Service = Service
 module Plugin = Plugin
 module Tseitin = Tseitin
 module ID = ID
-module Lemma = Lemma
 module Statement = Statement
 module Bound_var = Bound_var
 module Error = Error
@@ -61,7 +59,6 @@ type tc_term = Solver_types.tc_term
 (** type class for terms, packing all operations on terms *)
 
 type tc_value = Solver_types.tc_value
-type tc_lemma = Solver_types.tc_lemma
 
 type term = Solver_types.term
 (** Main term representation.
@@ -79,13 +76,6 @@ type atom = Solver_types.atom
 type clause = Solver_types.clause
 (** The type of clauses. Each clause generated should be true, i.e. enforced
     by the current problem (for more information, see the cpremise field). *)
-
-type lemma = Solver_types.lemma =
-  | Lemma_bool_tauto (** tautology [a ∨ ¬a] *)
-  | Lemma_custom of {
-      view: lemma_view; (** The lemma content *)
-      tc: tc_lemma; (** Methods on the lemma *)
-    } (** A lemma belonging to some plugin. Must be a tautology of the theory. *)
 
 type actions = Solver_types.actions
 (** Actions available to terms/plugins when doing propagation/model building,
@@ -142,14 +132,11 @@ type watch_res = Solver_types.watch_res =
   | Watch_keep
   | Watch_remove
 
-type premise_step = Solver_types.premise_step =
-  | Step_resolve of { c : clause; pivot : term; }
-
 (** Result of checking satisfiability of a problem *)
 type check_res = Solver_types.check_res =
   | Sat
   (** The current set of assumptions is satisfiable. *)
-  | Unsat of atom list * lemma
+  | Unsat of atom list
   (** The current set of assumptions is *NOT* satisfiable, and here is a
       theory tautology (with its proof), for which every literal is false
       under the current assumptions. *)

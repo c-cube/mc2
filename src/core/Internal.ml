@@ -7,8 +7,6 @@ Copyright 2014 Simon Cruanes
 open Solver_types
 module Fmt = CCFormat
 
-type proof = Proof.t
-
 exception Sat
 exception Unsat
 exception UndecidedLit of term
@@ -413,7 +411,7 @@ let eliminate_duplicates_and_absurd (clause:clause) : clause * bool =
     clause, false
   ) else (
     (* make a new clause, simplified *)
-    Clause.make !res (Simplify clause), true
+    Clause.make !res ~lemma:(Clause.is_lemma clause), true
   )
 
 (* simplify clause by removing duplicates *)
@@ -439,7 +437,7 @@ let simplify_clause (c:clause) : clause =
 
    precondition: clause does not contain duplicates
 *)
-let partition_atoms (atoms:atom array) : atom list * raw_premise_step list =
+let partition_atoms (atoms:atom array) : atom list * clause list =
   let rec partition_aux trues unassigned falses history i =
     if i >= Array.length atoms then (
       trues @ unassigned @ falses, history
@@ -597,8 +595,10 @@ let simpl_reason_level_0 : reason -> reason = function
              and set it as the cause for the propagation of [a], that way we can
              rebuild the whole resolution tree when we want to prove [a]. *)
           let c' =
-            Clause.make l (Premise.raw_steps (cl :: history))
+            Clause.make l ~lemma:(Clause.is_lemma cl)
           in
+          Log.debugf 50 (fun k->k"(@[simplify-reason-lvl0@ %a@ :into %a@ :hist %a@])"
+                            Clause.pp cl Clause.pp c' (Fmt.Dump.list Clause.pp) history);
           Log.debugf debug
             (fun k -> k "(@[simplified_reason@ :from %a@ :to %a@])"
                 Clause.debug cl Clause.debug c');
@@ -661,10 +661,10 @@ let enqueue_semantic_bool_eval (env:t) (a:atom) (terms:term list) : unit =
 
 (* atom [a] evaluates to [true] because of [terms] *)
 let enqueue_bool_theory_propagate (env:t) (a:atom)
-    ~lvl (atoms:atom list) (lemma: lemma) : unit =
+    ~lvl (atoms:atom list) : unit =
   if Atom.is_true a then ()
   else (
-    let c = Clause.make atoms (Lemma lemma) |> simplify_clause in
+    let c = Clause.make atoms ~lemma:true |> simplify_clause in
     env.propagations <- env.propagations + 1;
     enqueue_bool env a ~level:lvl (Bcp c)
   )
@@ -790,7 +790,6 @@ module Conflict_res = struct
   type t = {
     cr_backtrack_lvl : int; (* level to backtrack to *)
     cr_learnt: atom array; (* lemma learnt from conflict *)
-    cr_history: raw_premise_step list; (* justification: conflict clause + proof steps *)
     cr_is_uip: bool; (* conflict is UIP? *)
   }
 end
@@ -806,7 +805,6 @@ end = struct
     mutable cs_ptr_trail: int; (* current offset in the trail *)
     mutable cs_clause: clause option; (* current clause to analyze *)
     mutable cs_learnt: atom list; (* resulting clause to be learnt *)
-    mutable cs_history: raw_premise_step list; (* proof object *)
   }
 
   (** terms seen so far, for cleanup *)
@@ -860,11 +858,9 @@ end = struct
           Log.debugf debug
             (fun k->k "(@[analyze_conflict.resolving@ :clause %a@])" Clause.debug clause);
           (* increase activity since [c] participates in a conflict *)
-          begin match clause.c_premise with
-            | P_raw_steps _ | P_steps _ -> bump_clause_activity env clause
-            | Hyp | Local | Simplify _ | Lemma _ -> ()
-          end;
-          st.cs_history <- clause :: st.cs_history;
+          if Clause.is_lemma clause then (
+            bump_clause_activity env clause
+          );
           (* visit the current predecessors *)
           for j = 0 to Array.length clause.c_atoms - 1 do
             let q = clause.c_atoms.(j) in
@@ -875,8 +871,7 @@ end = struct
                  but we still keep track of it in the proof. *)
               assert (Atom.level q=0 && Atom.is_false q);
               begin match Atom.reason_exn q with
-                | Bcp cl | Bcp_lazy (lazy cl) ->
-                  st.cs_history <- cl :: st.cs_history
+                | Bcp _ | Bcp_lazy _ -> ()
                 | Eval [] -> () (* absurd *)
                 | Eval l -> assert (List.for_all (fun t->Term.level t=0) l);
                 | _ -> assert false
@@ -956,7 +951,6 @@ end = struct
       cs_continue=true;
       cs_clause=Some c;
       cs_ptr_trail=(Vec.size env.trail - 1);
-      cs_history=[];
       cs_conflict_level=conflict_level;
     } in
     Vec.clear (seen env);
@@ -976,7 +970,6 @@ end = struct
     {Conflict_res.
       cr_backtrack_lvl = level;
       cr_learnt = learnt_a;
-      cr_history = List.rev st.cs_history;
       cr_is_uip = is_uip;
     }
 end
@@ -987,13 +980,13 @@ let record_learnt_clause (env:t) (cr:Conflict_res.t): unit =
   begin match cr.cr_learnt with
     | [||] ->
       (* empty clause *)
-      let c = Clause.make_arr [||] (Premise.raw_steps_or_simplify cr.cr_history) in
+      let c = Clause.make_arr [||] ~lemma:false in
       report_unsat env c
     | [|fuip|] ->
       assert (cr.cr_backtrack_lvl = 0);
       env.n_learnt <- env.n_learnt + 1;
       let uclause =
-        Clause.make_arr cr.cr_learnt (Premise.raw_steps_or_simplify cr.cr_history)
+        Clause.make_arr cr.cr_learnt ~lemma:false
         |> simplify_clause
       in
       add_atom env fuip;
@@ -1009,8 +1002,7 @@ let record_learnt_clause (env:t) (cr:Conflict_res.t): unit =
       )
     | c_learnt ->
       let fuip = c_learnt.(0) in
-      let premise = Premise.raw_steps_or_simplify cr.cr_history in
-      let lclause = Clause.make_arr c_learnt premise |> simplify_clause in
+      let lclause = Clause.make_arr c_learnt ~lemma:true |> simplify_clause in
       Vec.push env.clauses_learnt lclause;
       Array.iter (add_atom env) lclause.c_atoms;
       env.n_learnt <- env.n_learnt + 1;
@@ -1052,11 +1044,8 @@ let add_conflict (env:t) (confl:clause): unit =
   record_learnt_clause env cr
 
 (* Get the correct vector to insert a clause in. *)
-let[@unrolled 1] rec vec_to_insert_clause_into env c = match c.c_premise with
-  | Hyp -> env.clauses_hyps
-  | Local -> env.clauses_temp
-  | Simplify d -> vec_to_insert_clause_into env d
-  | Lemma _ | P_raw_steps _ | P_steps _ -> env.clauses_learnt
+let vec_to_insert_clause_into env c =
+  if Clause.is_lemma c then env.clauses_learnt else env.clauses_hyps
 
 (* Add a new clause, simplifying, propagating, and backtracking if
    the clause is false in the current trail *)
@@ -1078,7 +1067,7 @@ let add_clause (env:t) (c0:clause) : unit =
         List.iteri (fun i a -> c.c_atoms.(i) <- a) atoms;
         c
       ) else (
-        Clause.make atoms (Premise.raw_steps (c :: history))
+        Clause.make atoms ~lemma:(Clause.is_lemma c0)
       )
     in
     Log.debugf info (fun k->k "(@{<green>solver.new_clause@}@ %a@])" Clause.debug clause);
@@ -1320,10 +1309,10 @@ end = struct
   let[@inline] on_backtrack (env:t) (f:unit->unit) : unit =
     Vec.push env.backtrack_stack f
 
-  let raise_conflict (env:t) (atoms:atom list) (lemma:lemma) : 'a =
+  let raise_conflict (env:t) (atoms:atom list) : 'a =
     Log.debugf debug (fun k->k
-                         "(@[<hv>@{<yellow>raise_conflict@}@ :clause %a@ :lemma %a@])"
-                         Clause.debug_atoms atoms Lemma.pp lemma);
+                         "(@[<hv>@{<yellow>raise_conflict@}@ :clause %a@])"
+                         Clause.debug_atoms atoms);
     env.bcp_head <- Vec.size env.trail;
     env.th_head <- Vec.size env.trail;
     (* cleanup list of atoms, removing duplicates and absurd lits *)
@@ -1338,7 +1327,7 @@ end = struct
          add_atom env a;
          eval_atom_to_false ~save:true env a)
       atoms;
-    let c = Clause.make atoms (Lemma lemma) in
+    let c = Clause.make atoms ~lemma:true in
     raise (Conflict c)
 
   let propagate_bool_eval (env:t) t (b:bool) ~(subs:term list) : unit =
@@ -1349,7 +1338,7 @@ end = struct
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval env a subs
 
-  let propagate_bool_lemma (env:t) t (v:bool) atoms lemma : unit =
+  let propagate_bool_lemma (env:t) t (v:bool) atoms : unit =
     let a = if v then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     let lvl = List.fold_left
         (fun lvl b ->
@@ -1363,7 +1352,7 @@ end = struct
     Log.debugf 5
       (fun k->k "(@[<hv>solver.@{<yellow>theory_propagate_bool@}@ %a@ :val %B@ :lvl %d@ :clause %a@])"
           Term.debug t v lvl Clause.debug_atoms atoms);
-    enqueue_bool_theory_propagate env a ~lvl atoms lemma
+    enqueue_bool_theory_propagate env a ~lvl atoms
 
   (* build the "actions" available to the plugins *)
   let make (env:t) : actions =
@@ -1671,10 +1660,10 @@ let final_check (env:t) : final_check_res =
       (fun (module P : Plugin.S) ->
          begin match P.check_if_sat (actions env) with
            | Sat -> ()
-           | Unsat (l,p) ->
+           | Unsat l ->
              (* conflict *)
              List.iter (add_atom env) l;
-             let c = Clause.make l (Lemma p) in
+             let c = Clause.make l ~lemma:true in
              raise (Conflict c)
          end)
       env.plugins;
@@ -1753,7 +1742,7 @@ let solve
 let assume env ?tag (cnf:atom list list) =
   List.iter
     (fun l ->
-       let c = Clause.make ?tag l Hyp in
+       let c = Clause.make ?tag l ~lemma:false in
        Log.debugf debug (fun k->k "(@[solver.assume_clause@ %a@])" Clause.debug c);
        Stack.push c env.clauses_to_add)
     cnf
@@ -1805,7 +1794,7 @@ let local (env:t) (l:atom list) : unit =
     assert (decision_level env = base_level env);
     if Atom.is_true a then ()
     else (
-      let c = Clause.make [a] Local in
+      let c = Clause.make [a] ~lemma:false in
       Log.debugf debug (fun k -> k "Temp clause: @[%a@]" Clause.debug c);
       Vec.push env.clauses_temp c;
       if Atom.is_false a then (

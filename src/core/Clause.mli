@@ -5,10 +5,10 @@ open Solver_types
 
 type t = clause
 
-val make : ?tag:int -> atom list -> premise -> t
+val make : ?tag:int -> atom list -> lemma:bool -> t
 (** [make atoms premise] creates a clause with the given attributes. *)
 
-val make_arr : ?tag:int -> atom array -> premise -> t
+val make_arr : ?tag:int -> atom array -> lemma:bool -> t
 (** [make_arr atoms premise] creates a clause with the
     given attributes.
     Consumes the array. *)
@@ -29,7 +29,7 @@ val set_deleted : t -> unit
 val atoms : t -> atom array
 val activity : t -> float
 val name : t -> int
-val premise : t -> premise
+val is_lemma : t -> bool
 val get_tag : t -> int option (** Recover tag from a clause, if any *)
 
 val gc_mark : t -> unit

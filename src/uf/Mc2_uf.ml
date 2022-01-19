@@ -22,10 +22,6 @@ type term_view +=
       mutable watches: Term.Watch1.t; (* 1-watch on [arg_1,…,arg_n,f(args)] *)
     }
 
-type lemma_view +=
-  | Congruence_semantic
-  | Congruence_bool
-
 let build p_id Plugin.S_nil : Plugin.t =
   let tc = Term.TC.lazy_make () in
   let module P : Plugin.S = struct
@@ -61,15 +57,6 @@ let build p_id Plugin.S_nil : Plugin.t =
       | Const _ -> ()
       | App {args; _} -> Array.iter yield args
       | _ -> assert false
-
-    let tcl_pp out = function
-      | Congruence_semantic -> Fmt.string out "congruence_semantic"
-      | Congruence_bool -> Fmt.string out "congruence_bool"
-      | _ -> assert false
-
-    let tc_l = Lemma.TC.make ~pp:tcl_pp ()
-    let lemma_congruence_semantic = Lemma.make Congruence_semantic tc_l
-    let lemma_congruence_bool = Lemma.make Congruence_bool tc_l
 
     (* build [{ a1.(i)≠a2.(i) | i}], removing trivial ones *)
     let mk_neq_ a1 a2 : atom list =
@@ -202,10 +189,10 @@ let build p_id Plugin.S_nil : Plugin.t =
                       (Fmt.Dump.list Term.debug) (Term.subterms u));
                 if Type.is_bool (Term.ty t) then (
                   let c = mk_conflict_clause_bool t u in
-                  Actions.raise_conflict acts c lemma_congruence_bool
+                  Actions.raise_conflict acts c
                 ) else (
                   let c = mk_conflict_clause_semantic t u in
-                  Actions.raise_conflict acts c lemma_congruence_semantic
+                  Actions.raise_conflict acts c
                 )
               )
           end

@@ -118,8 +118,6 @@ val check : t -> (unit,string) result
 (** Check the satisfiability of the current model. Only has meaning
     if the solver finished proof search and has returned [Sat]. *)
 
-type proof = Proof.t
-
 val unsat_conflict : t -> clause option
 (** Returns the unsat clause found at the toplevel, if it exists (i.e if
     [solve] has raised [Unsat]) *)

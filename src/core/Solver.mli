@@ -9,7 +9,6 @@ Copyright 2014 Simon Cruanes
 
 open Solver_types
 
-type proof = Proof.t
 type nonrec atom = atom (** The type of atoms given by the module argument for formulas *)
 
 (** {2 Types} *)
@@ -44,7 +43,7 @@ val add_term : t -> term -> unit
     be decided on at some point during solving, whether it appears
     in clauses or not. *)
 
-val unsat_core : t -> proof -> clause list
+val unsat_core : t -> clause list
 (** Returns the unsat core of a given proof. *)
 
 val true_at_level0 : t -> atom -> bool
@@ -118,9 +117,6 @@ module Unsat_state : sig
 
   val unsat_conflict : t -> clause
   (** Returns the unsat clause found at the toplevel *)
-
-  val get_proof : t -> proof
-  (** returns a persistent proof of the empty clause from the Unsat result. *)
 end
 
 type res =

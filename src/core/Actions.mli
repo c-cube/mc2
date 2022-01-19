@@ -24,7 +24,7 @@ val propagate_bool_eval : t -> term -> bool -> subs:term list -> unit
     relevant (sub)terms [l]
     @param subs subterms used for the propagation *)
 
-val propagate_bool_lemma : t -> term -> bool -> atom list -> lemma -> unit
+val propagate_bool_lemma : t -> term -> bool -> atom list -> unit
 (** [propagate_bool_lemma t b c] propagates the boolean literal [t]
       assigned to boolean value [b], explained by a valid theory
       lemma [c].
@@ -32,7 +32,7 @@ val propagate_bool_lemma : t -> term -> bool -> atom list -> lemma -> unit
       is composed of atoms false in current model.
 *)
 
-val raise_conflict : t -> atom list -> lemma -> 'a
+val raise_conflict : t -> atom list -> 'a
 (** Raise a conflict with the given clause, which must be false
     in the current trail, and with a lemma to explain *)
 

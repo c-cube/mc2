@@ -14,15 +14,6 @@ let[@inline] is_builtin (t:term) = match Term.view t with
   | True | False -> true
   | _ -> false
 
-let tcl =
-  let tcl_pp out = function
-    | L_tautology -> Fmt.string out "true_is_true"
-    | _ -> assert false
-  in
-  {tcl_pp}
-
-let lemma_trivial : lemma = Lemma.make L_tautology tcl
-
 let build p_id Plugin.S_nil : Plugin.t =
   let module P = struct
     let id = p_id
@@ -36,10 +27,10 @@ let build p_id Plugin.S_nil : Plugin.t =
     (* on initialization, add clause [true] *)
     let init acts t = match Term.view t with
       | True ->
-        let c_true = Clause.make [Term.Bool.pa t] (Lemma lemma_trivial) in
+        let c_true = Clause.make [Term.Bool.pa t] ~lemma:false in
         Actions.push_clause acts c_true
       | False ->
-        let c = Clause.make [Term.Bool.na t] (Lemma lemma_trivial) in
+        let c = Clause.make [Term.Bool.na t] ~lemma:false in
         Actions.push_clause acts c
       | _ -> assert false
 

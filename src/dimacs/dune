@@ -2,8 +2,7 @@
 (library
   (name mc2_dimacs)
   (public_name mc2.dimacs)
-  (libraries containers mc2.core mc2.backend)
-  )
+  (libraries containers mc2.core))
 
 (menhir (modules Parser))
 

@@ -51,16 +51,6 @@ type term_view +=
 type value_view +=
   | V_unin of int
 
-type lemma_view +=
-  | Transitivity
-
-let tc_lemma =
-  let pp out = function
-    | Transitivity -> Fmt.string out "transitivity_eq"
-    | _ -> assert false
-  in
-  Lemma.TC.make ~pp ()
-
 let[@inline] c_list_as_seq (tbl:reason Value.Tbl.t) : (value * reason) Iter.t =
   Value.Tbl.to_iter tbl
 
@@ -240,8 +230,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                   Atom.neg eqn;
                   Atom.neg eqn';
                 ]
-              and lemma = Lemma.make Transitivity tc_lemma in
-              Actions.raise_conflict acts conflict lemma
+              in
+              Actions.raise_conflict acts conflict
             | Conflict_eq_neq {other=other';diseqn} ->
               (* conflict! one singleton, one diff, same value *)
               let neq_side = Term.Bool.mk_neq other other' in
@@ -250,8 +240,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                   Atom.neg eqn;
                   neq_side;
                 ]
-              and lemma = Lemma.make Transitivity tc_lemma in
-              Actions.raise_conflict acts conflict lemma
+              in
+              Actions.raise_conflict acts conflict
             | Conflict_none -> ()
           end;
           (* just add constraint *)
@@ -290,8 +280,8 @@ let build p_id (Plugin.S_cons (_, true_, Plugin.S_nil)) : Plugin.t =
                   Atom.neg eqn;
                   neq_side;
                 ]
-              and lemma = Lemma.make Transitivity tc_lemma in
-              Actions.raise_conflict acts conflict lemma
+              in
+              Actions.raise_conflict acts conflict
             | Conflict_none -> ()
           end;
           let add_tbl tbl =

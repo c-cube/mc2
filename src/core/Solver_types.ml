@@ -131,7 +131,7 @@ and eval_res =
 and check_res =
   | Sat
   (** The current set of assumptions is satisfiable. *)
-  | Unsat of atom list * lemma
+  | Unsat of atom list
   (** The current set of assumptions is *NOT* satisfiable, and here is a
       theory tautology (with its proof), for which every literal is false
       under the current assumptions. *)
@@ -188,24 +188,11 @@ and clause = {
   c_name : int; (** Clause name, mainly for printing, unique. *)
   c_tag : int option; (** User-provided tag for clauses. *)
   c_atoms : atom array; (** The atoms that constitute the clause.*)
-  mutable c_premise : premise;
-  (** The premise of the clause, i.e. the justification of why the clause must
-      be satisfied. *)
   mutable c_activity : float;   (** Clause activity, used for the heap heuristics. *)
   mutable c_fields: Clause_fields.t; (** bitfield for clauses *)
 }
 (** The type of clauses. Each clause generated should be true, i.e. enforced
     by the current problem (for more information, see the cpremise field). *)
-
-and paramod_clause = {
-  pc_lhs: term;
-  pc_rhs: term;
-  pc_guard: atom list;
-  pc_premise: premise;
-  pc_clause: clause lazy_t; (** view as a clause *)
-}
-(** A paramodulation clause, of the form [guard => (lhs = rhs)]. It is
-    used to rewrite [lhs] into [rhs] assuming [guard] holds *)
 
 and tc_value = {
   tcv_pp : value_view CCFormat.printer; (** printer *)
@@ -227,54 +214,6 @@ and reason =
       term has a value. *)
 (** Reasons of propagation/decision of atoms/terms. *)
 
-and premise =
-  | Hyp (** The clause is a hypothesis, provided by the user. *)
-  | Local
-  (** The clause is a 1-atom clause, where the atom is a local assumption *)
-  | Lemma of lemma
-  (** The clause is a theory-provided tautology, with the given proof. *)
-  | Simplify of clause
-  (** Deduplication/sorting of atoms in the clause *)
-  | P_steps of {
-      init: clause;
-      steps: premise_step list; (* resolution steps *)
-    }
-  | P_raw_steps of raw_premise_step list
-  (** The clause can be obtained by resolution or paramodulation of the clauses
-      in the list, left-to-right.
-      For a premise [History [a_1 :: ... :: a_n]] ([n >= 2]) the clause
-      is obtained by performing resolution of [a_1] with [a_2], and then
-      performing a resolution step between the result and [a_3], etc...  Of
-      course, each of the clause [a_i] also has its own premise.
-  *)
-(** Premises for clauses. Indeed each clause generated during a run of the solver
-    should be satisfied, the premise is the justification of why it should be
-    satisfied by the solver.
-
-    The premise of a clause can be updated, during proof processing,
-    going from [Hyper_res l] towards explicit steps of resolution
-    with [Resolve]. This update preserves the semantics of proofs
-    but acts as a memoization of the proof reconstruction process. *)
-
-and raw_premise_step = clause (** init clause/resolution with clause *)
-
-(** Clause or paramodulation, refined form *)
-and premise_step =
-  | Step_resolve of {
-      c: clause; (** clause to resolve with *)
-      pivot: term; (** pivot to remove *)
-    }
-
-and lemma =
-  | Lemma_bool_tauto (** tautology [a ∨ ¬a] *)
-  | Lemma_custom of {
-      view: lemma_view; (** The lemma content *)
-      tc: tc_lemma; (** Methods on the lemma *)
-    } (** A lemma belonging to some plugin. Must be a tautology of the theory. *)
-
-and tc_lemma = {
-  tcl_pp : lemma_view CCFormat.printer;
-}
 
 and actions = {
   act_push_clause : clause -> unit;
@@ -287,14 +226,14 @@ and actions = {
       assigned to boolean value [b], explained by evaluation with
       relevant (sub)terms [l]
       @param subs subterms used for the propagation *)
-  act_propagate_bool_lemma : term -> bool -> atom list -> lemma -> unit;
+  act_propagate_bool_lemma : term -> bool -> atom list -> unit;
   (** [act_propagate_bool_lemma t b c] propagates the boolean literal [t]
       assigned to boolean value [b], explained by a valid theory
       lemma [c].
       Precondition: [c] is a tautology such that [c == (c' ∨ t=b)], where [c']
       is composed of atoms false in current model.
   *)
-  act_raise_conflict: 'a. atom list -> lemma -> 'a;
+  act_raise_conflict: 'a. atom list -> 'a;
   (** Raise a conflict with the given clause, which must be false
       in the current trail, and with a lemma to explain *)
   act_on_backtrack : (unit -> unit) -> unit;
@@ -312,6 +251,7 @@ let field_t_seen = Term_fields.mk_field() (** term seen during some traversal? *
 let field_t_negated = Term_fields.mk_field() (** negated term? *)
 let field_t_gc_marked = Term_fields.mk_field() (** marked for GC? *)
 
+let field_c_lemma = Clause_fields.mk_field() (** clause is deduced (a lemma) *)
 let field_c_attached = Clause_fields.mk_field() (** clause added to state? *)
 let field_c_visited = Clause_fields.mk_field() (** visited during some traversal? *)
 let field_c_deleted = Clause_fields.mk_field() (** deleted during GC *)
@@ -383,4 +323,8 @@ type statement =
   | Stmt_assert_clauses of atom list list
   | Stmt_check_sat
   | Stmt_exit
+
+let pp_clause_name out c =
+  let prefix = if Clause_fields.get field_c_lemma c.c_fields then "L" else "H" in
+  Format.fprintf out "%s%d" prefix c.c_name
 

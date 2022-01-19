@@ -8,7 +8,6 @@ open Solver_types
 
 module S = Internal
 
-type proof = Proof.t
 type nonrec atom = atom (** The type of atoms given by the module argument for formulas *)
 
 type 'clause clause_sets = {
@@ -52,7 +51,7 @@ let pp_all t lvl status =
 (* Wrappers around internal functions*)
 let assume = S.assume
 
-let unsat_core _ p = Proof.unsat_core p
+let unsat_core _ = assert false (* TODO *)
 
 let true_at_level0 _s a =
   try
@@ -97,10 +96,6 @@ module Unsat_state = struct
       | None -> assert false
       | Some c -> c
     end
-
-  let get_proof (s:t) =
-    let c = unsat_conflict s in
-    Proof.prove_unsat c
 end
 
 type res =

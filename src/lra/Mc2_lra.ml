@@ -207,15 +207,6 @@ let eval (t:term) =
     end
   | _ -> assert false
 
-let tc_lemma : tc_lemma =
-  Lemma.TC.make
-    ~pp:(fun out l -> match l with
-      | Lemma_lra -> Fmt.string out "lra"
-      | _ -> assert false)
-    ()
-
-let lemma_lra = Lemma.make Lemma_lra tc_lemma
-
 (* build plugin *)
 let build
     p_id
@@ -287,7 +278,7 @@ let build
              :reasons (@[<v>%a@])@ :clause %a@])"
             Term.debug pivot LE.pp expr pp_op op LE.pp expr_up_bound LE.pp expr_low_bound
             (Util.pp_list Atom.debug) reasons Clause.debug_atoms c);
-      Actions.raise_conflict acts c lemma_lra
+      Actions.raise_conflict acts c
 
     (* [make op e t ~reason b] turns this unit constraint over [t]
        (which is true or false according to [b]) into a proper
@@ -349,7 +340,7 @@ let build
               List.rev_map Atom.neg
               [atomic_reason low.reason; atomic_reason up.reason; reason_neq]
             in
-            Actions.raise_conflict acts c lemma_lra
+            Actions.raise_conflict acts c
           | _ -> ()
         end
       | _ -> assert false
