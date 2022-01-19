@@ -99,11 +99,12 @@ and tc_term = {
   tct_pp : term_view CCFormat.printer; (** print views of this plugin *)
   tct_init: actions -> term -> unit; (** called when term is added *)
   tct_update_watches: actions -> term -> watch:term -> watch_res;
-  (** [watch] was assign, update term [t], and return whether [t] should
-      still watch [watch] *)
+  (** [update_watches acts t ~watch] means [watch] was assigned,
+      and is watched by [t], so we update [t] and return
+      whether [t] should still watch [watch]. *)
   tct_delete: term -> unit;
   (** called when term is deleted *)
-  tct_subterms: term_view -> (term->unit) -> unit; (** iterate on subterms *)
+  tct_subterms: term_view -> term Iter.t; (** iterate on immediate subterms *)
   tct_eval: term -> eval_res; (** Evaluate term *)
 }
 (** type class for terms, packing all operations on terms *)

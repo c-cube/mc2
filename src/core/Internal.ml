@@ -1747,6 +1747,7 @@ let assume env ?tag (cnf:atom list list) =
        Stack.push c env.clauses_to_add)
     cnf
 
+(* TODO: remove and adapt code from sidekick *)
 (* create a factice decision level for local assumptions *)
 let push (env:t) : unit =
   Log.debug debug "(solver.push)";
