@@ -20,7 +20,7 @@ module Make(Elt : RANKED) = struct
 
   type t = {
     heap : elt Vec.t;
-  }
+  } [@@unboxed]
 
   let _absent_index = -1
 
@@ -121,20 +121,6 @@ module Make(Elt : RANKED) = struct
       percolate_up s elt;
     )
 
-  (*
-  let update cmp s n =
-    assert (heap_property cmp s);
-    begin
-      if in_heap s n then
-        begin
-          percolate_up cmp s (Vec.get s.indices n);
-          percolate_down cmp s (Vec.get s.indices n)
-        end
-      else insert cmp s n
-    end;
-    assert (heap_property cmp s)
-  *)
-
   let remove_min ({heap} as s) =
     match Vec.size heap with
     | 0 -> raise Not_found
@@ -155,4 +141,4 @@ module Make(Elt : RANKED) = struct
       x
 
   let to_iter self k = Vec.iter k self.heap
-end
+end[@@inline]
