@@ -2,7 +2,6 @@
 
 (prover
   (name mc2-dev)
-  (binary "${cur_dir}/../mc2.exe")
   (cmd "${cur_dir}/../mc2.exe --check --time $timeout $file")
   (unsat "Unsat")
   (sat "Sat")
@@ -11,7 +10,6 @@
 
 (prover
   (name mc2-nogc-dev)
-  (binary "${cur_dir}/../mc2.exe")
   (cmd "${cur_dir}/../mc2.exe --check --no-gc --time $timeout $file")
   (unsat "Unsat")
   (sat "Sat")
@@ -28,18 +26,18 @@
   (synopsis "run mc2 on directories provided on the command line")
   (action
     (run_provers
-      (provers mc2-dev mc2-nogc-dev z3)
+      (provers (mc2-dev mc2-nogc-dev z3))
       (timeout 30)
-      (dirs))))
+      (dirs ()))))
 
 (task
   (name mc2-all-tests)
   (synopsis "run mc2 on all files in tests/")
   (action
     (run_provers
-      (provers mc2-dev z3)
+      (provers (mc2-dev z3))
       (timeout 30)
-      (dirs $cur_dir))))
+      (dirs ($cur_dir)))))
 
 (task
   (name mc2-ci)
@@ -52,4 +50,4 @@
       (run_provers
         (provers mc2-dev)
         (timeout 10)
-        (dirs $cur_dir/tests/sat $cur_dir/tests/unsat)))))
+        (dirs ($cur_dir/tests/sat $cur_dir/tests/unsat))))))
