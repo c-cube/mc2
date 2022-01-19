@@ -14,7 +14,6 @@ type 'a or_error = ('a, string) E.t
 
 let file = ref ""
 let p_cnf = ref false
-let p_dot_proof = ref ""
 let p_proof_print = ref false
 let p_model = ref false
 let check = ref true
@@ -79,7 +78,6 @@ let argspec = Arg.align [
     "--no-gc", Arg.Clear gc, " disable garbage collection";
     "--restarts", Arg.Set restarts, " enable restarts";
     "--no-restarts", Arg.Clear restarts, " disable restarts";
-    "--dot", Arg.Set_string p_dot_proof, "<file> if provided, print the dot proof in the given file";
     "--stat", Arg.Set p_stat, " print statistics";
     "--model", Arg.Set p_model, " print model";
     "--no-model", Arg.Clear p_model, " do not print model";
@@ -143,7 +141,6 @@ let main () =
     in
     Solver.create ~plugins ()
   in
-  let dot_proof = if !p_dot_proof = "" then None else Some !p_dot_proof in
   let res = match syn with
     | Smtlib ->
       (* parse pb *)
@@ -160,7 +157,7 @@ let main () =
                  ~smtcomp:!smtcomp
                  ~gc:!gc ~restarts:!restarts ~pp_cnf:!p_cnf ~switch
                  ~time:!time_limit ~memory:!size_limit
-                 ?dot_proof ~pp_model:!p_model ~check:!check ~progress:!p_progress
+                 ~pp_model:!p_model ~check:!check ~progress:!p_progress
                  st)
             () input
         with Exit ->
@@ -169,7 +166,7 @@ let main () =
     | Dimacs ->
       Mc2_dimacs.parse (Solver.services solver) !file >>= fun pb ->
       Mc2_dimacs.process
-        ~pp_model:!p_model ~gc:!gc ?dot_proof ~restarts:!restarts ~check:!check
+        ~pp_model:!p_model ~gc:!gc ~restarts:!restarts ~check:!check
         ~time:!time_limit ~memory:!size_limit ~progress:!p_progress ~switch
         solver pb
   in

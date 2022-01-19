@@ -49,7 +49,7 @@ module Make(ARG : sig
 
   (* call the solver to check-sat *)
   let solve
-      ?gc ?restarts ?dot_proof
+      ?gc ?restarts
       ?(pp_model=false) ?(check=false) ?time ?memory
       ?progress ~smtcomp ?switch
       ~assumptions s : unit =
@@ -89,7 +89,7 @@ module Make(ARG : sig
 
   (* process a single statement *)
   let process_stmt
-      ?gc ?restarts ?(pp_cnf=false) ?dot_proof ?pp_model ?check
+      ?gc ?restarts ?(pp_cnf=false) ?pp_model ?check
       ?time ?memory ?progress ?(smtcomp=false) ?switch
       (stmt:Statement.t) : unit or_error =
     Log.debugf 5
@@ -111,7 +111,7 @@ module Make(ARG : sig
         Log.debug 1 "exit";
         raise Exit
       | Stmt_check_sat ->
-        solve ?gc ?restarts ?dot_proof ?check ?pp_model ?time
+        solve ?gc ?restarts ?check ?pp_model ?time
           ?memory ?progress ?switch ~smtcomp
           solver ~assumptions:[];
         E.return()

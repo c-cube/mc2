@@ -26,7 +26,6 @@ module Make(ARG : sig
     ?gc:bool ->
     ?restarts:bool ->
     ?pp_cnf:bool ->
-    ?dot_proof:string ->
     ?pp_model:bool ->
     ?check:bool ->
     ?time:float ->
