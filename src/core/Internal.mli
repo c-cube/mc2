@@ -127,20 +127,24 @@ val unsat_conflict : t -> clause option
     great care should be taken to ensure not to mess with the values returned. *)
 
 val trail : t -> trail
+[@@deprecated "TODO remove"]
 (** Returns the current trail.
     {b DO NOT MUTATE} *)
 
 val hyps : t -> clause Vec.t
+[@@deprecated "TODO remove"]
 (** Returns the vector of assumptions used by the solver. May be slightly different
     from the clauses assumed because of top-level simplification of clauses.
     {b DO NOT MUTATE} *)
 
 val temp : t -> clause Vec.t
+[@@deprecated "TODO remove"]
 (** Returns the clauses coreesponding to the local assumptions.
     All clauses in this vec are assured to be unit clauses.
     {b DO NOT MUTATE} *)
 
 val history : t -> clause Vec.t
+[@@deprecated "TODO remove"]
 (** Returns the history of learnt clauses, with no guarantees on order.
     {b DO NOT MUTATE} *)
 

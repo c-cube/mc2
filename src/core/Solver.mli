@@ -55,9 +55,11 @@ type 'clause clause_sets = {
   cs_history: 'clause Vec.t;
   cs_local: 'clause Vec.t;
 }
+[@@deprecated "TODO remove"]
 (** Current state of the SAT solver *)
 
 val clause_sets : t -> clause clause_sets
+[@@deprecated "TODO remove"]
 (** Iterate on current sets of clauses *)
 
 (* TODO: update…
