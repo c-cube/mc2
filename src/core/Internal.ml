@@ -308,9 +308,9 @@ let[@inline] bump_clause_activity (self:t) (c:clause) : unit =
 (* make a decision for [t] based on its type *)
 let[@inline] decide_term (self:t) (t:term): value =
   let ty = (Term.ty t) in
-  if ty == Bool then
-    (* this case doesn't seem to happen *)
+  if ty == Bool then (
     self.bool_decisions <- self.bool_decisions + 1;
+  );
   Type.decide ty (actions self) t
 
 let[@inline] assign_term (self:t) (t:term) value reason level : unit =
@@ -705,7 +705,7 @@ let th_eval (self:t) (a:atom) : value option =
     end
   )
 
-let pp_subs out l : unit =
+let pp_subs_with_values out l : unit =
   let pp_p out t =
     Fmt.fprintf out "(@[%a@ @<1>→ %a@])" Term.debug t Value.pp (Term.value_exn t)
   in
@@ -714,7 +714,7 @@ let pp_subs out l : unit =
 let debug_eval out = function
   | Eval_unknown -> Fmt.string out "unknown"
   | Eval_into (v, subs) ->
-    Fmt.fprintf out "(@[<hv>%a@ :subs (@[<v>%a@])@])" Value.pp v pp_subs subs
+    Fmt.fprintf out "(@[<hv>%a@ :subs (@[<v>%a@])@])" Value.pp v pp_subs_with_values subs
 
 (* [a] is part of a conflict/learnt clause, but might not be evaluated yet.
    Evaluate it, save its value, and ensure it is indeed false. *)
@@ -1311,7 +1311,7 @@ end = struct
     Log.debugf 5
       (fun k->k
           "(@[<hv>solver.@{<yellow>semantic_propagate_bool@}@ %a@ :val %B@ :subs %a@])"
-          Term.debug t b pp_subs subs);
+          Term.debug t b pp_subs_with_values subs);
     let a = if b then Term.Bool.pa_unsafe t else Term.Bool.na_unsafe t in
     enqueue_semantic_bool_eval self a subs
 
@@ -1809,7 +1809,8 @@ let check_clause (c:clause) : unit =
     bad_modelf "Clause not satisfied: @[<hov>%a@]" Clause.debug c
   )
 
-let check_term (t:term) : unit = match Term.value t, Term.eval t with
+let check_term (t:term) : unit =
+  match Term.value t, Term.eval t with
   | None, Eval_unknown ->
     () (* no value, can happen if atom only occurs in trivial clauses *)
   | None, Eval_into _ -> ()
