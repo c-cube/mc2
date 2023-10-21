@@ -31,9 +31,9 @@ Most of these solvers are implemented in C or C++.
 
 In contract, MC² is based on the **mcSAT** calculus
 (see
-[[fmcad'13]](http://csl.sri.com/~dejan/papers/jovanovic-fmcad2013.pdf)
+[[fmcad'13]](https://leodemoura.github.io/files/fmcad2013.pdf)
 and
-[[vmcai'13]](http://www.csl.sri.com/users/dejan/papers/mcsat-vmcai2013.pdf)).
+[[vmcai'13]](http://leodemoura.github.io/files/mcsat.pdf)).
 mcSAT is fundamentally different from CDCL(T);
 it is a so-called _natural SMT_ calculus where the boolean reasoning of CDCL is
 extended so as to be able to assign values to non-boolean variables (such as
