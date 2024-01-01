@@ -1,9 +1,9 @@
 name: build
 on:
   push:
-  pull_request:
     branches:
-      - master
+      - main
+  pull_request:
 jobs:
   run:
     name: Build
@@ -16,12 +16,14 @@ jobs:
         ocaml-compiler:
           - 4.03.x
           - 4.12.x
+          - 5.1.x
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
     - uses: ocaml/setup-ocaml@v2
       with:
         ocaml-compiler: ${{ matrix.ocaml-compiler }}
+        allow-prerelease-opam: true
     - run: opam pin -n .
     - run: opam depext -yt mc2
     - run: opam install -t . --deps-only
